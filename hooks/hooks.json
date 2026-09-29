@@ -1,0 +1,15 @@
+{
+  "description": "세션 시작 시 BRAIN.md 인덱스 상단을 컨텍스트에 주입 (볼트 없으면 무음)",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/brain.py\" index --head 40"
+          }
+        ]
+      }
+    ]
+  }
+}

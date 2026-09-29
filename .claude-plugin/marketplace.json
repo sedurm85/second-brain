@@ -1,0 +1,15 @@
+{
+  "name": "second-brain",
+  "owner": {
+    "name": "sedurm85",
+    "url": "https://github.com/sedurm85"
+  },
+  "description": "세컨드브레인 플러그인 마켓플레이스 — Claude Code용 개인 지식 창고",
+  "plugins": [
+    {
+      "name": "second-brain",
+      "source": "./",
+      "description": "대화에서 바로 쌓고 의사결정 맥락까지 찾아주는 개인 지식 창고 (Obsidian 호환 마크다운)"
+    }
+  ]
+}
