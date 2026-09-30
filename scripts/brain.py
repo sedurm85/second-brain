@@ -526,8 +526,8 @@ def target_path(vault, ntype, title, created, taken=None):
     y, m = created[:4], created[5:7]
     if ntype == "event":
         return vault / "events" / y / f"{created[:10]}-{stem}.md"
-    if ntype == "journal":  # 하루 한 장: 날짜가 파일명
-        return vault / "journal" / y / f"{created[:10]}.md"
+    if ntype == "journal":  # 하루 한 장: 날짜가 파일명(주간 회고는 -weekly)
+        return vault / "journal" / y / f"{created[:10]}{'-weekly' if slug.endswith('주간-회고') else ''}.md"
     return vault / "notes" / y / m / f"{stem}.md"
 
 
@@ -2766,6 +2766,13 @@ def cmd_review(args):
     if args.days < 1:
         raise BrainError("--days는 1 이상이어야 합니다.")
     r = review(v, args.days)
+    if getattr(args, "semantic", False):
+        try:
+            sem = semantic_link_suggestions(v, r, limit=getattr(args, "limit", 25))
+            r["link_suggestions"] = sem + [s for s in r["link_suggestions"] if not any({s["a"], s["b"]} == {x["a"], x["b"]} for x in sem)]
+            r["semantic"] = len(sem)
+        except BrainError as e:
+            log(f"의미 기반 제안 건너뜀: {e}")
     if args.json:
         emit(args, r, None)
         return EXIT_OK
@@ -3723,6 +3730,7 @@ AGENT_SPECS = {
     "evening": {"label": "com.secondbrain.evening", "args": ["brief", "--evening", "--journal", "--kakao"], "calendar": {"Hour": 21, "Minute": 30}, "title": "저녁 마감 카톡 + 하루 일지 (매일 21:30)"},
     "backup": {"label": "com.secondbrain.backup", "args": ["backup"], "calendar": {"Hour": 23, "Minute": 0}, "title": "볼트 백업 (매일 23시)"},
     "prepare": {"label": "com.secondbrain.prepare", "args": ["prepare"], "calendar": {"Hour": 6, "Minute": 40}, "title": "일정 준비 제안 (매일 6:40)"},
+    "retro": {"label": "com.secondbrain.retro", "args": ["retro", "--kakao"], "calendar": {"Weekday": 1, "Hour": 9, "Minute": 0}, "title": "주간 회고 (월 9시)"},
 }
 
 
@@ -3800,7 +3808,7 @@ def agents_install(names, dry=False, force=False):
                 if wid in ids or rec["action"].startswith("skip"):
                     continue
                 cfg.setdefault("widgets", []).insert(0, {"id": wid, "title": AGENT_SPECS[rec["name"]]["title"], "kind": "log", "source": rec["log"], "team": "운영팀",
-                                                          "status": {"ok_pattern": "카톡 발송 완료|알릴 것 없음|발송|백업 완료|준비 제안|제안할 일정이 없어요", "fail_pattern": "Traceback|실패", "stale_minutes": 1560 if rec["name"] != "remind" else 40}, "lines": 3})
+                                                          "status": {"ok_pattern": "카톡 발송 완료|알릴 것 없음|발송|백업 완료|준비 제안|제안할 일정이 없어요|주간 회고|회고를 쓰지 않았어요", "fail_pattern": "Traceback|실패", "stale_minutes": {"remind": 40, "retro": 8 * 1440 + 120}.get(rec["name"], 1560)}, "lines": 3})
                 rec["widget"] = wid
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -3997,6 +4005,154 @@ def cmd_journal(args):
     r["sent"] = sent
     emit(args, r, f"일지 {'작성' if r['created'] else '갱신'}: {r['path']}\n" + "\n".join(f"- {l}" for l in (r.get("lines") or [])) + (f"\n\n카톡: {r['kakao']}" if r.get("kakao") else "") + ("\n카톡 발송 완료" if sent else ""))
     return EXIT_OK
+
+
+def _section(n, name, limit=240):
+    return " ".join(note_sections(n.body).get(name, "").split())[:limit]
+
+
+def retro_material(vault, days, today, widgets=None):
+    """지난 days일의 회고 재료."""
+    since = (today - timedelta(days=days)).isoformat()
+    notes = load_notes(vault)
+    by_stem, adj = link_graph(notes)
+    recent = [n for n in notes if n.created >= since and n.type not in ("event",)]
+    new_notes = [{"type": n.type, "title": n.title, "summary": str(n.meta.get("summary") or "")[:160]} for n in recent if n.type not in ("decision", "journal")][:20]
+    decisions = [{"title": n.title, "status": n.meta.get("status", "open"), "decision": _section(n, "결정"), "why": _section(n, "이유"), "revisit": str(n.meta.get("revisit") or "")}
+                 for n in recent if n.type == "decision"][:8]
+    t = today.isoformat()
+    soon = (today + timedelta(days=14)).isoformat()
+    revisit = [{"title": n.title, "decision": _section(n, "결정", 160), "revisit": str(n.meta.get("revisit"))} for n in notes
+               if n.type == "decision" and n.meta.get("status", "open") == "open" and n.meta.get("revisit") and str(n.meta.get("revisit")) <= soon][:6]
+    journals = []
+    for n in sorted(recent, key=lambda x: x.created):
+        if n.type == "journal" and not n.stem.endswith("-weekly"):
+            journals.append({"date": n.created, "lines": [l[2:].strip() for l in note_sections(n.body).get("오늘", "").split("\n") if l.startswith("- ")][:5]})
+    projects = {}
+    for n in recent:
+        if n.project:
+            projects[n.project] = projects.get(n.project, 0) + 1
+    orphans = [n.title for n in recent if not adj.get(n.stem)][:8]
+    issues = []
+    for w in widgets or []:
+        if w.get("state") == "paused" or w.get("kind") != "log":
+            continue
+        try:
+            h = widget_history(w, days=days, today=today)
+        except Exception:  # noqa: BLE001 - 회고 재료는 최선 노력
+            continue
+        if h.get("total_fails"):
+            issues.append(f"{w['title']}: {days}일 중 실패 {h['total_fails']}회")
+    mat = {"since": since, "until": t, "days": days, "new_notes": new_notes, "decisions": decisions, "revisit_due": revisit, "journals": journals[-7:],
+           "projects": sorted(projects.items(), key=lambda kv: -kv[1])[:6], "orphans": orphans, "automation_issues": issues[:6],
+           "counts": {"notes": len(new_notes), "decisions": len(decisions), "journals": len(journals)}}
+    mat["empty"] = not (new_notes or decisions or journals)
+    return mat
+
+
+def retro_prompt(mat):
+    return ("너는 사용자의 한 주를 함께 되돌아보는 코치형 비서다. 아래 [재료]만 근거로 JSON 객체 하나로 답한다(설명·마크다운 금지). 형식:\n"
+            '{"week": ["이번 주에 한 일" 3~5문장, 각 70자 이내, 1인칭 과거형], '
+            '"patterns": ["눈에 띄는 흐름·반복·치우침" 1~2문장, 재료에 근거], '
+            '"questions": ["되돌아볼 질문" 정확히 3개, 각 60자 이내. revisit_due·decisions가 있으면 그 결정을 지목해 유지/변경을 묻고, 없으면 patterns에서 뽑는다. 예/아니오로 끝나지 않는 열린 질문], '
+            '"next_week": ["다음 주 우선순위" 1~3개, 각 40자 이내, 재료의 미결·revisit에서], '
+            '"kakao": "카톡용 한 줄 80자 이내"}\n'
+            "규칙: 재료에 없는 사실을 만들지 마라. 칭찬·감탄사·이모지 없이 담담하게.\n\n[재료]\n" + json.dumps(mat, ensure_ascii=False))
+
+
+def write_retro(vault, today, raw, mat, force=False):
+    day = today.isoformat()
+    week = [" ".join(str(x).split()) for x in (raw.get("week") or []) if str(x).strip()][:5]
+    if not week:
+        raise BrainError("회고 본문이 비었어요")
+    pats = [" ".join(str(x).split()) for x in (raw.get("patterns") or []) if str(x).strip()][:2]
+    qs = [" ".join(str(x).split()) for x in (raw.get("questions") or []) if str(x).strip()][:3]
+    nxt = [" ".join(str(x).split()) for x in (raw.get("next_week") or []) if str(x).strip()][:3]
+    kakao = " ".join(str(raw.get("kakao") or "").split())[:100] or week[0][:80]
+    title = f"{day} 주간 회고"
+    c = mat["counts"]
+    body = (f"# {title}\n\n{mat['since']} ~ {mat['until']} · 노트 {c['notes']} · 결정 {c['decisions']} · 일지 {c['journals']}\n\n"
+            "## 이번 주\n" + "".join(f"- {l}\n" for l in week) +
+            ("\n## 눈에 띄는 것\n" + "".join(f"- {l}\n" for l in pats) if pats else "") +
+            "\n## 되돌아볼 질문\n" + "".join(f"- [ ] {q}\n" for q in qs) +
+            ("\n## 다음 주\n" + "".join(f"- [ ] {l}\n" for l in nxt) if nxt else "") +
+            ("\n## 자동화\n" + "".join(f"- {b}\n" for b in mat["automation_issues"]) if mat.get("automation_issues") else "") +
+            ("\n## 고아 노트\n" + "".join(f"- {o}\n" for o in mat["orphans"]) if mat.get("orphans") else ""))
+    existing = [n for n in load_notes(vault) if n.type == "journal" and n.stem == f"{day}-weekly"]
+    if existing:
+        if not force:
+            raise BrainError(f"오늘 회고가 이미 있어요: {existing[0].rel} (--force로 다시)")
+        n = existing[0]
+        write_note(n.path, dict(n.meta, summary=kakao), body)
+        git_commit(vault, f"brain: retro {day} (rewrite)")
+        return n.path, False, qs, kakao
+    path = create_note(vault, "journal", title, tags=["회고"], body=body, created=day, extra={"journal_kind": "weekly", "journal_date": day, "since": mat["since"], "summary": kakao})
+    git_commit(vault, f"brain: retro {day}")
+    return path, True, qs, kakao
+
+
+def cmd_retro(args):
+    v = require_vault()
+    today = date.today()
+    widgets = collect_widgets()
+    mat = retro_material(v, args.days, today, widgets)
+    if args.dry_run:
+        emit(args, mat, "회고 재료 (dry-run)\n" + json.dumps(mat, ensure_ascii=False, indent=1))
+        return EXIT_OK
+    if mat["empty"]:
+        emit(args, {"empty": True}, f"지난 {args.days}일에 기록이 없어 회고를 쓰지 않았어요")
+        return EXIT_OK
+    raw = _run_claude_json(retro_prompt(mat))
+    if isinstance(raw, list):
+        raw = raw[0] if raw and isinstance(raw[0], dict) else {}
+    if not isinstance(raw, dict):
+        raise BrainError("회고 응답이 객체가 아니에요")
+    path, created, qs, kakao = write_retro(v, today, raw, mat, force=args.force)
+    rel = str(path.relative_to(Path(v)))
+    sent = None
+    if args.kakao and kakao:
+        helper = kakao_helper_path()
+        if helper:
+            rr = subprocess.run([sys.executable, str(helper), f"[주간 회고] {kakao}" + (" / 질문: " + qs[0] if qs else "")], capture_output=True, text=True, timeout=60)
+            sent = rr.returncode == 0
+    emit(args, {"path": rel, "created": created, "questions": qs, "kakao": kakao, "sent": sent},
+         f"주간 회고 {'작성' if created else '갱신'}: {rel}\n" + "\n".join(f"- {l}" for l in (raw.get("week") or [])) + "\n\n되돌아볼 질문\n" + "\n".join(f"- {q}" for q in qs) + (f"\n\n카톡: {kakao}" if kakao else "") + ("\n카톡 발송 완료" if sent else ""))
+    return EXIT_OK
+
+
+def semantic_link_suggestions(vault, r, limit=25):
+    """고아·최근 노트를 후보로, 카탈로그(stem|제목|요약)와 견줘 Claude가 내용상 관련 쌍을 고른다. 적용은 하지 않는다."""
+    notes = load_notes(vault)
+    by_stem, adj = link_graph(notes)
+    stems = {n.stem: n for n in notes if n.type not in ("event", "journal")}
+    cand_paths = [o["path"] for o in r.get("orphans", [])] + [n["path"] for n in r.get("new_notes", [])]
+    seen, cands = set(), []
+    for p in cand_paths:
+        st = Path(p).stem
+        if st in stems and st not in seen:
+            seen.add(st)
+            cands.append(stems[st])
+        if len(cands) >= limit:
+            break
+    if not cands or len(stems) < 3:
+        return []
+    catalog = [f"{n.stem} | {n.title[:40]} | {str(n.meta.get('summary') or '')[:90]}" for n in stems.values()]
+    items = [{"stem": n.stem, "title": n.title, "summary": str(n.meta.get("summary") or "")[:200], "body": " ".join(n.body.split())[:400], "linked": sorted(adj.get(n.stem, set()))[:8]} for n in cands]
+    prompt = ("너는 개인 지식 창고의 사서다. [후보] 노트 각각에 대해 [카탈로그]에서 내용상 정말 관련 있는 노트(같은 주제·같은 결정의 근거·같은 도구)를 최대 2개 고른다. "
+              "이미 linked에 있는 것, 자기 자신, 단순히 같은 사람이 쓴 것·시기만 비슷한 것은 제외. 확신이 없으면 비운다. "
+              'JSON 배열로만 답한다: [{"a": 후보 stem, "b": 카탈로그 stem, "reason": "20자 이내 이유"}]\n\n[카탈로그 stem | 제목 | 요약]\n'
+              + "\n".join(catalog) + "\n\n[후보]\n" + json.dumps(items, ensure_ascii=False))
+    raw = _run_claude_json(prompt)
+    out, dup = [], set()
+    for it in raw if isinstance(raw, list) else []:
+        if not isinstance(it, dict):
+            continue
+        a, b = str(it.get("a") or ""), str(it.get("b") or "")
+        if a not in stems or b not in stems or a == b or b in adj.get(a, set()) or frozenset((a, b)) in dup:
+            continue
+        dup.add(frozenset((a, b)))
+        out.append({"a": stems[a].rel, "b": stems[b].rel, "reason": "의미: " + " ".join(str(it.get("reason") or "").split())[:40]})
+    return out[:10]
 
 
 SUGGEST_DAYS = 7
@@ -4439,6 +4595,14 @@ def build_parser():
 
     s = add("review", "기간 리뷰: 신규·되돌아볼 결정·고아·링크 제안", cmd_review)
     s.add_argument("--days", type=int, default=7, help="기간(일, 기본 7)")
+    s.add_argument("--semantic", action="store_true", help="Claude가 내용상 관련 노트 쌍을 추가로 제안(태그·프로젝트 겹침 외)")
+    s.add_argument("--limit", type=int, default=25, help="--semantic 후보 노트 수(고아·최근 우선, 기본 25)")
+
+    s = add("retro", "주간 회고: Claude가 지난 N일을 되돌아본 노트(journal/YYYY/날짜-weekly.md) + 코칭 질문 3개", cmd_retro)
+    s.add_argument("--days", type=int, default=7, help="기간(일, 기본 7)")
+    s.add_argument("--force", action="store_true", help="같은 날 회고가 있어도 다시")
+    s.add_argument("--kakao", action="store_true", help="한 줄 요약을 카톡으로")
+    s.add_argument("--dry-run", action="store_true", help="재료만 보여주고 호출하지 않음")
 
     s = add("decide", "결정 대체 처리(옛 결정을 superseded로)", cmd_decide)
     s.add_argument("--supersede", required=True, metavar="OLD_PATH", help="대체될 옛 결정")
@@ -4533,7 +4697,7 @@ def build_parser():
 
     s = add("agents", "비서 알림 에이전트(launchd): install [brief remind evening backup] · status · remove", cmd_agents)
     s.add_argument("action", choices=("install", "status", "remove"))
-    s.add_argument("names", nargs="*", help="brief(07:00 브리핑) remind(10분 알림) evening(21:30 마감) backup(23:00 백업). 비우면 넷 다")
+    s.add_argument("names", nargs="*", help="brief(07:00 브리핑) remind(10분 알림) evening(21:30 마감+일지) backup(23:00 백업) prepare(06:40 준비 제안) retro(월 09:00 회고). 비우면 전부")
     s.add_argument("--dry-run", action="store_true", help="쓰지 않고 만들 파일만 보여줌")
     s.add_argument("--force", action="store_true", help="이미 있는 plist 덮어쓰기")
 

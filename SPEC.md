@@ -273,3 +273,10 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 프롬프트 원칙: 재료에 없는 일 금지, 1인칭 담담한 평서문, 이모지·자기 칭찬 없음. 보드 타입 라벨 「일지」·색 추가
 - enrich 후속: `claude-memory` 표식 태그는 정제 결과에서도 제거(실제 볼트 18개 정리)
 - 테스트 164
+
+## v0.23 주간 회고·의미 기반 링크 제안 (2026-09-30)
+
+- `brain.py retro [--days 7] [--force] [--kakao] [--dry-run]`: 지난 N일 재료(새 노트+요약, 결정의 「결정/이유」 절, 14일 안 되돌아볼 결정, 일지의 「오늘」 줄, 프로젝트별 건수, 고아, 자동화 실패 횟수(widget_history))를 Claude에게 → `{week 3~5, patterns 1~2, questions 정확히 3(열린 질문, 결정 지목), next_week 1~3, kakao}` → `journal/YYYY/날짜-weekly.md`(journal_kind weekly, 질문·다음 주는 체크박스). 월 09:00 launchd 에이전트 `retro`(위젯 stale 8일)
+- `review --semantic [--limit 25]`: 고아·최근 노트를 후보로 카탈로그(stem|제목|요약)와 견줘 Claude가 내용상 관련 쌍(후보당 최대 2)을 고름. 존재하지 않는 stem·이미 연결된 쌍·중복은 버림, 이유는 「의미: …」 접두. 적용은 여전히 사람이 `link A B`. brain-review 스킬 갱신
+- journal target_path: 제목이 「… 주간 회고」면 `-weekly` 접미
+- 테스트 169

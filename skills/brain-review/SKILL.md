@@ -8,7 +8,8 @@ allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py *) Bash(pytho
 
 # 주간 리뷰
 
-1. `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py review --days <N, 기본 7> --json`
+1. `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py review --days <N, 기본 7> --semantic --json` (--semantic은 Claude가 내용상 관련 쌍을 덧붙임, 이유가 「의미:」로 시작. 느리거나 실패하면 빼고 다시)
+   주간 회고 노트를 남기고 싶다고 하면 `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py retro --days <N>` → journal/YYYY/날짜-weekly.md에 이번 주·눈에 띄는 것·되돌아볼 질문 3개·다음 주. 질문은 사용자에게 그대로 던지고 답을 받으면 그 노트 「메모」로 남긴다.
 2. 결과를 네 절로 보여준다.
    - 신규 노트: 타입별로 묶어 각 1줄(제목 + [[파일명]]).
    - 되돌아볼 결정: revisit 도래 결정마다 결정 1줄 + "지금 이 결정 유지할까요, 바꿀까요?" 질문 1줄. 바꾼다고 하면 brain-decide 절차로 새 결정을 만들고 supersede.

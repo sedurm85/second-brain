@@ -56,6 +56,8 @@ python3 scripts/brain.py backup                        # 볼트 zip 백업(14개
 python3 scripts/brain.py enrich [--dry-run]            # Claude가 노트 제목·요약·태그·관련 링크 정제(가져온 노트 우선)
 python3 scripts/brain.py prepare [--days 7]           # 다가오는 일정에 준비 체크리스트·동선 초안 제안(보드에서 채택)
 python3 scripts/brain.py journal [--dry-run]           # 오늘 일지 5줄(journal/YYYY/날짜.md), 21:30 저녁 마감이 자동으로 씀
+python3 scripts/brain.py retro [--days 7]             # 주간 회고 노트 + 되돌아볼 질문 3개(월 09:00 에이전트)
+python3 scripts/brain.py review --semantic             # 링크 제안에 Claude의 내용 기반 쌍 추가(적용은 link A B로)
 python3 scripts/brain.py agents install                # 07:00 브리핑·10분 알림·21:30 마감·23:00 백업 launchd 설치
 python3 scripts/brain.py config init-widgets           # 예시 widgets.json
 ```
