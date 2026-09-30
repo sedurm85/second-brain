@@ -1693,6 +1693,7 @@ def build_demo_vault(vault=None, today=None):
         ("n13", "p3", "fm"), ("n14", "p3", "fm"), ("n14", "u2", "fm"), ("d6", "n14", "wl"),
         ("n15", "n16", "wl"), ("n16", "p3", "fm"), ("n17", "n16", "wl"), ("n17", "u2", "wl"),
         ("n18", "n2", "wl"), ("n18", "d5", "wl"), ("n18", "n13", "wl"), ("u1", "p1", "fm"),
+        ("d6", "u2", "fm"), ("d5", "p2", "fm"),  # 결정이 사람·프로젝트 노트로 직접 연결(그래프 구조용)
     ]
     by_src = defaultdict(list)
     for a, b, how in L:
@@ -1726,6 +1727,7 @@ def build_demo_assistant(vault, today):
                                     f"- [ ] 주간회의 자료 마무리 @due({today.isoformat()})\n"
                                     f"- [ ] 치과 예약 변경 전화 @due({d(1).isoformat()}) @project(건강)\n"
                                     "- [ ] 세컨드브레인 볼트를 git private 저장소에 올리기 @someday\n"
+                                    f"- [ ] 인사평가 자료 제출 @due({d(-2).isoformat()})\n"
                                     f"- [ ] 회계사 답장 @waiting(회계사) @since({d(-3).isoformat()})\n"
                                     f"- [x] 온보딩 메일 3일 차 발송 여부 확인 @due({d(-1).isoformat()})\n", encoding="utf-8")
     demo = vault / "_demo"
@@ -1739,7 +1741,8 @@ def build_demo_assistant(vault, today):
     ics += ev("demo-2", "치과", dt(0, 15, 0), dt(0, 16, 0), "강남 스마일치과")
     ics += ev("demo-3", "저녁 약속 (대학 동기)", dt(0, 19, 0), dt(0, 21, 0), "판교")
     ics += ev("demo-4", "1:1 면담", dt(1, 14, 0), dt(1, 14, 30), "온라인")
-    ics += f"BEGIN:VEVENT\nUID:demo-5\nDTSTART;VALUE=DATE:{d(3).strftime('%Y%m%d')}\nDTEND;VALUE=DATE:{d(5).strftime('%Y%m%d')}\nSUMMARY:제주 출장\nEND:VEVENT\n"
+    ics += (f"BEGIN:VEVENT\nUID:demo-5\nDTSTART;VALUE=DATE:{d(3).strftime('%Y%m%d')}\nDTEND;VALUE=DATE:{d(5).strftime('%Y%m%d')}\n"
+            "SUMMARY:제주 출장\nLOCATION:김포국제공항\nEND:VEVENT\n")
     ics += ev("demo-6", "KE1201 김포 출발", dt(3, 9, 25), dt(3, 10, 35), "김포공항")
     ics += "END:VCALENDAR\n"
     (demo / "calendar.ics").write_text(ics, encoding="utf-8")
@@ -1755,11 +1758,23 @@ def build_demo_assistant(vault, today):
     event_note_action(vault, {"action": "step", "key": key_trip, "text": "09:25 KE1201 김포 출발 (70분)"})
     event_note_action(vault, {"action": "step", "key": key_trip, "text": "13:00 고객사 미팅 (2시간)", "day": d(3).isoformat()})
     event_note_action(vault, {"action": "step", "key": key_trip, "text": "10:00 공항 이동 (40분)", "day": d(4).isoformat()})
-    # 데모 위젯 로그 3개 (정상 2 · 실패 1) + widgets.json
-    now = datetime.now()
-    (demo / "backup.log").write_text(f"{now:%F %T} rsync ok 12.4GB\n{now:%F %T} done len: 3\n", encoding="utf-8")
-    (demo / "price.log").write_text(f"{now:%F %T} 항공권 최저가 312,000원 (목표 300,000)\nlen: 1\n", encoding="utf-8")
-    (demo / "scrape.log").write_text(f"{now:%F %T} Traceback (most recent call last):\n  HTTPError 502: Bad Gateway\n", encoding="utf-8")
+    # 데모 위젯 로그 3개 (정상 2 · 실패 1), 최근 7일치 날짜 줄 포함(KPI 띠·이력 막대용) + widgets.json
+    days7 = [d(-k) for k in range(6, -1, -1)]  # 6일 전 ~ 오늘
+    backup_log = "".join(f"{day.isoformat()} 03:00:0{i % 2} rsync ok {12.0 + i * 0.2:.1f}GB\n"
+                         f"{day.isoformat()} 03:00:05 done len: 3\n" for i, day in enumerate(days7))
+    (demo / "backup.log").write_text(backup_log, encoding="utf-8")
+    price_log = "".join(f"{day.isoformat()} 09:00:00 항공권 최저가 {312000 - i * 1500:,}원 (목표 300,000)\nlen: 1\n"
+                        for i, day in enumerate(days7))
+    (demo / "price.log").write_text(price_log, encoding="utf-8")
+    fail_idx = {2, 5, 6}  # 7일 중 사흘 실패(오늘도 포함 → 현재 상태는 계속 fail)
+    scrape_lines = []
+    for i, day in enumerate(days7):
+        if i in fail_idx:
+            scrape_lines.append(f"{day.isoformat()} 08:00:00 Traceback (most recent call last):")
+            scrape_lines.append("  HTTPError 502: Bad Gateway")
+        else:
+            scrape_lines.append(f"{day.isoformat()} 08:00:00 채용 공고 12건 수집 len: 12")
+    (demo / "scrape.log").write_text("\n".join(scrape_lines) + "\n", encoding="utf-8")
     (demo / "growth.csv").write_text("date,members\n" + "\n".join(f"{d(-13 + i).isoformat()},{120 + i * 3 + (i % 3)}" for i in range(14)) + "\n", encoding="utf-8")
     (demo / "widgets.json").write_text(json.dumps({"allow_commands": False, "allow_run": False, "widgets": [
         {"id": "backup", "title": "NAS 백업 (매일 3시)", "kind": "log", "source": str(demo / "backup.log"), "team": "운영팀", "status": {"ok_pattern": "len:", "fail_pattern": "Traceback|Error", "stale_minutes": 1560}, "lines": 3},
@@ -1767,7 +1782,7 @@ def build_demo_assistant(vault, today):
         {"id": "scrape", "title": "채용 공고 수집 (월·목)", "kind": "log", "source": str(demo / "scrape.log"), "team": "커리어팀", "status": {"ok_pattern": "len:", "fail_pattern": "Traceback|Error"}, "lines": 4},
         {"id": "growth", "title": "카페 회원 추이", "kind": "csv", "source": str(demo / "growth.csv"), "team": "콘텐츠팀", "x": "date", "y": "members", "last": 14},
     ]}, ensure_ascii=False, indent=2), encoding="utf-8")
-    # 일지 데모: 하루 일지(어제, 4줄) · 주간 회고(오늘, 질문 3개 미체크). 데모 캐시는 격리되지 않아 제안은 넣지 않음
+    # 일지 데모: 하루 일지(어제, 4줄) · 주간 회고(오늘, 질문 3개 미체크)
     j_day = d(-1).isoformat()
     j_title = f"{j_day} 일지"
     j_lines = ["세컨드브레인 그래프 화면 초안을 붙였다", "카페 게시판 구조 회의에서 5개로 정리했다",
@@ -1787,6 +1802,67 @@ def build_demo_assistant(vault, today):
               + "\n## 되돌아볼 질문\n" + "".join(f"- [ ] {q}\n" for q in r_questions))
     create_note(vault, "journal", r_title, tags=["회고"], body=r_body, created=r_day,
                 extra={"journal_kind": "weekly", "journal_date": r_day, "since": d(-7).isoformat(), "summary": r_summary})
+    _seed_demo_cache(today, key_meet, key_trip)
+
+
+def _seed_demo_cache(today, key_meet, key_trip):
+    """agenda.cache_dir() 아래(데모에서는 격리된 캐시 홈) 제안·직원요약·코어대화·날씨 캐시를 미리 채운다.
+    cmd_serve --demo가 이 함수 호출 전에 XDG_CACHE_HOME을 데모 전용 경로로 바꿔 두므로, 실제
+    ~/.cache/second-brain는 건드리지 않는다."""
+    def d(k):
+        return today + timedelta(days=k)
+    now_min = datetime.now().isoformat(timespec="minutes")
+    # (a) suggestions.json: 대기 중 제안 2건(일정 카드에서 채택/무시 UI 확인용)
+    sugg = {
+        key_meet: {"key": key_meet, "title": "팀 주간회의", "date": today.isoformat(), "end": "",
+                   "location": "회의실 A", "status": "pending", "created": now_min,
+                   "items": [{"kind": "prep", "text": "Loki 전환 비용표 PDF로 출력"},
+                            {"kind": "prep", "text": "지난주 결정 3건 요약 슬라이드"},
+                            {"kind": "memo", "text": "OpenSearch 잔여 비용 질문 대비해 두기"}]},
+        key_trip: {"key": key_trip, "title": "제주 출장", "date": d(3).isoformat(), "end": d(5).isoformat(),
+                   "location": "김포국제공항", "status": "pending", "created": now_min,
+                   "items": [{"kind": "prep", "text": "우산·경량 패딩 챙기기"},
+                            {"kind": "step", "text": "08:30 공항 리무진 예약 확인"},
+                            {"kind": "memo", "text": "고객사 미팅 자료 최종본인지 재확인"}]},
+    }
+    save_suggestions(sugg)
+    # (b) staff_briefs.json: 위젯 2개의 「이번 주 한 줄」(Claude 없이도 보이도록 이미 채운 캐시)
+    briefs = {
+        "backup": {"id": "backup", "date": today.isoformat(), "did": "NAS 백업 7회 모두 성공, 총 12~14GB 처리",
+                   "issue": "문제 없음", "mood": "순조로움", "runs_7d": 14, "fails_7d": 0},
+        "scrape": {"id": "scrape", "date": today.isoformat(), "did": "채용 공고 수집 7회 중 4회 성공(48건)",
+                   "issue": "사이트 응답 502로 3회 실패", "mood": "지쳤어요", "runs_7d": 7, "fails_7d": 3},
+    }
+    staff_briefs_path().parent.mkdir(parents=True, exist_ok=True)
+    staff_briefs_path().write_text(json.dumps(briefs, ensure_ascii=False, indent=1), encoding="utf-8")
+    # (c) core_log.jsonl: 오늘의 코어 문답 3줄
+    core_qa = [
+        ("오늘 뭐부터 하면 돼?", "오늘은 10시 팀 주간회의와 15시 치과가 있고, 회계사 답장이 3일째 기다림 중이에요."),
+        ("제주 출장 준비 뭐 남았어?", "렌터카 예약 확인과 고객사 방문 자료 인쇄가 아직 남아 있어요."),
+        ("항공권 최저가 위젯 잘 돌아가?", "네, 매일 9시에 돌아가고 있고 최근 최저가는 하락하는 추세예요."),
+    ]
+    p = core_log_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        for i, (q, a) in enumerate(core_qa):
+            ts = f"{today.isoformat()}T{8 + i * 4:02d}:15"
+            f.write(json.dumps({"ts": ts, "q": q, "a": a}, ensure_ascii=False) + "\n")
+    # (d) weather 캐시: 「제주 출장」의 출발지(김포국제공항) 지오코딩+예보를 미리 채워 오프라인에서도
+    # weather_for()가 풀리게 한다. attach_event_notes가 아직 날씨를 붙이지 않는 스냅샷이라도, 다른
+    # 워커가 날씨 연동을 붙였을 때 곧바로 동작하도록 캐시 형식(weather.py 기준)에 맞춰 미리 심어 둔다.
+    weather_dir = agenda_mod.cache_dir() / "weather"
+    weather_dir.mkdir(parents=True, exist_ok=True)
+    place = "김포국제공항"
+    lat, lon = 37.5583, 126.7906
+    geocode_cache = {place: {"result": {"name": place, "lat": lat, "lon": lon, "country": "대한민국", "admin1": "서울특별시"},
+                             "ts": time.time()}}
+    (weather_dir / "geocode.json").write_text(json.dumps(geocode_cache, ensure_ascii=False), encoding="utf-8")
+    forecast_days = [{"date": d(k).isoformat(), "code": 1 if k != 4 else 61,
+                      "tmax": 24.0 - k * 0.3, "tmin": 15.0 - k * 0.2,
+                      "rain_prob": 10 if k != 4 else 70, "rain_mm": 0.0 if k != 4 else 6.5} for k in range(0, 7)]
+    forecast_cache = {"_ts": time.time(), "data": {"days": forecast_days, "fetched_at": now_min}}
+    lat4, lon4 = f"{lat:.4f}", f"{lon:.4f}"
+    (weather_dir / f"forecast-{lat4}-{lon4}.json").write_text(json.dumps(forecast_cache, ensure_ascii=False), encoding="utf-8")
 
 
 def demo_overrides(vault):
@@ -2951,11 +3027,24 @@ def _open_browser(url):
         log(f"브라우저를 열지 못했습니다({e}). 직접 여세요: {url}")
 
 
+def setup_demo_isolated():
+    """데모 서버가 실제 캐시(~/.cache/second-brain의 suggestions.json·core_log.jsonl·staff_briefs.json·
+    weather/·agents/·backups/ 등)를 절대 건드리지 않도록, agenda.cache_dir()가 읽는 XDG_CACHE_HOME을
+    데모 전용 경로(데모 볼트 안의 _demo/cache_home)로 바꾼 뒤 데모 볼트를 만들어 반환한다.
+    cache_dir()는 매 호출마다 환경변수를 다시 읽으므로(임포트 시 캐싱 없음), 볼트 생성
+    (build_demo_vault → build_demo_assistant가 캐시에 샘플을 씀) 전에 먼저 지정해야 한다."""
+    demo_v = demo_vault_path()
+    os.environ["XDG_CACHE_HOME"] = str(demo_v / "_demo" / "cache_home")
+    os.environ["SECOND_BRAIN_OFFLINE"] = "1"  # 데모는 네트워크(날씨 등)를 절대 타지 않는다
+    v = build_demo_vault()
+    CONFIG_OVERRIDES.update(demo_overrides(v))
+    return v
+
+
 def cmd_serve(args):
     if args.demo:
-        v = build_demo_vault()
-        CONFIG_OVERRIDES.update(demo_overrides(v))
-        log(f"데모 볼트(가공 샘플 데이터): {v} — 데모 캘린더·위젯·할 일 포함")
+        v = setup_demo_isolated()
+        log(f"데모 볼트(가공 샘플 데이터): {v} — 데모 캘린더·위젯·할 일 포함, 캐시 격리: {agenda_mod.cache_dir()}")
     else:
         v = require_vault()
     if not 0 <= args.port <= 65535:
