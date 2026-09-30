@@ -322,3 +322,8 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `.runbtn`(role=button span)에 Enter/Space 키보드 실행 추가 — 클릭 핸들러를 `runWidget()` 함수로 분리해 클릭·keydown 모두에서 재사용, `.desk`에는 accent색 `:focus-visible` 아웃라인 추가
 - `#leadSay`에 `aria-live="polite"` 추가, `prefers-reduced-motion: reduce`일 때 0.5초 타이핑 프레임 `setInterval`을 아예 예약하지 않도록 JS 가드 추가
 - Playwright로 390×800 뷰포트에서 `document.documentElement.scrollWidth === 390` 확인(상세 패널 오픈 상태 포함), `tests.test_office` 통과 유지
+## v0.27 스킬 brain-journal·brain-doctor
+
+- `brain-journal` 스킬 추가: 기존 `journal`/`retro` CLI를 대화로 노출. 오늘 일지 작성·조회, 주간 회고 작성 후 되돌아볼 질문 3개를 하나씩 물어 답을 `new --type note`로 원문 그대로 저장하고 회고 노트와 `link`. 체크박스 토글은 CLI가 없어 보드 안내만 한다.
+- `brain-doctor` 스킬 추가: 기존 `doctor` CLI를 대화로 노출. ✗ 항목마다 fix가 `brain.py` 명령이면 승인 후 대신 실행(`enrich`는 별도로 한 번 더 확인), 외부 설정은 안내만.
+- README.md·README.en.md의 "그 밖에" 문장에 두 스킬 추가.

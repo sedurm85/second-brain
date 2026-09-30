@@ -111,7 +111,7 @@ Claude: 6 new notes (3 ideas · 2 sources · 1 meeting)
         BRAIN.md updated
 ```
 
-Also available: `/second-brain:brain-today` (today's briefing), `/second-brain:brain-event` (memos, prep and itinerary on an event), `/second-brain:brain-import <path>` (import an Obsidian vault or Claude Code memory), `/second-brain:brain-setup` (vault location, git auto-commit).
+Also available: `/second-brain:brain-today` (today's briefing), `/second-brain:brain-event` (memos, prep and itinerary on an event), `/second-brain:brain-import <path>` (import an Obsidian vault or Claude Code memory), `/second-brain:brain-setup` (vault location, git auto-commit), `/second-brain:brain-journal` (daily journal, weekly retro), `/second-brain:brain-doctor` (install/connection health check).
 
 ## Vault layout
 

@@ -108,7 +108,7 @@ Claude: 신규 노트 6개(아이디어 3 · 자료 2 · 회의 1)
         BRAIN.md 갱신 완료
 ```
 
-그 밖에 `/second-brain:brain-today`(오늘 브리핑), `/second-brain:brain-event`(일정에 메모·준비·동선), `/second-brain:brain-import <경로>`(Obsidian 볼트·Claude Code 메모리 가져오기), `/second-brain:brain-setup`(볼트 위치·git 자동 커밋)이 있습니다.
+그 밖에 `/second-brain:brain-today`(오늘 브리핑), `/second-brain:brain-event`(일정에 메모·준비·동선), `/second-brain:brain-import <경로>`(Obsidian 볼트·Claude Code 메모리 가져오기), `/second-brain:brain-setup`(볼트 위치·git 자동 커밋), `/second-brain:brain-journal`(오늘 일지·주간 회고), `/second-brain:brain-doctor`(설치·연결 점검)이 있습니다.
 
 ## 볼트 구조
 
