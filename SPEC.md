@@ -303,7 +303,12 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `brain.py doctor`: 볼트(노트 수·요약 수·정제 대기)·Python·Claude CLI(ask_cmd 실행 파일)·캘린더(소스·ICS 주소 파일 존재)·카톡 헬퍼·자동화 위젯(문제 목록)·알림 에이전트(loaded 수)·캐시 폴더를 ✓/✗ + → 고치는 법으로. 외부 호출 없음. ✗가 있으면 종료 코드 2. brain-setup 스킬 0단계
 - 보드 첫 문장 「챙길 것」에 채택 대기 준비 제안 N건·회고 질문 N개 추가. brain-today 스킬에 준비 제안·회고 질문 줄
 
-## CI
+## v0.27 주간 리포트 /report (2026-09-30)
+
+- `GET /api/report?days=7` → `dash_report(vault, days, today, widgets)`: 기간 숫자 띠(노트·결정·일지·자동화 실행/실패), 새 기록(최대 30, 최신순), 결정(「결정/이유」 절 발췌·되돌아볼 날), 일지 요약, 기간 안 가장 최근 주간 회고(이번 주·눈에 띄는 것·되돌아볼 질문·다음 주 체크박스 상태), 로그 위젯의 `widget_history` 실행/실패 집계(멈춤 제외), 할 일 현황(`dash_tasks`의 counts), 프로젝트별 건수
+- `web/report.html` (`/report`): A4 인쇄용 한 장. `@page`+`@media print`로 툴바 숨김, 헤더(기간·비서 이름·생성 시각)·숫자 띠·이번 주·결정 카드·질문·다음 주(체크 표시, 읽기 전용)·일지 요약·새 기록 2열·자동화 표·할 일 현황 순. 화면에서는 7/14/30일 선택 + 인쇄 버튼, 390px에서도 1열로 읽힘
+- index.html 상단 내비게이션에 「리포트」 링크 추가(사무실 옆)
+- 테스트 188
 
 - `.github/workflows/tests.yml`: push(main)·PR마다 ubuntu-latest+macOS-latest에서 `python -m unittest discover -s tests -q` 실행. Python 3.9~3.13 매트릭스, macOS는 비용 절감 위해 3.12·3.13만
 - `scripts/brain.py`에 `from __future__ import annotations` 추가(3.9 방어용). `agenda.py`/`mailer.py`는 이미 있었고 `str | None` 같은 PEP 604 어노테이션도 그 덕에 3.9에서 안전함을 확인

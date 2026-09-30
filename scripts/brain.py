@@ -1441,6 +1441,82 @@ def dash_timeline(vault, days=30, today=None):
     return out
 
 
+def dash_report(vault, days=7, today=None, widgets=None):
+    """/api/report. 인쇄용 주간 리포트 재료: 숫자 띠·이번 주(회고)·결정·일지·새 기록·자동화·할 일·프로젝트."""
+    today = today or date.today()
+    since = (today - timedelta(days=max(days, 1) - 1)).isoformat()
+    until = today.isoformat()
+    if widgets is None:
+        widgets = collect_widgets()
+    notes = load_notes(vault)
+    in_window = [n for n in notes if since <= n.created <= until]
+
+    counts = {"notes": 0, "decisions": 0, "journals": 0, "events": 0}
+    type_key = {"decision": "decisions", "journal": "journals", "event": "events"}
+    for n in in_window:
+        counts[type_key.get(n.type, "notes")] += 1
+
+    new_notes = sorted((n for n in in_window if n.type not in ("journal", "event")),
+                       key=lambda n: (n.created, n.rel), reverse=True)[:30]
+    new_notes = [{"path": n.rel, "title": n.title, "type": n.type, "created": n.created,
+                 "summary": str(n.meta.get("summary") or "")[:200]} for n in new_notes]
+
+    dec_notes = sorted((n for n in in_window if n.type == "decision"),
+                       key=lambda n: (n.created, n.rel), reverse=True)
+    decisions = [{"path": n.rel, "title": n.title, "status": _decision_status(n), "created": n.created,
+                 "decision": _section(n, "결정", 200), "why": _section(n, "이유", 200),
+                 "revisit": str(n.meta.get("revisit") or "") or None} for n in dec_notes]
+
+    journals = []
+    for n in sorted((n for n in in_window if n.type == "journal" and not n.stem.endswith("-weekly")),
+                    key=lambda n: n.created):
+        lines = [l[2:].strip() for l in note_sections(n.body).get("오늘", "").split("\n") if l.startswith("- ")]
+        journals.append({"date": n.created, "lines": lines, "summary": str(n.meta.get("summary") or "")[:200]})
+
+    weekly = [n for n in in_window if n.type == "journal" and n.stem.endswith("-weekly")]
+    retro = None
+    if weekly:
+        n = max(weekly, key=lambda x: x.created)
+        sec = note_sections(n.body)
+
+        def cb(name):
+            items = []
+            for ln in sec.get(name, "").split("\n"):
+                m = CHECKBOX_RE.match(ln)
+                if m:
+                    items.append({"text": m.group(4).strip(), "done": m.group(2).lower() == "x"})
+            return items
+
+        week = [l[2:].strip() for l in sec.get("이번 주", "").split("\n") if l.startswith("- ")]
+        patterns = [l[2:].strip() for l in sec.get("눈에 띄는 것", "").split("\n") if l.startswith("- ")]
+        retro = {"path": n.rel, "date": n.created, "week": week, "patterns": patterns,
+                 "questions": cb("되돌아볼 질문"), "next_week": cb("다음 주")}
+
+    automation = []
+    for w in widgets:
+        if w.get("state") == "paused":
+            continue
+        runs, fails = 0, 0
+        if w.get("kind") == "log":
+            h = widget_history(w, days=days, today=today)
+            runs, fails = h.get("total_runs", 0), h.get("total_fails", 0)
+        automation.append({"id": w.get("id"), "title": w.get("title"), "team": w.get("team") or "",
+                           "status": w.get("status"), "runs": runs, "fails": fails})
+
+    tb = dash_tasks(vault, today, widgets, agenda={"today": [], "upcoming": []})
+    tasks = {"done_recent": [t.get("text", "") for t in tb.get("done_recent", [])], "open": tb["counts"]}
+
+    projects = defaultdict(int)
+    for n in in_window:
+        if n.project:
+            projects[n.project] += 1
+    proj_list = sorted(projects.items(), key=lambda kv: (-kv[1], kv[0]))
+
+    return {"since": since, "until": until, "counts": counts, "new_notes": new_notes,
+            "decisions": decisions, "journals": journals, "retro": retro,
+            "automation": automation, "tasks": tasks, "projects": proj_list}
+
+
 def dash_decisions(vault, today=None):
     today = today or date.today()
     out = {s: [] for s in DECISION_STATUSES}
@@ -2692,6 +2768,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._static("core.html")
             if route in ("/office", "/office.html"):
                 return self._static("office.html")
+            if route in ("/report", "/report.html"):
+                return self._static("report.html")
             if route == "/api/office":
                 d = dash_office(collect_widgets(self.server.widget_cache))
                 allow = bool(load_widgets_config().get("allow_run"))
@@ -2726,6 +2804,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._json(200, dash_timeline(vault, _int_param(qs, "days", 30, hi=3650), today))
             if route == "/api/journals":
                 return self._json(200, dash_journals(vault, _int_param(qs, "limit", 14, hi=60)))
+            if route == "/api/report":
+                widgets = collect_widgets(self.server.widget_cache)
+                return self._json(200, dash_report(vault, _int_param(qs, "days", 7, hi=90), today, widgets))
             if route == "/api/decisions":
                 return self._json(200, dash_decisions(vault, today))
             if route == "/api/projects":

@@ -29,7 +29,7 @@ The first "remember this" asks once whether to create the vault at `~/brain/`. T
 | ![Board](web/preview-live-desktop.png) | ![Core](web/preview-core.png) | ![Office](web/preview-office.png) |
 | The assistant's report in sentences, today's timeline, tasks in four columns, this week, knowledge graph, automations, decisions, timeline, projects | A living orb with bands of light, minimal HUD, spoken briefing (Korean TTS), ask by microphone or text | One automation = one employee, rooms per team, typing while running, red lamp on failure, a workshop for Claude's background jobs |
 
-"Show me the dashboard" (or `/second-brain:brain-view`) starts `brain.py serve`, which listens on your machine only. No external services or libraries: three HTML files and one Python script. Without a vault, `python3 scripts/brain.py serve --demo` shows a demo with fabricated data: three events today, four task buckets, a meeting with a prep checklist, a trip with a four-step itinerary and four automations (one failing).
+"Show me the dashboard" (or `/second-brain:brain-view`) starts `brain.py serve`, which listens on your machine only. No external services or libraries: three HTML files and one Python script. `/report` is a printable one-page weekly report. Without a vault, `python3 scripts/brain.py serve --demo` shows a demo with fabricated data: three events today, four task buckets, a meeting with a prep checklist, a trip with a four-step itinerary and four automations (one failing).
 
 ![Demo board](web/preview-demo.png)
 
