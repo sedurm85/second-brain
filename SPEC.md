@@ -563,3 +563,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 보드: 히어로 보고 3문장 이상·내비·`/`검색 포커스·명령 팔레트·`?`도움말·「다가오는 일정」 제안 채택 시 `/api/today` 건수 감소·할 일 추가·노트 메모·개요 타일 5개·사람 카드·390px 무-스크롤. 사무실: 방/KPI/근무표·데스크 상세("이번 주 한 줄")·모바일 바텀시트화. 코어: 음성 질문 3종(오늘·회사 현황·제안 채택)·설정 다이얼로그. 리포트: `<h2>` 5개 이상·인쇄 스타일. 총 16건
 - CI에는 playwright가 없으므로 모듈 최상단에서 `@unittest.skipUnless(HAS_PLAYWRIGHT, …)`로 통째로 skip — `python3 -m unittest discover -s tests -q`가 로컬(16건 실행)·CI(16건 skip) 모두 초록불. 로컬에서 skip 경로만 확인하려면 `SECOND_BRAIN_E2E_DISABLE=1`
 - 안내 문서 `docs/testing.md` 추가(설치·실행법·범위·skip 동작). 실제 브라우저로 돌려본 결과 `web/*.html`에서 새로 발견된 버그는 없었음(선택자 오류 3건은 테스트 코드 쪽 수정으로 해결)
+## v0.31 보드 자동화 한 줄 요약
+
+- 보드(`web/index.html`) 「자동화」의 각 위젯 행에 「한 줄」 버튼을 추가했다(실패·오래됨 상태는 「왜 실패했어?」로 문구가 바뀐다). 기존 `w-acts`(지금 실행/멈춤) 옆에 나란히 두고 `POST /api/widget {action:"brief", id, force}`를 호출해 사무실(`office.html`의 `renderBrief`)과 같은 필드(`did`/`issue`/`mood`/`runs_7d`/`fails_7d`/`date`/`cached`)를 그대로 재사용해 렌더링한다. 백엔드 엔드포인트는 기존 것을 그대로 쓰고 새로 만들지 않았다
+- 결과는 행 안 `aria-live="polite"` 영역에 인라인으로 뜬다: 한 일(잉크색), 문제(「문제 없음」이 아니면 `--st-crit`), 기분(무채색), 캐시면 "(캐시)"와 「다시」(강제 재조회) 버튼까지. 세션 중 재렌더(60초 자동 갱신)에도 사라지지 않도록 `S.briefs[id]`에 캐시해 두고 행을 다시 그릴 때 그 값을 그대로 넣는다. 로딩 중에는 버튼을 비활성화하고 "읽는 중…"으로 바꿨다가 끝나면 원래 문구로 되돌린다
+- 접근성: 버튼마다 위젯 제목이 들어간 `aria-label`을 붙였고 결과 영역은 `aria-live="polite"`다. 이모지 없이 해요체 유지
+- `node --check`로 `<script>` 문법 확인, `python3 -m unittest tests.test_serve -q` 통과(21건). Playwright로 임시 HOME 데모 서버(`SECOND_BRAIN_ASK_CMD`를 고정 JSON 출력 스텁으로 대체)를 띄워 실패 위젯의 「왜 실패했어?」 클릭 → 인라인에 "테스트"(did)·"문제 없음"(issue) 렌더까지 실제 브라우저로 확인
