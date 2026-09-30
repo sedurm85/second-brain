@@ -496,3 +496,10 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 자동 브리핑은 첫 상호작용(기존 "화면을 한 번 누르면 소리가 켜져요" 게이트) 이후 `S.today`가 준비된 시점에 페이지당 1회만 `briefLines()`를 말하도록 `maybeAutobrief()`로 처리(클릭이 로딩보다 먼저 와도/늦게 와도 정확히 한 번)
 - 명령 도움말: `answer()`의 정규식을 하나씩 대조해 실제로 존재하는 21개 음성 명령(오늘·이번 주·내일·다음 일정·자동화·할 일·할 일 추가·결정·회고·브리핑·메일·준비·일지·회사 현황·누가 일해·기억해·제안 채택·무시·체크·할 일 완료·보드·사무실·이름 변경·남은 할 일 내일로)만 예시 문장과 함께 나열
 - 검증: `node --check`로 `<script>` 문법 확인, `python3 -m unittest tests.test_core -q` 통과(백엔드 무변경). Playwright로 데모 서버(7799)에서 톱니 클릭 → 다이얼로그 노출(`role=dialog`) → 말 속도 슬라이더 조작 시 `localStorage["brain-core-rate"]` 갱신 → Esc로 `aria-hidden=true` 복귀 실측 확인
+## v0.30 볼트 lint
+
+- 새 CLI `brain.py lint [--fix] [--json]`: import·Obsidian 편집·자동화로 볼트가 커지면서 생기는 데이터 품질 문제 17개 코드(frontmatter-missing·type-invalid·type-folder-mismatch·created-invalid·title-missing/duplicate·tags-not-list·link-broken·link-self·orphan-old·event-key-mismatch·event-past-unchecked·journal-date-mismatch·summary-too-long·stem-collision·bom-or-crlf·imported-unenriched)를 점검. `link-broken`은 `relink()`가 쓰는 `_relink_candidates` 해석기를 그대로 재사용해 고칠 수 있는지(`_`→`-`·슬러그화로 유일하게 찾아지는지) 판정한다 — 판정 로직을 중복 구현하지 않음
+- `lint_vault(vault, today=None)`은 순수 조회(`{"issues","counts","notes"}`)이고, `--fix`는 별도의 `fix_lint_issues(vault, issues)`가 fixable(`tags-not-list`·`link-self`·`link-broken`·`journal-date-mismatch`·`bom-or-crlf`)만 노트당 `write_note` 한 번으로 고친다. 파일 삭제는 절대 하지 않으며, 고친 뒤에는 `build_index` + `git_commit`이 따라붙고 다시 점검해 남은 이슈로 종료 코드(0=이슈 없음, 2=남음)를 정한다
+- `doctor_report`에 "볼트 점검" 항목 한 줄 추가(`lint_vault` 크래시가 doctor 전체를 죽이지 않도록 try/except로 감쌈), fix 안내는 `` `brain.py lint --fix` ``
+- `skills/brain-doctor/SKILL.md`에 "볼트 점검 ✗ → lint --json으로 코드 보여주고, fixable만 승인 후 --fix" 단계 추가
+- 신규 테스트 `tests/test_lint.py` 8건(코드별 검출·개수, report-only 항목은 fixable=False, --fix가 고칠 것만 고치고 재점검하면 이슈가 줄어듦, 파일 미삭제, CLI 종료 코드·`--json`, 깨끗한 볼트는 이슈 0, doctor 연동). 전체 스위트 441 통과(기존 433 + 신규 8)

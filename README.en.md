@@ -72,6 +72,7 @@ python3 scripts/brain.py agents install                # launchd: 07:00 brief, 1
 python3 scripts/brain.py agents install prepare retro  # optional: 06:40 prep suggestions, Monday 09:00 retro
 python3 scripts/brain.py agents install serve          # keep the dashboard always running at login (macOS, restarts on crash via KeepAlive)
 python3 scripts/brain.py doctor                        # health check: vault, Claude CLI, calendar, Kakao, widgets, agents, dashboard
+python3 scripts/brain.py lint [--fix]                  # vault data-quality check (broken links, duplicates, type mismatches...); --fix applies only the safe, automatic fixes
 python3 scripts/brain.py config init-widgets           # example widgets.json
 python3 scripts/brain.py widget add "Hiring Scout" ~/.local/k-skill-cron/scout.log --team hiring --ok "done|OK" --fail "fail|Error"
 python3 scripts/brain.py widget list [--team NAME]     # add · move · rename · remove · pause · resume · run · brief · show too (works without allow_hire/allow_run)

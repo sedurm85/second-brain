@@ -1423,6 +1423,230 @@ def relink(vault, dry_run=False):
 
 
 # ---------------------------------------------------------------------------
+# lint — 볼트 데이터 품질 점검
+# ---------------------------------------------------------------------------
+
+LINT_SUMMARY_MAX = 400
+LINT_ORPHAN_DAYS = 90
+
+
+def _strip_self_links(body, stem, title):
+    """본문에서 자기 자신을 가리키는 [[위키링크]]만 없애고(별칭/대상 텍스트는 남김)."""
+    def sub(m):
+        inner = m.group(1)
+        cut = min([i for i in (inner.find("|"), inner.find("#")) if i >= 0] or [len(inner)])
+        target = link_target(inner[:cut])
+        if target != stem and target != title:
+            return m.group(0)
+        rest = inner[cut:]
+        if rest.startswith("|"):
+            alias = rest[1:].split("#", 1)[0].strip()
+            return alias or target
+        return target
+    return WIKILINK_RE.sub(sub, body)
+
+
+def _drop_self_meta_links(meta, stem, title):
+    """프론트매터 links/supersedes/people에서 자기 자신을 가리키는 항목을 뺀다. 바뀌면 True."""
+    changed = False
+    for key in ("links", "supersedes", "people"):
+        vals = as_list(meta.get(key))
+        if not vals:
+            continue
+        keep = [v for v in vals if link_target(v) not in (stem, title)]
+        if len(keep) != len(vals):
+            meta[key] = keep
+            changed = True
+    return changed
+
+
+def lint_vault(vault, today=None):
+    """볼트 데이터 품질 점검. 끊어진 [[링크]]는 relink()와 같은 해석기(_relink_candidates)를 재사용한다.
+
+    반환: {"issues": [{"code","path","message","fixable","detail"?}], "counts": {code: n}, "notes": N}.
+    파일은 절대 지우지 않는다 — fixable 항목만 write_note()로 고칠 수 있다.
+    """
+    today = today or date.today()
+    today_s = today.isoformat()
+    notes = load_notes(vault)
+    stems = {n.stem for n in notes}
+    titles = {n.title for n in notes}
+    by_stem, adj = link_graph(notes)
+    taken = existing_stems(vault)
+    issues = []
+
+    def add(code, path, message, fixable=False, detail=None):
+        item = {"code": code, "path": path, "message": message, "fixable": bool(fixable)}
+        if detail is not None:
+            item["detail"] = detail
+        issues.append(item)
+
+    stem_files = defaultdict(list)
+    for n in notes:
+        stem_files[n.stem].append(n.rel)
+    for stem, paths in stem_files.items():
+        if len(paths) > 1:
+            for p in paths:
+                others = ", ".join(x for x in paths if x != p)
+                add("stem-collision", p, f"같은 stem '{stem}'을 쓰는 다른 노트: {others}")
+
+    title_groups = defaultdict(list)
+    for n in notes:
+        title_groups[n.title].append(n.rel)
+    for title, paths in title_groups.items():
+        if len(paths) > 1:
+            for p in paths:
+                others = ", ".join(x for x in paths if x != p)
+                add("title-duplicate", p, f"제목 '{title}' 중복: {others}")
+
+    for n in notes:
+        if not str(n.meta.get("title") or "").strip():
+            add("title-missing", n.rel, "title이 비어 있음")
+        if not n.meta:
+            add("frontmatter-missing", n.rel, "프론트매터 블록이 없음")
+
+        if n.type not in ALL_TYPES:
+            add("type-invalid", n.rel, f"알 수 없는 타입: {n.type}")
+
+        raw_created = str(n.meta.get("created") or "")[:10]
+        created_ok = bool(DATE_RE.match(raw_created))
+        if not created_ok:
+            add("created-invalid", n.rel, f"created 형식이 잘못됨: {n.meta.get('created')!r}")
+
+        if n.type in ALL_TYPES and created_ok:
+            expected = target_path(vault, n.type, n.title, raw_created, taken=taken)
+            if expected.parent != n.path.parent:
+                add("type-folder-mismatch", n.rel,
+                    f"타입 '{n.type}'의 예상 폴더는 {expected.parent.relative_to(vault).as_posix()}인데 "
+                    f"{n.path.parent.relative_to(vault).as_posix()}에 있음")
+
+        tags_raw = n.meta.get("tags")
+        if isinstance(tags_raw, str) and tags_raw.strip():
+            add("tags-not-list", n.rel, f"tags가 리스트가 아님: {tags_raw!r}", fixable=True)
+
+        summary = n.meta.get("summary")
+        if summary and len(str(summary)) > LINT_SUMMARY_MAX:
+            add("summary-too-long", n.rel, f"summary {len(str(summary))}자 (> {LINT_SUMMARY_MAX})")
+
+        if n.meta.get("imported_from") and not summary:
+            add("imported-unenriched", n.rel, "가져온 노트인데 요약이 없음 — `enrich`로 정제하세요", detail="enrich")
+
+        self_hit = False
+        for m in WIKILINK_RE.finditer(n.body):
+            inner = m.group(1)
+            cut = min([i for i in (inner.find("|"), inner.find("#")) if i >= 0] or [len(inner)])
+            target = link_target(inner[:cut])
+            if target == n.stem or target == n.title:
+                self_hit = True
+        for key in ("links", "supersedes", "people"):
+            for v in as_list(n.meta.get(key)):
+                target = link_target(v)
+                if target == n.stem or target == n.title:
+                    self_hit = True
+        if self_hit:
+            add("link-self", n.rel, "노트가 자기 자신을 링크함", fixable=True)
+
+        link_targets = [link_target(t) for t in WIKILINK_RE.findall(n.body)]
+        for key in ("links", "supersedes"):
+            link_targets += [link_target(v) for v in as_list(n.meta.get(key))]
+        seen_keys = set()
+        for t in link_targets:
+            key = _link_key(t)
+            if not key or key in stems or key in titles or key in seen_keys:
+                continue
+            seen_keys.add(key)
+            hit = next((c for c in _relink_candidates(key) if c in stems), None)
+            if hit:
+                add("link-broken", n.rel, f"[[{key}]] 대상 없음 (relink 후보: {hit})",
+                    fixable=True, detail={"key": key, "to": hit})
+            else:
+                add("link-broken", n.rel, f"[[{key}]] 대상 없음")
+
+        if created_ok and not adj.get(n.stem):
+            age = (today - datetime.strptime(raw_created, "%Y-%m-%d").date()).days
+            if age > LINT_ORPHAN_DAYS:
+                add("orphan-old", n.rel, f"연결된 링크 없음 · {age}일 전 생성")
+
+        if n.type == "event":
+            ek = str(n.meta.get("event_key") or "")
+            ed = str(n.meta.get("event_date") or n.created)[:10]
+            if "|" in ek:
+                key_date = ek.split("|", 1)[0][:10]
+                if key_date != ed:
+                    add("event-key-mismatch", n.rel, f"event_key 날짜({key_date}) != event_date({ed})")
+            if DATE_RE.match(ed) and ed < today_s:
+                unchecked = [it for it in _checklist(n.body) if not it["done"]]
+                if unchecked:
+                    add("event-past-unchecked", n.rel, f"지난 일정인데 체크 안 된 항목 {len(unchecked)}개")
+
+        if n.type == "journal":
+            fm = re.match(r"^(\d{4}-\d{2}-\d{2})", n.path.name)
+            if fm:
+                fname_date = fm.group(1)
+                jd = str(n.meta.get("journal_date") or "")[:10]
+                if jd != fname_date:
+                    add("journal-date-mismatch", n.rel,
+                        f"journal_date({jd or '없음'}) != 파일명 날짜({fname_date})",
+                        fixable=True, detail=fname_date)
+
+        try:
+            raw = n.path.read_bytes()
+        except OSError:
+            raw = b""
+        if raw[:3] == b"\xef\xbb\xbf" or b"\r\n" in raw:
+            add("bom-or-crlf", n.rel, "BOM 또는 CRLF 줄바꿈 포함", fixable=True)
+
+    counts = dict(Counter(i["code"] for i in issues))
+    return {"issues": issues, "counts": counts, "notes": len(notes)}
+
+
+def fix_lint_issues(vault, issues):
+    """lint_vault()가 찾은 fixable 이슈만 고친다. 노트마다 write_note() 한 번만 호출.
+
+    반환: [{"path", "codes": [...]}] — 실제로 고쳐 쓴 노트 목록.
+    """
+    by_path = defaultdict(list)
+    for issue in issues:
+        if issue.get("fixable"):
+            by_path[issue["path"]].append(issue)
+    fixed = []
+    for rel, group in by_path.items():
+        path = vault / rel
+        if not path.is_file():
+            continue
+        n = Note(vault, path)
+        meta = dict(n.meta)
+        body = n.body
+        codes = []
+        for issue in group:
+            code = issue["code"]
+            if code == "tags-not-list":
+                meta["tags"] = as_list(meta.get("tags"))
+            elif code == "link-self":
+                body = _strip_self_links(body, n.stem, n.title)
+                _drop_self_meta_links(meta, n.stem, n.title)
+            elif code == "link-broken":
+                d = issue.get("detail") or {}
+                key, to = d.get("key"), d.get("to")
+                if not (key and to):
+                    continue
+                mapping = {key: to}
+                body = rewrite_wikilinks(body, mapping)
+                rewrite_meta_links(meta, mapping)
+            elif code == "journal-date-mismatch":
+                meta["journal_date"] = issue.get("detail")
+            elif code == "bom-or-crlf":
+                pass  # 파싱 단계에서 이미 BOM/CRLF가 빠졌으니 다시 쓰기만 하면 정규화됨
+            else:
+                continue
+            codes.append(code)
+        if codes:
+            write_note(path, meta, body)
+            fixed.append({"path": rel, "codes": codes})
+    return fixed
+
+
+# ---------------------------------------------------------------------------
 # init · git
 # ---------------------------------------------------------------------------
 
@@ -3621,6 +3845,39 @@ def cmd_relink(args):
         out.append(f"- ... 외 {len(r['changed']) - 30}개")
     emit(args, r, "\n".join(out))
     return EXIT_OK
+
+
+def cmd_lint(args):
+    v = require_vault()
+    report = lint_vault(v)
+    fixed_lines = []
+    if args.fix:
+        fixed = fix_lint_issues(v, report["issues"])
+        for f in fixed:
+            fixed_lines.append(f"- 고침 {f['path']}: " + ", ".join(f["codes"]))
+        if fixed:
+            build_index(v)
+            git_commit(v, f"brain: lint fix {len(fixed)}")
+        report = lint_vault(v)  # 고친 뒤 재점검(남은 이슈·종료 코드 기준)
+
+    lines = []
+    if fixed_lines:
+        lines.append(f"고침 {len(fixed_lines)}개:")
+        lines += fixed_lines
+        lines.append("")
+    if report["issues"]:
+        lines.append(f"검사한 노트 {report['notes']}개 · 남은 이슈 {len(report['issues'])}개")
+        for code, n in sorted(report["counts"].items(), key=lambda x: (-x[1], x[0])):
+            lines.append(f"- {code}: {n}개")
+            for e in [i for i in report["issues"] if i["code"] == code][:5]:
+                lines.append(f"    {e['path']}: {e['message']}")
+        if any(i["fixable"] for i in report["issues"]):
+            lines.append("")
+            lines.append("고칠 수 있는 항목은 `brain.py lint --fix`로 적용하세요.")
+    else:
+        lines.append(f"검사한 노트 {report['notes']}개 · 이슈 없음")
+    emit(args, report, "\n".join(lines))
+    return EXIT_OK if not report["issues"] else EXIT_INPUT
 
 
 def _coerce(value):
@@ -6310,6 +6567,12 @@ def doctor_report(today=None):
             imported = [n for n in notes if n.meta.get("imported_from") and not n.meta.get("summary")]
             if imported:
                 add("정제 대기", False, f"가져온 노트 {len(imported)}개에 요약이 없음", "`brain.py enrich`")
+            try:
+                li = lint_vault(v)
+                add("볼트 점검", not li["issues"], f"이슈 {len(li['issues'])}개" if li["issues"] else "이슈 없음",
+                    None if not li["issues"] else "`brain.py lint --fix`")
+            except Exception as e:  # lint가 죽어도 doctor 전체는 죽지 않아야 함
+                log(f"경고: 볼트 점검 실패: {e}")
     except BrainError as e:
         add("볼트", False, str(e), "brain-setup")
     py = sys.version_info
@@ -6662,6 +6925,9 @@ def build_parser():
 
     s = add("relink", "끊어진 [[링크]] 복구(`_`→`-`·메모리 타입 접두어 제거로 찾기)", cmd_relink)
     s.add_argument("--dry-run", action="store_true", help="쓰지 않고 변경 대상만 출력")
+
+    s = add("lint", "볼트 데이터 품질 점검(프론트매터·타입·링크·중복 등). --fix로 안전한 항목만 고침", cmd_lint)
+    s.add_argument("--fix", action="store_true", help="고칠 수 있는 이슈만 자동으로 고치고 커밋")
 
     s = add("config", "설정 조회/변경", cmd_config)
     s.add_argument("action", choices=("get", "set", "init-widgets"),
