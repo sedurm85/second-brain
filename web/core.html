@@ -296,9 +296,21 @@ button { cursor: pointer; }
         .then(function (j) { load(); speak([j.moved ? "남은 할 일 " + j.moved + "개를 내일로 옮겼어요. 오늘은 여기까지." : "옮길 할 일이 없어요. 오늘 다 하셨네요."]); })
         .catch(function (err) { speak(["옮기지 못했어요. " + (err.message || "")]); });
     }
+    if (/일지|오늘\s*기록|오늘\s*뭐\s*했/.test(q) && !/추가|등록|넣어/.test(q)) return readJournal(t.date);
     if (/준비|미팅|회의|면접/.test(q) && !/추가|등록|넣어/.test(q)) {
-      var evs = ((t.agenda && t.agenda.today) || []).concat((t.agenda && t.agenda.upcoming) || []).filter(function (e) { return e.prep; });
-      if (evs.length) { var e0 = evs[0]; return speak([dLeftKo(e0.days_left) + " " + e0.title + (e0.related && e0.related.length ? ". 관련 기록은 " + e0.related.map(function (r) { return r.title; }).join(", ") + "이에요." : ".") + (e0.note && e0.note.total ? " 준비 " + e0.note.done + "/" + e0.note.total + "." : "")]); }
+      // 질문에 든 낱말과 제목이 겹치는 일정을 우선(없으면 준비 대상 첫 일정). "뭘/무엇/어떻게/왜"가 든 진짜 질문은 Claude에게 넘긴다
+      var all = ((t.agenda && t.agenda.today) || []).concat((t.agenda && t.agenda.upcoming) || []);
+      var words = q.replace(/[?？!.,]/g, " ").split(/\s+/).filter(function (w) { return w.length >= 2 && !/준비|미팅|회의|면접|일정|뭐|무엇|어떻게|어떤|뭘|해야|있어|알려|줘/.test(w); });
+      var hit = all.filter(function (e) { return words.some(function (w) { return e.title.indexOf(w.replace(/(은|는|이|가|을|를|에|의|로|도)$/, "")) >= 0; }); });
+      var isQuestion = /뭘|무엇|어떻게|어떤|왜|해야|필요/.test(q);
+      var evs = hit.length ? hit : (isQuestion ? [] : all.filter(function (e) { return e.prep; }));
+      if (evs.length) {
+        var e0 = evs[0], sg = (t.suggestions && t.suggestions.by_key && t.suggestions.by_key[e0.key]) || null;
+        var lines = [dLeftKo(e0.days_left) + " " + e0.title + (e0.related && e0.related.length ? ". 관련 기록은 " + e0.related.map(function (r) { return r.title; }).join(", ") + "이에요." : ".") + (e0.note && e0.note.total ? " 준비 " + e0.note.done + "/" + e0.note.total + "." : "")];
+        if (e0.note && e0.note.checklist && e0.note.checklist.length) lines.push("준비 목록은 " + e0.note.checklist.filter(function (c) { return !c.done; }).map(function (c) { return c.text; }).slice(0, 4).join(", ") + (e0.note.checklist.length > 4 ? " 등" : "") + ".");
+        if (sg && sg.items && sg.items.length) lines.push("제안해 둔 준비 항목 " + sg.items.length + "개가 보드에서 채택을 기다려요. " + sg.items.filter(function (i) { return i.kind === "prep"; }).slice(0, 3).map(function (i) { return i.text; }).join(", ") + ".");
+        return speak(lines);
+      }
     }
     if (/^(안녕|하이|헬로|있어\?|거기)/.test(q)) return speak(["네, 여기 있어요."]);
     if (/내일/.test(q) && !/추가|등록|넣어|옮겨|넘겨/.test(q)) { var tm = ((ag.upcoming) || (t.agenda && t.agenda.upcoming) || []).filter(function (e) { return e.days_left === 1; }); return speak([tm.length ? "내일은 " + tm.map(function (e) { return (e.all_day ? "종일 " : hm(e.start) + " ") + e.title; }).join(", ") + (tm.length > 1 ? " 이에요." : "이에요.") : "내일은 잡힌 일정이 없어요."]); }
@@ -342,6 +354,19 @@ button { cursor: pointer; }
       .catch(function (err) { $("hint").textContent = "기록 실패: " + (err.message || err); });
   }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function readJournal(dateIso) {
+    var d = dateIso || new Date().toISOString().slice(0, 10);
+    return fetch("/api/note?path=" + encodeURIComponent("journal/" + d.slice(0, 4) + "/" + d + ".md"))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (n) {
+        if (!n || !n.body) return speak(["오늘 일지는 아직 없어요. 저녁 9시 반에 제가 써 둘게요."]);
+        var sec = String(n.body).split(/\n## /), today = sec.filter(function (x) { return x.indexOf("오늘") === 0; })[0] || "";
+        var lines = today.split("\n").filter(function (l) { return l.indexOf("- ") === 0; }).map(function (l) { return l.slice(2); });
+        var win = (sec.filter(function (x) { return x.indexOf("잘한 것") === 0; })[0] || "").split("\n").filter(function (l) { return l.indexOf("- ") === 0; }).map(function (l) { return l.slice(2); })[0];
+        return speak(["오늘 일지예요."].concat(lines.slice(0, 5)).concat(win ? ["잘한 것은, " + win] : []));
+      })
+      .catch(function () { speak(["일지를 읽지 못했어요."]); });
+  }
   function dLeftKo(n) { return n === 0 ? "오늘" : n === 1 ? "내일" : n == null ? "" : n + "일 뒤"; }
   function nextLine(ag) { var nx = ag && ag.next; return nx ? ["다음 일정은 " + hm(nx.start) + " " + nx.title + (nx.location ? ", " + nx.location : "") + "이에요."] : []; }
 
