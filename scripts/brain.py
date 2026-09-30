@@ -30,7 +30,7 @@ EXIT_OK = 0
 EXIT_INPUT = 2
 EXIT_NO_VAULT = 3
 
-NOTE_TYPES = ("note", "idea", "source", "meeting", "event")
+NOTE_TYPES = ("note", "idea", "source", "meeting", "event", "journal")
 ALL_TYPES = NOTE_TYPES + ("decision", "project", "person")
 DECISION_STATUSES = ("open", "decided", "superseded")
 SKIP_FILES = {"BRAIN.md", "inbox.md"}
@@ -526,6 +526,8 @@ def target_path(vault, ntype, title, created, taken=None):
     y, m = created[:4], created[5:7]
     if ntype == "event":
         return vault / "events" / y / f"{created[:10]}-{stem}.md"
+    if ntype == "journal":  # 하루 한 장: 날짜가 파일명
+        return vault / "journal" / y / f"{created[:10]}.md"
     return vault / "notes" / y / m / f"{stem}.md"
 
 
@@ -546,6 +548,8 @@ def default_body(ntype, title):
         return f"# {title}\n\n## 맥락\n"
     if ntype == "event":
         return f"# {title}\n\n## 준비\n\n## 동선\n\n## 메모\n"
+    if ntype == "journal":
+        return f"# {title}\n\n## 오늘\n\n## 잘한 것\n\n## 내일 첫 일\n"
     return f"# {title}\n"
 
 
@@ -3689,6 +3693,14 @@ def cmd_brief(args):
         tomorrow = [e for e in ag.get("upcoming") or [] if e.get("days_left") == 1]
         t["kakao"] = evening_brief(t, tomorrow)
         t["evening"] = True
+        if getattr(args, "journal", False) and v:
+            try:
+                j = make_journal(v, date.today(), force=True)
+                if not j["empty"]:
+                    t["journal"] = {"path": j["path"], "kakao": j["kakao"]}
+                    t["kakao"] = _clip(t["kakao"] + (" / 일지: " + j["kakao"] if j.get("kakao") else ""), KAKAO_MAX)
+            except BrainError as e:
+                log(f"일지 건너뜀: {e}")
     if args.kakao:
         helper = kakao_helper_path()
         if not helper:
@@ -3708,7 +3720,7 @@ def cmd_brief(args):
 AGENT_SPECS = {
     "brief": {"label": "com.secondbrain.brief", "args": ["brief", "--kakao"], "calendar": {"Hour": 7, "Minute": 0}, "title": "아침 브리핑 카톡 (매일 7시)"},
     "remind": {"label": "com.secondbrain.remind", "args": ["remind", "--kakao"], "interval": 600, "title": "출발·시작 알림 (10분마다)"},
-    "evening": {"label": "com.secondbrain.evening", "args": ["brief", "--evening", "--kakao"], "calendar": {"Hour": 21, "Minute": 30}, "title": "저녁 마감 카톡 (매일 21:30)"},
+    "evening": {"label": "com.secondbrain.evening", "args": ["brief", "--evening", "--journal", "--kakao"], "calendar": {"Hour": 21, "Minute": 30}, "title": "저녁 마감 카톡 + 하루 일지 (매일 21:30)"},
     "backup": {"label": "com.secondbrain.backup", "args": ["backup"], "calendar": {"Hour": 23, "Minute": 0}, "title": "볼트 백업 (매일 23시)"},
     "prepare": {"label": "com.secondbrain.prepare", "args": ["prepare"], "calendar": {"Hour": 6, "Minute": 40}, "title": "일정 준비 제안 (매일 6:40)"},
 }
@@ -3875,6 +3887,116 @@ def _run_claude_json(prompt, timeout=240):
         except ValueError:
             continue
     raise BrainError(f"Claude 응답이 JSON이 아니에요: {out[:160]}")
+
+
+def journal_material(vault, today, widgets=None, agenda=None):
+    """오늘 하루의 재료를 한 덩어리로. 비어 있으면 일지를 쓰지 않는다."""
+    day = today.isoformat()
+    notes = load_notes(vault) if vault else []
+    new_notes = [{"type": n.type, "title": n.title, "summary": str(n.meta.get("summary") or "")[:160]}
+                 for n in notes if n.created == day and n.type not in ("journal", "event")][:12]
+    memos = []
+    for n in notes:
+        if n.type != "event":
+            continue
+        for ln in n.body.split("\n"):
+            m = re.match(r"^- (\d{4}-\d{2}-\d{2}) \d{2}:\d{2}\s+(.+)$", ln.strip())
+            if m and m.group(1) == day:
+                memos.append(f"{n.title}: {m.group(2)[:120]}")
+    ag = dict(agenda if agenda is not None else collect_agenda_safe(1, now=datetime.combine(today, datetime.min.time()).astimezone()))
+    events = [(("종일 " if e.get("all_day") else e["start"][11:16] + " ") + e["title"]) for e in (ag.get("today") or [])][:8]
+    tb = dash_tasks(vault, today, widgets or [], ag) if vault else {"done_recent": [], "today": []}
+    is_today = today == date.today()
+    done = [x["text"] for x in tb.get("done_recent") or []][-6:] if is_today else []  # 완료 시각이 없어 오늘 일지에만 넣는다
+    own_open = lambda b: [x["text"] for x in tb.get(b) or [] if x.get("kind") == "task" and not x.get("done")]
+    left = (own_open("today") or own_open("week") or own_open("someday"))[:5]  # 내일 첫 일 후보: 오늘 남은 것 → 이번 주 → 언젠가
+    bad = [f"{w['title']}: {w.get('summary') or w['status']}" for w in (widgets or []) if w.get("state") != "paused" and w.get("status") in ("fail", "stale")][:4]
+    jobs = []
+    for j in claude_jobs() if is_today else []:
+        if j.get("title") or j.get("detail"):
+            jobs.append((j.get("title") or "") + (" — " + j["detail"][:80] if j.get("detail") else ""))
+    mat = {"date": day, "weekday": WEEKDAYS_KO[today.weekday()] if "WEEKDAYS_KO" in globals() else "", "new_notes": new_notes, "event_memos": memos[:8],
+           "events": events, "tasks_done": done, "tasks_left": left, "automation_issues": bad, "claude_jobs": jobs[:6]}
+    mat["empty"] = not (new_notes or memos or events or done or jobs)
+    return mat
+
+
+def journal_prompt(mat):
+    return ("너는 사용자의 하루를 대신 기록하는 비서다. 아래 [재료]만 근거로 오늘 일지를 JSON 객체 하나로 답한다(설명·마크다운 금지). 형식:\n"
+            '{"today": ["오늘 한 일" 3~5문장, 각 60자 이내, 과거형 평서문, 재료에 있는 사실만], '
+            '"win": "오늘 잘한 것 한 줄(40자 이내, 없으면 빈 문자열)", '
+            '"tomorrow": "내일 첫 일로 삼을 것 한 줄(40자 이내, tasks_left·events를 우선)", '
+            '"kakao": "카톡용 한 줄 요약 70자 이내"}\n'
+            "규칙: 재료에 없는 일을 만들지 마라. 자기 칭찬·감탄사·이모지 없이 담담하게. 사용자를 '나'로 쓴다(1인칭 일지).\n\n[재료]\n"
+            + json.dumps(mat, ensure_ascii=False))
+
+
+def write_journal(vault, today, raw, mat, force=False):
+    """일지 노트 생성/갱신. 반환 (path, created)."""
+    day = today.isoformat()
+    lines = [" ".join(str(x).split()) for x in (raw.get("today") or []) if str(x).strip()][:5]
+    if not lines:
+        raise BrainError("일지 본문이 비었어요")
+    win = " ".join(str(raw.get("win") or "").split())[:80]
+    tomorrow = " ".join(str(raw.get("tomorrow") or "").split())[:80]
+    kakao = " ".join(str(raw.get("kakao") or "").split())[:100] or lines[0][:70]
+    title = f"{day} 일지"
+    body = f"# {title}\n\n## 오늘\n" + "".join(f"- {l}\n" for l in lines) + "\n## 잘한 것\n" + (f"- {win}\n" if win else "") + "\n## 내일 첫 일\n" + (f"- {tomorrow}\n" if tomorrow else "")
+    if mat.get("events"):
+        body += "\n## 일정\n" + "".join(f"- {e}\n" for e in mat["events"])
+    if mat.get("automation_issues"):
+        body += "\n## 자동화\n" + "".join(f"- {b}\n" for b in mat["automation_issues"])
+    existing = [n for n in load_notes(vault) if n.type == "journal" and str(n.meta.get("journal_date") or n.created) == day]
+    if existing:
+        if not force:
+            raise BrainError(f"오늘 일지가 이미 있어요: {existing[0].rel} (--force로 다시)")
+        n = existing[0]
+        meta = dict(n.meta, summary=kakao)
+        write_note(n.path, meta, body)
+        git_commit(vault, f"brain: journal {day} (rewrite)")
+        return n.path, False
+    path = create_note(vault, "journal", title, tags=["일지"], body=body, created=day, extra={"journal_date": day, "summary": kakao})
+    git_commit(vault, f"brain: journal {day}")
+    return path, True
+
+
+def make_journal(vault, today, widgets=None, agenda=None, force=False):
+    """재료 → Claude → 노트. 반환 dict(path, created, kakao, material) 또는 empty=True."""
+    mat = journal_material(vault, today, widgets, agenda)
+    if mat["empty"]:
+        return {"empty": True, "material": mat}
+    raw = _run_claude_json(journal_prompt(mat))
+    if isinstance(raw, list):
+        raw = raw[0] if raw and isinstance(raw[0], dict) else {}
+    if not isinstance(raw, dict):
+        raise BrainError("일지 응답이 객체가 아니에요")
+    path, created = write_journal(vault, today, raw, mat, force=force)
+    kakao = " ".join(str(raw.get("kakao") or "").split())[:100]
+    return {"empty": False, "path": str(path.relative_to(Path(vault))), "created": created, "kakao": kakao, "material": mat, "lines": raw.get("today")}
+
+
+def cmd_journal(args):
+    """오늘(또는 --date) 일지를 Claude가 5줄로 쓴다. --dry-run이면 재료만."""
+    v = require_vault()
+    today = parse_date(args.date, "--date") if args.date else date.today()
+    widgets = collect_widgets()
+    if args.dry_run:
+        mat = journal_material(v, today, widgets)
+        emit(args, mat, "일지 재료 (dry-run)\n" + json.dumps(mat, ensure_ascii=False, indent=1))
+        return EXIT_OK
+    r = make_journal(v, today, widgets, force=args.force)
+    if r["empty"]:
+        emit(args, r, f"{today} 기록이 없어 일지를 쓰지 않았어요 (새 노트·결정·완료한 할 일·일정 메모 중 하나라도 있으면 써요)")
+        return EXIT_OK
+    sent = None
+    if getattr(args, "kakao", False) and r.get("kakao"):
+        helper = kakao_helper_path()
+        if helper:
+            rr = subprocess.run([sys.executable, str(helper), f"[{today.isoformat()[5:]} 일지] {r['kakao']}"], capture_output=True, text=True, timeout=60)
+            sent = rr.returncode == 0
+    r["sent"] = sent
+    emit(args, r, f"일지 {'작성' if r['created'] else '갱신'}: {r['path']}\n" + "\n".join(f"- {l}" for l in (r.get("lines") or [])) + (f"\n\n카톡: {r['kakao']}" if r.get("kakao") else "") + ("\n카톡 발송 완료" if sent else ""))
+    return EXIT_OK
 
 
 SUGGEST_DAYS = 7
@@ -4069,7 +4191,7 @@ def apply_enrichment(vault, note, item, stems, force=False):
         changed.append("summary")
     tags = [str(t).strip().lstrip("#") for t in (item.get("tags") or []) if str(t).strip()]
     if tags:
-        merged = list(dict.fromkeys([t for t in note.tags if t not in ("claude-memory",)] + tags))[:7]
+        merged = [t for t in dict.fromkeys(note.tags + tags) if t != "claude-memory"][:7]  # 가져온 표식 태그는 정제 후 제거
         if merged != note.tags:
             meta["tags"] = merged
             changed.append("tags")
@@ -4358,6 +4480,13 @@ def build_parser():
     s = add("brief", "아침 브리핑(today와 같음). --kakao면 카톡으로 200자 발송", cmd_brief)
     s.add_argument("--kakao", action="store_true", help="카톡 나에게 보내기(헬퍼 필요)")
     s.add_argument("--evening", action="store_true", help="저녁 마감: 남은 할 일·내일 첫 일정")
+    s.add_argument("--journal", action="store_true", help="(--evening과) Claude가 오늘 일지를 먼저 쓰고 한 줄을 붙임")
+
+    s = add("journal", "오늘 일지를 Claude가 5줄로 씀(journal/YYYY/날짜.md). --dry-run은 재료만", cmd_journal)
+    s.add_argument("--date", help="YYYY-MM-DD (기본 오늘)")
+    s.add_argument("--force", action="store_true", help="이미 있으면 다시 씀")
+    s.add_argument("--kakao", action="store_true", help="한 줄 요약을 카톡으로")
+    s.add_argument("--dry-run", action="store_true", help="재료만 보여주고 호출하지 않음")
 
     s = add("task", "할 일: add <내용> [--due D|--tomorrow|--someday|--waiting 누구] · list · done <줄> · move <줄> <today|tomorrow|week|someday|clear|날짜> · remove <줄>", cmd_task)
     s.add_argument("action", choices=("add", "list", "done", "undo", "move", "remove", "carry"))
