@@ -1,10 +1,9 @@
 # 세컨드브레인 (second-brain)
 
-> A Claude Code plugin that turns "remember this" into plain-markdown notes in a local vault.
-> Ask "why did we decide that?" later and it answers with the original decision context, citing [[files]].
-> No accounts, no API keys, no servers — Obsidian-compatible markdown on your own disk.
+> A Claude Code plugin that turns "remember this" into plain-markdown notes in a local vault, then grows into a living assistant: calendar, tasks, itineraries, a speaking "core" screen and a pixel office where your automations work as employees.
+> No accounts, no API keys, no servers. Obsidian-compatible markdown on your own disk, a 127.0.0.1-only dashboard, standard library only.
 
-**Claude와 대화하다 "기억해둬"라고 하면 쌓이고, "그때 왜 그렇게 정했지?"라고 물으면 결정의 이유까지 찾아주는 개인 지식 창고.**
+**Claude와 대화하다 "기억해둬"라고 하면 쌓이고, "그때 왜 그렇게 정했지?"라고 물으면 결정의 이유까지 찾아주는 개인 지식 창고.** 여기에 캘린더·할 일·여행 동선·아침 브리핑·말하는 코어·직원 캐릭터 사무실을 얹어 **살아 움직이는 비서**로 키우고 있습니다.
 
 ## 30초 설치
 
@@ -17,44 +16,44 @@ Claude Code에서 두 줄이면 끝납니다.
 
 첫 "기억해둬" 때 볼트(`~/brain/`)를 만들지 한 번 묻습니다. 필요한 건 Python 3.9+ 하나(macOS·대부분의 Linux 기본 탑재)입니다.
 
+## 화면 셋
 
-## 비서 모드 (v0.3)
+| 보드 `/` | 코어 `/core` | 사무실 `/office` |
+|---|---|---|
+| ![보드](web/preview-live-desktop.png) | ![코어](web/preview-core.png) | ![사무실](web/preview-office.png) |
+| 비서의 보고 문장, 오늘 시간표, 할 일 4열, 이번 주, 지식 그래프, 자동화, 결정·타임라인·프로젝트 | 살아 있는 구체와 빛의 띠, 최소 HUD, 한국어 음성 브리핑, 마이크·입력창으로 묻기 | 자동화 하나가 직원 하나, 팀별 방, 가동 중이면 타이핑, 실패는 붉은 램프, Claude 배경 작업실 |
 
-화면은 셋입니다. `/office`는 **사무실**: 자동화 하나가 직원 하나, 팀별 방, 지금 도는 직원은 타이핑하고 실패한 담당은 붉은 램프, Claude 배경 작업은 「Claude 작업실」에서 지금 하는 일을 말풍선으로. `/core`는 **코어**: 살아 있는 구체와 빛의 띠, 최소 HUD, 브리핑을 음성으로 읽고 마이크나 입력창으로 묻는 비서의 얼굴입니다. `/`는 **보드**: v0.5 화면은 관제실입니다. 깊은 남색 바탕에 유리 패널, 비서의 두세 문장 보고(수치는 시안으로 빛남)와 노드가 발광하는 지식 그래프가 첫 화면이고, 자동화는 「주의 필요 / 정상 / 멈춤」 세 묶음의 행으로 읽습니다.
+"대시보드 보여줘"(또는 `/second-brain:brain-view`) 한 번이면 `brain.py serve`가 내 컴퓨터에서만 서빙합니다. 외부 서비스·라이브러리 없이 HTML 파일 셋과 파이썬 하나입니다. 볼트가 없으면 `python3 scripts/brain.py serve --demo`로 가공 데이터 데모를 볼 수 있습니다.
 
-대시보드 맨 위에 **「오늘」**이 있습니다. 자비스가 하는 세 가지 — 내 상태를 한 화면에, 물으면 답하고, 먼저 알려주기 — 를 볼트와 내 자동화 위에 얹은 것입니다.
+## 비서가 하는 일
 
-- **오늘**: 인사 · 되돌아볼 결정(D-N) · inbox 할 일 · 자동화 상태 요약
-- **자동화 위젯**: `~/.config/second-brain/widgets.json`에 내 크론 로그·상태 JSON·CSV 지표·마크다운 결과·(허용 시) 명령을 등록하면 카드로 뜹니다. 살았는지(ok/fail/stale), 마지막 결과, 추이 스파크라인. 60초 자동 갱신. 끝난 자동화는 `"state": "paused"`로 두면 「멈춤」 묶음에 접혀 들어가 경고를 내지 않습니다
-- **"오늘 뭐 있어?"** / `/second-brain:brain-today`: 되돌아볼 결정 → 죽은 자동화 → 할 일 → 이번 주 신규 순으로 3~6줄 브리핑. 카톡 헬퍼가 있으면 전송 제안
+- **시간**: 구글 캘린더(비공개 ICS 주소 파일) 또는 맥 캘린더 앱(EventKit)을 읽어 오늘 시간표·이번 주·다가오는 일정을 보여주고, 보고 문장에 "오늘 일정 3개: 10:00 주간회의, 15:00 치과 등"처럼 넣습니다. 반복 일정·예외일·옮긴 회차·시간대를 처리하고 15분 캐시로 읽습니다.
+- **일정 노트**: 일정을 누르면 상세 패널에서 메모·준비 체크리스트·동선(`14:00 집 출발 (자가용 50분)`)을 바로 씁니다. 볼트 `events/`에 마크다운으로 남고, 여러 날 여행은 노트 하나가 그 날짜들에 함께 붙습니다. 그날이 되면 시간표에 동선이 겹쳐 보입니다.
+- **할 일**: `inbox.md`의 체크박스가 그대로 할 일입니다. `@due(2026-10-02)`, `@someday`, `@waiting(세무사)`, `@project(건강)` 문법으로 오늘·이번 주·언젠가·기다림 네 묶음이 되고, 결정 되돌아볼 날·자동화 실패·일정 준비 미완은 자동으로 들어옵니다. 저녁에 "남은 할 일 내일로"라고 하면 한 번에 옮깁니다.
+- **먼저 말하기**: 카톡 헬퍼가 있으면 아침 7시 브리핑, 10분마다 출발·시작 알림(동선 10분 전, 일정 30분 전), 21:30 저녁 마감을 보냅니다(launchd 예시는 SPEC.md 참고).
+- **미팅 준비**: 3일 안 일정마다 제목·참석자·장소로 내 기록을 검색해 관련 노트를 붙여 줍니다. 「준비할 일정」 카드에서 바로 열립니다.
+- **말하는 코어**: 코어 화면이 브리핑을 한국어 음성으로 읽고, "이번 주 일정", "자동화 상태", "할 일 추가: 우유 사기 내일", "이름은 자비스로 해" 같은 말을 즉시 처리합니다. 그 밖의 질문은 오늘 상태와 볼트 검색 결과를 붙여 헤드리스 Claude에 물어 두세 문장으로 답합니다.
+- **자동화 감시**: `~/.config/second-brain/widgets.json`에 크론 로그·상태 JSON·CSV 지표·마크다운 결과를 등록하면 보드 카드와 사무실 직원으로 뜹니다. 살았는지(ok/fail/stale), 마지막 결과, 추이. 끝난 자동화는 `"state": "paused"`로 「멈춤」에 접어 둡니다. 첫날 이 기능이 조용히 죽어 있던 크론 3개를 찾아냈습니다.
 
 ```bash
-python3 scripts/brain.py config init-widgets   # 예시 widgets.json 생성
-python3 scripts/brain.py calendar add ics 구글 --url-file ~/.config/second-brain/google.ics.url   # 구글 캘린더 비공개 ICS 주소 파일 등록
-python3 scripts/brain.py agenda                  # 오늘·7일 일정
-python3 scripts/brain.py brief --kakao           # 아침 브리핑 카톡(헬퍼 필요)
-python3 scripts/brain.py event memo "2026-10-03|제주도" "14:00 집 출발"   # 일정에 메모 (대시보드에서도 가능)
-python3 scripts/brain.py event todo "2026-10-03|제주도" "렌터카 예약 확인"   # 준비 항목
-python3 scripts/brain.py today                 # 터미널에서 브리핑
+python3 scripts/brain.py calendar add ics 구글 --url-file ~/.config/second-brain/google.ics.url
+python3 scripts/brain.py agenda                        # 오늘·7일 일정
+python3 scripts/brain.py today                         # 브리핑(사람용 + 카톡용 200자)
+python3 scripts/brain.py brief --kakao                 # 아침 브리핑 카톡
+python3 scripts/brain.py brief --evening --kakao       # 저녁 마감 카톡
+python3 scripts/brain.py remind --kakao                # 곧 시작하는 동선·일정 알림(10분마다 돌리기)
+python3 scripts/brain.py task add "보고서 초안" --due 2026-10-02
+python3 scripts/brain.py task list                     # 오늘 / 이번 주 / 언젠가 / 기다림
+python3 scripts/brain.py task carry                    # 오늘 남은 것 전부 내일로
+python3 scripts/brain.py event todo "2026-10-03|제주도" "렌터카 예약 확인"
+python3 scripts/brain.py event step "2026-10-03|제주도" "14:00 집 출발 (자가용 50분)"
+python3 scripts/brain.py config set assistant_name 자비스
+python3 scripts/brain.py config init-widgets           # 예시 widgets.json
 ```
 
-첫날 이 위젯이 조용히 죽어 있던 크론 3개를 찾아냈습니다. 그게 이 기능의 존재 이유입니다.
+쓰기(메모·체크·할 일·설정)는 대시보드가 서버 시작마다 만드는 세션 토큰이 있어야 하고 127.0.0.1에서만 받습니다. 일정 같은 외부 데이터는 볼트에 복사하지 않고 `~/.cache/second-brain/`에만 잠시 둡니다.
 
-## 대시보드 (v0.2)
-
-말로만 쓰는 게 아니라 **보이게** 만들었습니다. `/second-brain:brain-view` 한 번(또는 "대시보드 보여줘")이면 브라우저에 로컬 대시보드가 뜹니다. 외부 서비스·라이브러리 없이 `brain.py serve`가 내 컴퓨터에서만 서빙합니다.
-
-![대시보드](web/preview-live-desktop.png)
-
-- **지식 그래프**: 기록 하나가 점, `[[링크]]`가 선. 타입별 모양·색(결정 ◆, 프로젝트 ○, 노트 ●, 자료 ■, 아이디어 ▲, 회의 ⬡, 사람 ⬠). 드래그·확대, 클릭하면 노트 패널
-- **결정 보드**: 열림 / 결정됨 / 대체됨. 되돌아볼 날이 7일 이내면 D-N 배지
-- **타임라인**: 최근 30일 기록
-- **프로젝트 카드**: 노트·결정 수, 최근 활동
-- **검색**: 타이핑하면 즉시 결과, 클릭하면 본문·들어오는/나가는 링크
-
-볼트가 없으면 `python3 scripts/brain.py serve --demo`로 가공 데이터 데모를 볼 수 있습니다(포트 7777).
-
-## 이렇게 씁니다 — 5가지 시나리오
+## 이렇게 씁니다: 지식 창고 다섯 장면
 
 **1. 떠오른 아이디어 저장 (brain-capture)**
 ```
@@ -94,7 +93,7 @@ Claude: 신규 노트 6개(아이디어 3 · 자료 2 · 회의 1)
         BRAIN.md 갱신 완료
 ```
 
-그 밖에 `/second-brain:brain-import <경로>`(Obsidian 볼트·Claude Code 메모리 가져오기), `/second-brain:brain-setup`(볼트 위치·git 자동 커밋 설정)이 있습니다.
+그 밖에 `/second-brain:brain-today`(오늘 브리핑), `/second-brain:brain-event`(일정에 메모·준비·동선), `/second-brain:brain-import <경로>`(Obsidian 볼트·Claude Code 메모리 가져오기), `/second-brain:brain-setup`(볼트 위치·git 자동 커밋)이 있습니다.
 
 ## 볼트 구조
 
@@ -102,8 +101,9 @@ Claude: 신규 노트 6개(아이디어 3 · 자료 2 · 회의 1)
 ~/brain/
 ├── BRAIN.md                    자동 인덱스 (최근 · 프로젝트별 · 미해결 결정)
 │                               → 세션 시작 시 상단 40줄을 Claude가 읽음
-├── inbox.md                    빠른 캡처 임시함
+├── inbox.md                    빠른 캡처 임시함 = 할 일 (체크박스 + @due/@someday/@waiting)
 ├── notes/YYYY/MM/<slug>.md     note · idea · source · meeting
+├── events/YYYY/<date>-<slug>.md 일정 노트: 준비 체크리스트 · 동선 · 메모 (캘린더 일정에 붙음)
 ├── decisions/<NNN>-<slug>.md   ADR: 상황 · 선택지 · 결정 · 이유 · 되돌아볼 날짜
 ├── projects/<slug>.md          프로젝트 허브 (관련 노트·결정 자동 수집)
 └── people/<slug>.md            사람과 맥락
@@ -118,7 +118,7 @@ Obsidian → **Open folder as vault** → `~/brain` 선택. 그래프 뷰·백�
 ## FAQ
 
 **데이터는 어디에 저장되나요?**
-내 컴퓨터의 볼트 폴더(기본 `~/brain/`)에만 있습니다. 플러그인 자체는 외부 서버로 아무것도 보내지 않습니다. (대화 내용은 평소처럼 Claude 모델로 전송됩니다.)
+내 컴퓨터의 볼트 폴더(기본 `~/brain/`)에만 있습니다. 플러그인 자체는 외부 서버로 아무것도 보내지 않습니다. 코어의 자유 질문은 오늘 상태와 검색 발췌를 붙여 헤드리스 Claude(내 계정)에 묻습니다. 캘린더 주소 파일은 볼트 밖(`~/.config/second-brain/`)에 둡니다.
 
 **플러그인을 삭제하면?**
 볼트는 플러그인 밖에 있어서 그대로 남습니다. 다시 설치하면 이어서 씁니다.
@@ -126,12 +126,19 @@ Obsidian → **Open folder as vault** → `~/brain` 선택. 그래프 뷰·백�
 **여러 컴퓨터에서 쓰려면?**
 `/second-brain:brain-setup`에서 git 자동 커밋을 켜고 볼트를 개인 private 저장소에 push하거나, iCloud·Dropbox 폴더로 볼트 위치를 옮기면 됩니다.
 
+**카톡 알림은 어떻게?**
+카카오 "나에게 보내기" 헬퍼 스크립트 경로를 `config set kakao_cmd <경로>`로 지정하면 `brief --kakao`, `remind --kakao`가 그것을 부릅니다. 헬퍼가 없으면 터미널 출력만 합니다.
+
 **임베딩 / AI 의미 검색은요?**
-v0.1은 키워드 기반 검색(제목·태그 가중 + 최근성)입니다. 임베딩 검색은 외부 API 키가 필요해서 "키 0개" 원칙에 맞춰 v0.2 옵션으로 미뤘습니다.
+키워드 기반 검색(제목·태그 가중 + 최근성, 한글 2-gram)입니다. 임베딩 검색은 외부 API 키가 필요해서 "키 0개" 원칙에 맞춰 옵션으로 미뤘습니다.
 
 ## 영감
 
-hongik.man 릴스 "클로드로 주말 동안 만들 수 있는 AI 프로젝트 3가지" 중 2번(개인 지식 창고)에서 영감을 받았습니다.
+- hongik.man 릴스 "클로드로 주말 동안 만들 수 있는 AI 프로젝트 3가지" 중 2번(개인 지식 창고)
+- reznikov_engineering 릴스(살아 있는 구체와 말하는 에이전트) → 코어 화면
+- godseng.mom 릴스 "자동으로 일하는 나만의 직원" → 사무실 화면
+
+설계 기록은 [SPEC.md](SPEC.md), 2차 기획은 [docs/v2-plan.md](docs/v2-plan.md), 볼트 형식은 [docs/vault-format.md](docs/vault-format.md).
 
 ## 라이선스
 
