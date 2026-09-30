@@ -13,8 +13,8 @@
 - [ ] load_notes 반복 호출 캐시(볼트 mtime 기준) + /api/today 지연 측정
 - [x] 코어 「준비」 규칙: 질문에 든 일정 제목으로 매칭, 진짜 질문은 Claude로 (관리자, 17:25)
 - [x] 코어 "오늘 일지 읽어줘" (관리자, 17:25)
-- [ ] docs/vault-format.md에 journal·events·suggestions·allow_run 반영
-- [ ] 서버 POST 엔드포인트·경로 처리 보안 점검(읽기 전용 보고)
+- [x] docs/vault-format.md에 journal·events·suggestions·allow_run 반영 (관리자, 17:33)
+- [x] 서버 보안 점검(관리자, 17:33): 쓰기=세션 토큰(compare_digest)+Host 루프백, 경로=절대·..·볼트 밖 심볼릭 링크 거부·.md만, CORS 헤더 없음(교차 출처 읽기 차단), 본문 64KB 제한. 추가 조치 불필요
 - [ ] 데모 미리보기 이미지 재캡처(관리자, Orca)
 
 ## 사이클 기록

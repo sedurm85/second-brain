@@ -7,6 +7,8 @@
   BRAIN.md                    자동 생성 인덱스 (직접 수정 금지, brain.py index가 덮어씀)
   inbox.md                    빠른 캡처 임시함
   notes/YYYY/MM/<slug>.md     note | idea | source | meeting
+  events/YYYY/<date>-<slug>.md event (일정 노트: 준비·동선·메모, 캘린더 일정에 붙음)
+  journal/YYYY/<date>.md      journal (하루 일지) · <date>-weekly.md (주간 회고)
   decisions/<NNN>-<slug>.md   decision (ADR, 3자리 순번)
   projects/<slug>.md          프로젝트 허브
   people/<slug>.md            사람
@@ -25,7 +27,7 @@ YAML의 단순 부분집합만 써요: `key: value`, `key: [a, b]`, 여러 줄 `
 | 필드 | 필수 | 형식 | 설명 |
 |---|---|---|---|
 | `title` | 필수 | 문자열 | 제목. 검색 가중치 3배 |
-| `type` | 필수 | `note` `idea` `source` `meeting` `decision` `project` `person` | 타입에 따라 저장 폴더가 정해져요 |
+| `type` | 필수 | `note` `idea` `source` `meeting` `event` `journal` `decision` `project` `person` | 타입에 따라 저장 폴더가 정해져요 |
 | `created` | 필수 | `YYYY-MM-DD` | 생성일. 최근성 가중(90일 반감)과 `--since` 필터 기준 |
 | `tags` | 필수 | 리스트(빈 리스트 가능) | 검색 가중치 2배, 리뷰 링크 제안 기준 |
 | `project` | 선택 | 문자열 | 프로젝트 이름. 같은 slug의 `projects/` 허브에 자동 수집 |
@@ -37,6 +39,13 @@ YAML의 단순 부분집합만 써요: `key: value`, `key: [a, b]`, 여러 줄 `
 | `supersedes` | 선택 | `[[결정]]` 리스트 | 이 결정이 대체한 옛 결정 |
 | `superseded_by` | 자동 | `[[결정]]` | `decide --supersede`가 옛 결정에 기록 |
 | `imported_from` | 자동 | 파일명 | `import`로 가져온 원본 파일 이름 |
+| `summary` | 선택 | 문자열 | 2~3문장 요약. `enrich`·`journal`·`retro`가 채우고, 검색 가중치 2배, 노트 패널 맨 위에 표시 |
+| `original_title` | 자동 | 문자열 | `enrich`가 제목을 다듬었을 때 원래 제목 |
+| `event_key` | event 필수 | `YYYY-MM-DD\|제목` | 캘린더 일정과 노트를 잇는 키(날짜 + 공백 정리한 제목) |
+| `event_date` `event_end` | event | `YYYY-MM-DD` | 일정 날짜(여러 날이면 끝 날짜). 그 기간의 날짜마다 같은 노트가 붙어요 |
+| `location` | event 선택 | 문자열 | 장소(보드에서 지도 링크) |
+| `journal_date` | journal | `YYYY-MM-DD` | 일지가 다루는 날 |
+| `journal_kind` | journal 선택 | `weekly` | 주간 회고 표시(파일명 `-weekly`) |
 
 본문은 자유 마크다운이고, 다른 노트는 `[[파일명]]`으로 연결해요. 프론트매터 `links`/`supersedes`/`people`와 본문 위키링크가 모두 링크로 집계돼요(고아 노트 판정 기준). 기록은 지우지 않고 `superseded`로 표시해요.
 
@@ -127,6 +136,50 @@ tags:
 <!-- brain:auto:end -->
 ```
 
+## 예시 4 — event (일정 노트)
+
+`events/2026/2026-10-03-대한항공-ke1355.md` — 보드의 일정 카드에서 「준비 항목 추가」「동선 추가」「메모 남기기」를 누르면 이 절들에 줄이 붙어요. `## 준비`의 체크박스는 보드·아침 브리핑에, `## 동선`의 `- HH:MM 내용 (…NN분)` 줄은 그날 시간표와 10분 전 카톡 알림에 쓰여요. 여러 날 동선은 `### MM-DD` 소제목으로 날짜를 바꿔요.
+
+```markdown
+---
+title: 대한항공 KE1355
+type: event
+created: 2026-09-30
+tags: []
+event_key: "2026-10-03|대한항공 KE1355"
+event_date: 2026-10-03
+location: 김포공항
+---
+
+# 대한항공 KE1355
+
+## 준비
+- [x] 여권
+- [ ] 모바일 탑승권 발급
+
+## 동선
+- 13:30 집 출발 (콜밴, 50분)
+- 14:25 공항 도착·수속
+
+## 메모
+- 2026-09-30 16:40  좌석은 12A
+```
+
+## 예시 5 — journal (하루 일지 · 주간 회고)
+
+`journal/2026/2026-09-30.md`는 21:30 저녁 마감(`brief --evening --journal`)이 그날 재료(새 노트·일정 메모·완료한 할 일·자동화 사고·코어 대화)로 써요. 절은 `## 오늘`(3~5줄) · `## 잘한 것` · `## 내일 첫 일`. `journal/2026/2026-09-30-weekly.md`는 월요일 `retro`가 쓰는 주간 회고로 `## 이번 주` · `## 눈에 띄는 것` · `## 되돌아볼 질문`(체크박스 3개, 보드 「되돌아볼 결정」 카드에 떠요) · `## 다음 주`. 둘 다 프론트매터 `summary`에 카톡용 한 줄이 들어가요.
+
+## 볼트 밖 파일 (비밀·캐시)
+
+| 경로 | 내용 |
+|---|---|
+| `~/.config/second-brain/config.json` | 볼트 위치, 캘린더 소스, 비서 이름, `kakao_cmd`, `ask_cmd` |
+| `~/.config/second-brain/google.ics.url` | 구글 캘린더 비공개 ICS 주소 한 줄(권한 600). 볼트·대화에 넣지 않기 |
+| `~/.config/second-brain/widgets.json` | 자동화 위젯(아래) |
+| `~/.cache/second-brain/` | 캘린더·메일 캐시, `suggestions.json`(준비 제안 보류함: pending/accepted/dismissed), `core_log.jsonl`(코어 문답), `staff_briefs.json`(직원 한 줄), `backups/`(zip), `agents/`(launchd 로그) |
+
+제안(준비 체크리스트·동선·링크)은 캐시에만 있다가 사용자가 보드에서 채택하거나 `link A B`를 실행할 때 볼트에 들어가요. 볼트에 자동으로 쓰는 건 일지·회고·`enrich` 정제(요약·태그·링크 필드) 셋뿐이고, 모두 노트 내용을 지우지 않아요.
+
 ## Obsidian에서 열기
 
 1. Obsidian → "Open folder as vault" → `~/brain` 선택.
@@ -155,6 +208,8 @@ tags:
 | 필드 | 대상 kind | 설명 |
 |---|---|---|
 | `allow_commands` | (최상위) | `true`일 때만 `command` 위젯을 실행해요. 아니면 status `unknown`, summary "명령 실행 비활성(allow_commands)" |
+| `allow_run` | (최상위) | `true`일 때 보드 행·사무실 책상의 「지금 실행」 버튼이 켜져요. 위젯 `source`와 같은 로그를 쓰는 crontab 줄 또는 launchd `StandardOutPath`를 찾아 그 명령을 한 번 실행해요 |
+| `widgets[].team` | 모두 | 사무실 화면의 방(팀) 이름. 없으면 「기타」 |
 | `widgets[].id` | 전체 | 위젯 식별자(없으면 `widget-N`) |
 | `widgets[].title` | 전체 | 표시 이름(없으면 id) |
 | `widgets[].kind` | 전체 | `log` · `json` · `csv` · `markdown` · `command` |
