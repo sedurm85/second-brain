@@ -585,6 +585,9 @@ h1, h2, h3 { text-wrap: balance; }
 .md h1, .md h2, .md h3 { font-weight: 600; line-height: 1.35; margin: 1.2em 0 .4em; }
 .md h1 { font-size: 17px; } .md h2 { font-size: 15.5px; } .md h3 { font-size: 14px; }
 .md ul, .md ol { padding-left: 20px; margin: .4em 0; }
+.md li.task { list-style: none; margin-left: -20px; }
+.md li.task label { display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
+.md li.task label span.done { text-decoration: line-through; color: var(--muted); }
 .md p { margin: .5em 0; }
 .md code { font-family: var(--font-mono); font-size: 12px; background: var(--surface-3); padding: 1px 5px; border-radius: 4px; }
 .wikilink { background: none; border: 0; padding: 0; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; font-size: inherit; }
@@ -1425,13 +1428,22 @@ h1, h2, h3 { text-wrap: balance; }
     }
     return null;
   }
-  function renderMd(src) {
+  function renderMd(src, opts) {
+    opts = opts || {};
+    var lineNo = !!opts.lineNumbers, offset = opts.lineOffset || 0;
     var lines = String(src || "").replace(/\r/g, "").split("\n"), out = [], list = null, para = [];
     function flushP() { if (para.length) { out.push("<p>" + inline(para.join(" ")) + "</p>"); para = []; } }
     function flushL() { if (list) { out.push("<" + list.tag + ">" + list.items.join("") + "</" + list.tag + ">"); list = null; } }
-    lines.forEach(function (ln) {
+    lines.forEach(function (ln, idx) {
       var m;
       if ((m = ln.match(/^(#{1,3})\s+(.*)$/))) { flushP(); flushL(); out.push("<h" + m[1].length + ">" + inline(m[2]) + "</h" + m[1].length + ">"); }
+      else if (lineNo && (m = ln.match(/^(\s*)[-*]\s+\[( |x|X)\]\s+(.*)$/))) {
+        flushP(); var tag = "ul";
+        if (!list || list.tag !== tag) { flushL(); list = { tag: tag, items: [] }; }
+        var done = /x/i.test(m[2]);
+        list.items.push('<li class="task"><label><input type="checkbox" data-md-line="' + (idx + offset) + '"' + (done ? " checked" : "") +
+          '> <span' + (done ? ' class="done"' : "") + ">" + inline(m[3]) + "</span></label></li>");
+      }
       else if ((m = ln.match(/^\s*[-*]\s+(.*)$/)) || (m = ln.match(/^\s*\d+[.)]\s+(.*)$/))) {
         flushP(); var tag = /^\s*\d/.test(ln) ? "ol" : "ul";
         if (!list || list.tag !== tag) { flushL(); list = { tag: tag, items: [] }; }
@@ -1483,7 +1495,10 @@ h1, h2, h3 { text-wrap: balance; }
     var rows = Object.keys(fm).filter(function (k) { return k !== "title" && k !== "tags" && k !== "summary"; }).map(function (k) {
       return "<tr><th>" + esc(k) + "</th><td>" + fmVal(fm[k]) + "</td></tr>";
     }).join("");
-    var body = String(n.body || "").replace(/^#\s+.*\n+/, ""); // 제목 H1은 헤더와 중복이라 생략
+    var rawBody = String(n.body || "");
+    var h1m = rawBody.match(/^#\s+.*\n+/); // 제목 H1은 헤더와 중복이라 생략
+    var lineOffset = 0, body = rawBody;
+    if (h1m) { lineOffset = h1m[0].split("\n").length - 1; body = rawBody.slice(h1m[0].length); }
     var summary = fm.summary ? '<p class="note-summary">' + esc(fm.summary) + "</p>" : "";
     var actions = '<div class="note-actions">' +
       '<form class="ev-form" data-act="note-memo">' +
@@ -1495,13 +1510,28 @@ h1, h2, h3 { text-wrap: balance; }
       '<button type="submit" class="text-btn">태그 추가</button>' +
       '<span class="ev-status" aria-live="polite"></span></form></div>';
     $("panelBody").innerHTML = summary + (rows ? '<table class="fm"><caption class="sr-only">프론트매터</caption>' + rows + "</table>" : "") +
-      '<div class="md">' + renderMd(body) + '</div>' + actions + '<div class="links">' +
+      '<div class="md">' + renderMd(body, { lineNumbers: true, lineOffset: lineOffset }) + '</div>' + actions + '<div class="links">' +
       linkList("들어오는 링크", n.links_in) + linkList("나가는 링크", n.links_out) + "</div>";
     $("panelBody").scrollTop = 0;
     wireNoteActions(n);
   }
   function wireNoteActions(n) {
     var panelBody = $("panelBody");
+    var mdDiv = panelBody.querySelector(".md");
+    if (mdDiv) {
+      mdDiv.addEventListener("change", function (ev) {
+        var cb = ev.target.closest("[data-md-line]"); if (!cb) return;
+        var line = cb.getAttribute("data-md-line"), done = cb.checked;
+        post("event-note", { action: "check", path: n.path, line: +line, done: done })
+          .then(function () { return api("note", { path: n.path }); })
+          .then(function (fresh) { renderNotePanel(fresh); refreshLive(true); })
+          .catch(function (err) {
+            cb.checked = !done;
+            var st = panelBody.querySelector(".note-actions .ev-status");
+            if (st) st.textContent = "체크 실패: " + (err.message || err); else alert("체크 실패: " + (err.message || err));
+          });
+      });
+    }
     var mf = panelBody.querySelector('form[data-act="note-memo"]');
     if (mf) {
       var modeSel = mf.elements.mode, textInput = mf.elements.text, btn = mf.querySelector("button");
