@@ -2315,7 +2315,8 @@ def kakao_brief(t):
         tomorrow = [e for e in (ag.get("upcoming") or []) if e.get("days_left") == 1]
         parts.append("오늘 일정 없음" + (", 내일 " + ", ".join((("종일 " if e["all_day"] else e["start"][11:16] + " ") + e["title"]) for e in tomorrow[:2]) if tomorrow else ""))
     if ag.get("steps_today"):
-        parts.append("동선 " + ", ".join(f"{s_['time']} {re.sub(r'\s*\(.*\)\s*$', '', s_['text'])}" for s_ in ag["steps_today"][:2]))
+        _strip_paren = lambda x: re.sub(r"\s*\(.*\)\s*$", "", x)  # 3.9~3.11은 f-string 식 안에 백슬래시 불가
+        parts.append("동선 " + ", ".join(f"{s_['time']} {_strip_paren(s_['text'])}" for s_ in ag["steps_today"][:2]))
     mk = mail_mod.mail_kakao(t.get("mail") or {})
     if mk:
         parts.append(mk)
