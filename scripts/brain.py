@@ -4457,7 +4457,9 @@ def ask_assistant(question, today, vault=None):
     cfg = load_config()
     cmd = os.environ.get("SECOND_BRAIN_ASK_CMD") or cfg.get("ask_cmd") or "claude -p --output-format text"
     name = str(cfg.get("assistant_name") or "브레인")
-    ctx = {k: today.get(k) for k in ("date", "weekday", "agenda", "revisit", "inbox", "tasks", "widgets_summary", "top_widgets", "this_week") if k in today}
+    ctx = {k: today.get(k) for k in ("date", "weekday", "agenda", "revisit", "inbox", "tasks", "widgets_summary", "top_widgets", "this_week", "retro_questions", "week_plan") if k in today}
+    if (today.get("suggestions") or {}).get("count"):  # 채택 대기 중인 준비 제안: 일정별 항목 텍스트만
+        ctx["pending_suggestions"] = {k.split("|", 1)[1]: [i["text"] for i in v.get("items", [])][:6] for k, v in today["suggestions"].get("by_key", {}).items()}
     if ctx.get("agenda"):
         ctx["agenda"] = {k: v for k, v in ctx["agenda"].items() if k in ("today", "next", "upcoming", "steps_today", "sentence")}
     memory = []
@@ -4470,7 +4472,7 @@ def ask_assistant(question, today, vault=None):
             log(f"경고: 볼트 검색 실패({e})")
     recent = core_chat_today(date.today())[-4:]
     prompt = (f"너는 사용자의 개인 비서 「{name}」이다. 아래 [오늘 상태]는 일정·할 일·되돌아볼 결정·자동화, [기억]은 사용자의 노트 창고에서 질문과 관련 있어 보이는 기록 발췌, [최근 대화]는 오늘 코어 화면에서 나눈 직전 문답이다. "
-              f"이 자료와 상식으로 질문에 한국어 해요체로 2~3문장, 220자 안에서 답한다. 기억에 근거하면 어느 기록인지 제목을 짧게 밝힌다. 자료에 없으면 모른다고 말한다. 목록·마크다운 없이 말로.\n\n"
+              f"이 자료와 상식으로 질문에 한국어 해요체로 2~3문장, 220자 안에서 답한다. 기억에 근거하면 어느 기록인지 제목을 짧게 밝힌다. 일정에 weather가 있으면 우산·옷차림을, pending_suggestions가 있으면 보드에서 채택하면 된다고 짧게 덧붙일 수 있다. 자료에 없으면 모른다고 말한다. 목록·마크다운 없이 말로.\n\n"
               f"[오늘 상태]\n{json.dumps(ctx, ensure_ascii=False)}\n\n[기억]\n{json.dumps(memory, ensure_ascii=False)}\n\n[최근 대화]\n{json.dumps(recent, ensure_ascii=False)}\n\n[질문]\n{q}")
     import shlex
     argv = shlex.split(cmd)
