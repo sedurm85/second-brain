@@ -9,7 +9,7 @@
 
 ## 백로그
 - [x] CI(GitHub Actions, Python 3.9~3.13 매트릭스) + 3.9 호환 — 워커 완료·머지 17:26, 실제 3.9 회귀는 없었음(agenda/mailer에 future import 이미 있음)
-- [ ] 보드 「일지」 섹션(워커 진행 중)(/api/journals, 일지·회고 목록·요약·패널) + 데모 데이터에 일지·준비 제안
+- [x] 보드 「일지」 섹션 — 머지 18:12 (/api/journals, 데모 일지·회고, 테스트 189)(/api/journals, 일지·회고 목록·요약·패널) + 데모 데이터에 일지·준비 제안
 - [x] load_notes 캐시 — 워커 완료·머지 17:52: dash_today 145.6ms → 29.7ms(300노트), 지문=stat(mtime,size), write_note에서 무효화, 테스트 185
 - [x] 코어 「준비」 규칙: 질문에 든 일정 제목으로 매칭, 진짜 질문은 Claude로 (관리자, 17:25)
 - [x] 코어 "오늘 일지 읽어줘" (관리자, 17:25)
@@ -45,3 +45,9 @@
 - 17:50 CI 첫 실행 전부 실패 → 원인 2개: (1) 3.9~3.11 f-string 식 안 백슬래시 1곳(kakao_brief 동선), (2) CI 러너 UTC라 KST 기대 문장 실패 → 워크플로우 TZ=Asia/Seoul. 수정 푸시, 재실행 감시
 - 17:55 wt/office-mobile 머지(SPEC.md 충돌은 양쪽 절 병합 스크립트로 해소, playwright 390px scrollWidth=390 실측), wt/skills-journal 머지(스킬 11개)
 - 18:00 v0.27.0 태그·플러그인 캐시 동기화·서버 재시작(캐시·모바일 반영)
+- 18:05 CI 재실행 전 매트릭스 통과(ubuntu 3.9~3.13·macOS 3.12/3.13)
+- 18:12 wt/journal-board·wt/weather(Open-Meteo 모듈, 테스트 24)·wt/restore(복구·zip-slip 방어) 머지 → 테스트 218. 날씨 지오코딩 한계: '김포공항'·'제주도' 같은 구어 지명은 못 찾음 → 통합 워커에 별칭·정규화 과제 포함
+
+### 사이클 4 (18:15~)
+- 워커 추가: wt/weather-integration(일정·브리핑·준비 제안에 날씨 붙이기 + 지명 정규화), wt/board-plan(회고 「다음 주」 체크박스 카드 + 검색 결과 요약 스니펫)
+- 가동 중: notify-fallback, report-page, office-kpi
