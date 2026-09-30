@@ -33,6 +33,8 @@ The first "remember this" asks once whether to create the vault at `~/brain/`. T
 
 ![Demo board](web/preview-demo.png)
 
+![Weekly report](web/preview-report.png)
+
 ## What the assistant does
 
 - **Time**: reads Google Calendar (a private ICS URL kept in a file) or the macOS Calendar app (EventKit) and shows today's timeline, this week and upcoming events. Recurring events, exceptions, moved instances and time zones are handled, with a 15-minute cache.
