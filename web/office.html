@@ -73,7 +73,8 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 .say.bad { background: #ffe1e4; color: #7a1b23; }
 .say.zzz { background: #e2e8f0; color: #526273; font-style: italic; }
 .say.think { background: #dff6ff; color: #0b4a63; }
-.desk.talk .say { white-space: normal; max-width: 180px; }
+.desk.talk .say { white-space: normal; max-width: 180px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+@media (max-width: 720px) { .desk.talk .say { max-width: 140px; -webkit-line-clamp: 2; font-size: 10.5px; } .desk { padding-top: 30px; } }
 /* 활동 로그 */
 .feed { margin-top: 20px; background: var(--panel); border: 1px solid var(--rule-strong); border-radius: 14px; padding: 12px 18px 6px; }
 .feed h2 { margin: 0 0 6px; font-size: 14.5px; font-weight: 700; }

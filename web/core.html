@@ -64,8 +64,11 @@ button { cursor: pointer; }
   .clock { font-size: 30px; }
   .status { display: none; }
   .talk { width: 100%; }
-  .bottom { flex-direction: column; align-items: stretch; }
-  .rail { grid-auto-flow: column; }
+  .bottom { flex-direction: column; align-items: stretch; gap: 10px; }
+  .rail { grid-auto-flow: column; justify-content: start; }
+  .hint { display: none; }
+  .mid { margin-bottom: 4px; }
+  .caption { font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .caption .cursor { animation: none; } }
 </style>
