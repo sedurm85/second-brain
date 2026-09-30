@@ -91,3 +91,4 @@
 - 18:45 wt/serve-agent 머지(테스트 433) → 실제 설치: 대시보드가 launchd 상주(com.secondbrain.serve, 포트 7777 응답). 이후 서버 반영은 `launchctl kickstart -k gui/$UID/com.secondbrain.serve`. v0.29.0 태그·릴리스
 - 18:37 wt/core-actions 머지(음성으로 제안 채택·체크·할 일 완료, 전체 작업은 확인 후). 워커 추가: wt/vault-lint(볼트 점검·안전 수정), wt/core-settings(코어 음성·속도·자동 브리핑 설정)
 - 가동 중: apple-notes, search-ops, people-section, vault-lint, core-settings
+- 18:50 wt/apple-notes 머지(테스트 452). 관리자: 실제 Apple Notes 14건 가져오기(백업 후) + enrich 정제 실행
