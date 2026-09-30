@@ -318,8 +318,8 @@ class TodayTest(HomeCase):
         (self.vault / "inbox.md").write_text(
             "\n".join(f"- [ ] {'아주 긴 할 일 ' * 10}{i}" for i in range(20)), encoding="utf-8")
         t = brain.dash_today(self.vault, today=self.real)
-        self.assertEqual(len(t["kakao"]), 200)
-        self.assertTrue(t["kakao"].endswith("…"))
+        self.assertLessEqual(len(t["kakao"]), 200)
+        self.assertIn("할 일 20", t["kakao"])  # 항목이 많아도 개수와 앞 둘만, 200자 안
 
     def test_widgets_cli_empty_hint(self):
         brain.widgets_config_path().unlink()

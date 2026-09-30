@@ -2202,24 +2202,39 @@ def _dleft(d):
     return "오늘" if k == 0 else (f"D-{k}" if k > 0 else f"{-k}일 지남")
 
 
+def _short(title):
+    return re.sub(r"\s*\((?:[^()]*)\)\s*$", "", str(title or "")).strip()
+
+
 def kakao_brief(t):
-    """카톡용 요약(≤200자)."""
-    parts = [f"[{t['date']} {t['weekday'][0]}] {t['greeting']}"]
-    ag_bit = agenda_mod.agenda_kakao(t.get("agenda") or {})
+    """카톡용 요약(≤200자). 읽는 사람 기준으로: 날짜 · 일정(없으면 내일) · 동선 · 메일 · 막힌 자동화 · 할 일 · 되돌아볼 결정 · 이번 주."""
+    d = t["date"]
+    parts = [f"[{int(d[5:7])}/{int(d[8:10])} {t['weekday'][0]}] {t['greeting']}"]
+    ag = t.get("agenda") or {}
+    ag_bit = agenda_mod.agenda_kakao(ag)
     if ag_bit:
         parts.append(ag_bit)
+    else:
+        tomorrow = [e for e in (ag.get("upcoming") or []) if e.get("days_left") == 1]
+        parts.append("오늘 일정 없음" + (", 내일 " + ", ".join((("종일 " if e["all_day"] else e["start"][11:16] + " ") + e["title"]) for e in tomorrow[:2]) if tomorrow else ""))
+    if ag.get("steps_today"):
+        parts.append("동선 " + ", ".join(f"{s_['time']} {re.sub(r'\s*\(.*\)\s*$', '', s_['text'])}" for s_ in ag["steps_today"][:2]))
     mk = mail_mod.mail_kakao(t.get("mail") or {})
     if mk:
         parts.append(mk)
-    if t["revisit"]:
-        parts.append("결정 " + ", ".join(f"{d['title']}({_dleft(d)})" for d in t["revisit"][:3]))
     bad = [w for w in t["top_widgets"] if w["status"] in ("fail", "stale")]
     if bad:
-        parts.append("자동화 " + ", ".join(f"{w['title']} {w['status']}" for w in bad[:3]))
+        parts.append("자동화 " + ", ".join(f"{_short(w['title'])} {'실패' if w['status'] == 'fail' else '오래됨'}" for w in bad[:3]))
     elif sum(t["widgets_summary"].values()):
         parts.append(f"자동화 정상 {t['widgets_summary']['ok']}")
-    if t["inbox"]:
-        parts.append(f"할 일 {len(t['inbox'])}: " + ", ".join(t["inbox"][:3]))
+    tk = (t.get("tasks") or {}).get("counts") or {}
+    own_today = [x for x in (t.get("tasks") or {}).get("today", []) if x.get("kind") == "task"]
+    if own_today:
+        parts.append(f"할 일 {len(own_today)}: " + ", ".join(x["text"][:14] for x in own_today[:2]) + (" 등" if len(own_today) > 2 else ""))
+    elif tk.get("week") or tk.get("waiting"):
+        parts.append("할 일 오늘 0" + (f"·이번 주 {tk['week']}" if tk.get("week") else "") + (f"·기다림 {tk['waiting']}" if tk.get("waiting") else ""))
+    if t["revisit"]:
+        parts.append("되돌아볼 결정 " + ", ".join(f"{_short(d_['title'])[:16]}({_dleft(d_)})" for d_ in t["revisit"][:2]))
     w = t["this_week"]
     parts.append(f"이번 주 노트 {w['new_notes']}·결정 {w['new_decisions']}")
     return _clip(" / ".join(parts), KAKAO_MAX)
