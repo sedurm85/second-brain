@@ -81,6 +81,9 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 .say.bad { background: #ffe1e4; color: #7a1b23; }
 .say.zzz { background: #e2e8f0; color: #526273; font-style: italic; }
 .say.think { background: #dff6ff; color: #0b4a63; }
+.say.mind { background: rgba(255, 255, 255, .78); color: #3b4653; font-style: italic; border: 1px dashed rgba(90, 110, 130, .45); box-shadow: none; }
+.say.mind::after { background: rgba(255, 255, 255, .78); }
+.desk .st .sc { display: block; color: var(--muted); opacity: .8; }
 .desk.talk .say { white-space: normal; max-width: 180px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 @media (max-width: 720px) { .desk.talk .say { max-width: 140px; -webkit-line-clamp: 2; font-size: 10.5px; } .desk { padding-top: 30px; } }
 /* 활동 로그 */
@@ -143,6 +146,47 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
   })();
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   var ST_KO = { ok: "정상", warn: "주의", fail: "실패", stale: "오래됨", missing: "없음", paused: "멈춤", unknown: "알 수 없음", run: "가동 중" };
+  /* 가상 직원의 상태 한 줄(MZ 버전)과 속마음. 상태는 진짜 데이터, 말은 재미 */
+  var MOOD_LABEL = { run: "일하고 있어요", working: "일하고 있어요", ok: "놀고 있어요 (할 일 다 함)", done: "퇴근했어요", stale: "일하는 척하고 있어요", fail: "멘붕이에요", warn: "눈치 보고 있어요", missing: "출근 안 했어요", paused: "휴가 중이에요", unknown: "첫 출근 준비 중이에요", idle: "대기 중이에요" };
+  var JOB_KO = { working: "일하고 있어요", done: "퇴근했어요", blocked: "막혀서 멍 때리는 중", idle: "대기 중이에요", waiting: "대기 중이에요", failed: "멘붕이에요", error: "멘붕이에요" };
+  var THOUGHTS = {
+    common: ["퇴근하고 싶다...", "배고파,,,", "커피 한 잔만...", "오늘 뭐 먹지", "놀고 싶어..", "회식하고 싶다", "월급은 언제 오르나", "잠깐 눈 붙여도 되나", "카톡 확인만 하고 일할게요", "이거 끝나면 진짜 쉴 거임", "집에 가고 싶다", "주말까지 며칠?", "누가 나 좀 시켜줘", "오늘도 무사히...", "점심 뭐지?"],
+    morning: ["아직 잠이 덜 깼어요", "오전엔 원래 느려요", "커피 없이는 못 해요", "출근 도장은 찍었어요"],
+    lunch: ["배고파,,, 점심!", "밥 먹고 하죠", "점심 메뉴 추천 좀", "12시인데 왜 아직 여기"],
+    afternoon: ["졸려요...", "3시의 마법", "간식 없나요", "퇴근까지 몇 시간"],
+    evening: ["퇴근하고 싶다...", "이 시간에 왜 일해요", "야근 수당은요", "집 가고 싸다"],
+    night: ["다들 퇴근했는데 나만...", "밤샘 각인가", "새벽 근무 수당"],
+    friday: ["금요일인데 회식 안 하나...", "불금이다!!", "주말 계획 세우는 중"],
+    monday: ["월요일... 왜 벌써", "주말이 짧았어요", "월요병 걸렸어요"],
+    weekend: ["주말에도 출근하는 나...", "오늘 쉬는 날 아니었어요?"],
+    run: ["집중!! 말 걸지 마세요", "타자 소리 좋죠?", "이거 금방 끝나요", "열일 중이에요", "지금 제가 다 하고 있어요"],
+    ok: ["할 일 다 했는데 뭐 하죠", "폰 봐도 되나", "일하는 척이라도 해야 하나", "다음 근무까지 자유!", "눈치 보며 쉬는 중"],
+    stale: ["아무도 안 시켜서 놀아요", "저 아직 여기 있어요...", "언제 불러주실 건가요", "잊혀진 것 같아요"],
+    fail: ["망했다...", "이거 제 탓 아니에요", "다시 해볼게요 (아마)", "팀장님한테 어떻게 말하지", "서버가 절 미워해요"],
+    paused: ["휴가 중입니다 ㅎ", "나 없이도 잘 돌아가네", "부르면 올게요"],
+    claude: ["생각 중... 방해 금지", "이거 진짜 잘 만들고 있음", "사장님 이거 보면 좋아하실 듯", "커밋 하나 더", "테스트 돌리는 중"]
+  };
+  function pick(arr, seed) { return arr[Math.abs(seed) % arr.length]; }
+  function thought(id, st, kind) {
+    var d = new Date(), h = d.getHours(), wd = d.getDay(), slot = Math.floor(Date.now() / 20000); // 20초마다 교대
+    var seed = hash(id + ":" + slot);
+    var pool = [].concat(THOUGHTS.common);
+    if (kind === "claude") pool = pool.concat(THOUGHTS.claude, THOUGHTS.claude);
+    if (st === "run" || st === "working") pool = pool.concat(THOUGHTS.run, THOUGHTS.run, THOUGHTS.run);
+    else if (st === "ok") pool = pool.concat(THOUGHTS.ok, THOUGHTS.ok);
+    else if (st === "stale" || st === "idle") pool = pool.concat(THOUGHTS.stale, THOUGHTS.stale);
+    else if (st === "fail") pool = pool.concat(THOUGHTS.fail, THOUGHTS.fail, THOUGHTS.fail);
+    else if (st === "paused") pool = pool.concat(THOUGHTS.paused, THOUGHTS.paused);
+    if (h < 10) pool = pool.concat(THOUGHTS.morning);
+    else if (h >= 11 && h < 13) pool = pool.concat(THOUGHTS.lunch, THOUGHTS.lunch);
+    else if (h >= 14 && h < 17) pool = pool.concat(THOUGHTS.afternoon);
+    else if (h >= 17 && h < 21) pool = pool.concat(THOUGHTS.evening, THOUGHTS.evening);
+    else if (h >= 21 || h < 6) pool = pool.concat(THOUGHTS.night);
+    if (wd === 5) pool = pool.concat(THOUGHTS.friday, THOUGHTS.friday);
+    if (wd === 1) pool = pool.concat(THOUGHTS.monday);
+    if (wd === 0 || wd === 6) pool = pool.concat(THOUGHTS.weekend);
+    return pick(pool, seed);
+  }
   var S = { data: null, widgets: {}, frame: 0 };
 
   /* ───────── 픽셀 직원: 16x20 격자, 색은 id 해시로 ───────── */
@@ -191,6 +235,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
   function lastLine(w) { var d = w.data || {}; if (d.lines && d.lines.length) return d.lines[d.lines.length - 1]; if (d.text) return String(d.text).split("\n")[0]; return w.summary || ""; }
   function deskHtml(w, running) {
     var st = running ? "run" : (ST_KO[w.status] ? w.status : "unknown");
+    if (w.state === "paused") st = "paused";
     var runnable = S.data && S.data.runnable && S.data.runnable[w.id] && !running;
     var runBtn = runnable ? '<span class="runbtn" role="button" tabindex="0" data-run="' + esc(w.id) + '" title="지금 한 번 실행" aria-label="' + esc(shortTitle(w.title)) + ' 지금 실행">▶</span>' : "";
     var say = "";
@@ -198,14 +243,15 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
     else if (w.status === "fail") say = '<div class="say bad">' + esc((w.summary || "실패").slice(0, 40)) + "</div>";
     else if (w.status === "stale") say = '<div class="say zzz">zzz… ' + esc(ago(w.age_minutes)) + "</div>";
     else if (w.status === "ok" && w.age_minutes != null && w.age_minutes < 90) say = '<div class="say">' + esc(lastLine(w).slice(0, 34)) + "</div>";
-    return '<button type="button" class="desk ' + st + '" data-wid="' + esc(w.id) + '" aria-label="' + esc(shortTitle(w.title) + ", " + (ST_KO[st] || st)) + '">' + say + runBtn +
-      sprite(w.id, st, S.frame) + '<div class="nm">' + esc(shortTitle(w.title)) + '</div><div class="st">' + esc(sched(w.title) || ST_KO[st] || "") + "</div></button>";
+    else say = '<div class="say mind">' + esc(thought(w.id, st)) + "</div>";
+    return '<button type="button" class="desk ' + st + '" data-wid="' + esc(w.id) + '" aria-label="' + esc(shortTitle(w.title) + ", " + (MOOD_LABEL[st] || ST_KO[st] || st)) + '">' + say + runBtn +
+      sprite(w.id, st, S.frame) + '<div class="nm">' + esc(shortTitle(w.title)) + '</div><div class="st">' + esc(MOOD_LABEL[st] || ST_KO[st] || "") + (sched(w.title) ? ' <span class="sc">' + esc(sched(w.title)) + "</span>" : "") + "</div></button>";
   }
   function jobDesk(j) {
     var st = j.state === "working" ? "working" : j.state === "idle" || j.state === "waiting" ? "idle" : "ok";
-    var say = j.detail ? '<div class="say ' + (st === "working" ? "think" : "") + '">' + esc(String(j.detail).slice(0, 60)) + "</div>" : "";
+    var say = j.detail && st === "working" ? '<div class="say think">' + esc(String(j.detail).slice(0, 60)) + "</div>" : '<div class="say mind">' + esc(thought("claude-" + j.id, st === "working" ? "run" : "ok", "claude")) + "</div>";
     return '<button type="button" class="desk talk ' + (st === "working" ? "run" : st) + '" data-job="' + esc(j.id) + '" aria-label="' + esc("Claude 작업 " + j.id + ", " + (j.state || "")) + '">' + say +
-      sprite("claude-" + j.id, st, S.frame, "claude") + '<div class="nm">' + esc(j.title || ("작업 " + j.id.slice(0, 6))) + '</div><div class="st">' + esc(j.state === "working" ? "일하는 중" : j.state === "idle" ? "대기" : (j.state || "")) + (j.updated_min != null ? " · " + ago(j.updated_min) : "") + "</div></button>";
+      sprite("claude-" + j.id, st, S.frame, "claude") + '<div class="nm">' + esc(j.title || ("작업 " + j.id.slice(0, 6))) + '</div><div class="st">' + esc(JOB_KO[j.state] || j.state || "") + (j.updated_min != null ? " · " + ago(j.updated_min) : "") + "</div></button>";
   }
   function render(d) {
     S.data = d; S.widgets = {};
@@ -236,7 +282,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
     if (working.length) lead.push("지금 저는 " + (working[0].detail ? "「" + String(working[0].detail).slice(0, 60) + "」" : "작업") + (working.length > 1 ? " 외 " + (working.length - 1) + "건" : "") + "을 하고 있어요.");
     if (nRun) lead.push("직원 " + nRun + "명이 일하는 중이에요.");
     if (nFail) lead.push(ws.filter(function (w) { return w.status === "fail"; }).map(function (w) { return shortTitle(w.title); }).join(", ") + " 담당이 막혀 있어요.");
-    if (!lead.length) lead.push("모두 제자리에 있고 문제는 없어요. 다음 근무는 " + (nextShift(ws) || "예정된 대로") + "예요.");
+    if (!lead.length) lead.push(pick(["다들 제자리에서 놀고 있어요. 문제는 없고요.", "조용하네요. 다음 근무 전까진 다들 자유예요.", "오늘은 사고 없음. 커피나 한 잔 하세요.", "일은 다 끝났고, 직원들은 폰 보는 중이에요."], Math.floor(Date.now() / 60000)));
     $("leadSay").textContent = lead.join(" ");
     // 활동 로그
     var ev = (d.events || []).slice(0, 14);
@@ -296,6 +342,13 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
   tick(); setInterval(tick, 10000);
   function load() { return fetch("/api/office").then(function (r) { return r.json(); }).then(render).catch(function (err) { $("leadSay").textContent = "사무실 데이터를 불러오지 못했어요: " + (err.message || err); }); }
   load(); setInterval(function () { if (!document.hidden) load(); }, 15000);
+  setInterval(function () {
+    document.querySelectorAll(".desk .say.mind").forEach(function (el) {
+      var b = el.parentNode, wid = b.getAttribute("data-wid"), jid = b.getAttribute("data-job");
+      var st = (b.className.match(/desk\s+(\S+)/) || [])[1] || "ok";
+      el.textContent = wid ? thought(wid, st) : thought("claude-" + jid, st === "run" ? "run" : "ok", "claude");
+    });
+  }, 20000);
   // 타이핑 프레임: 일하는 직원만 0.5초마다 스프라이트 교체
   setInterval(function () {
     S.frame++;

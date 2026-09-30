@@ -605,7 +605,7 @@ def tokenize(text):
     return toks
 
 
-FIELD_WEIGHTS = {"title": 3.0, "tags": 2.0, "body": 1.0}
+FIELD_WEIGHTS = {"title": 3.0, "tags": 2.0, "summary": 2.0, "body": 1.0}
 HALF_LIFE_DAYS = 90.0
 
 
@@ -656,7 +656,7 @@ def search(vault, query, ntype=None, project=None, tag=None, since=None, limit=1
     for n in notes:
         tf = Counter()
         length = 0.0
-        fields = {"title": n.title, "tags": " ".join(n.tags), "body": n.body}
+        fields = {"title": n.title, "tags": " ".join(n.tags), "summary": str(n.meta.get("summary") or ""), "body": n.body}
         for f, text in fields.items():
             toks = tokenize(text)
             w = FIELD_WEIGHTS[f]
@@ -3836,6 +3836,130 @@ def backup_vault(vault, dest_dir=None, keep=BACKUP_KEEP, now=None):
     return {"path": str(target), "files": count, "bytes": target.stat().st_size, "removed": removed}
 
 
+ENRICH_BATCH = 6
+ENRICH_BODY_CHARS = 1600
+
+
+def _run_claude_json(prompt, timeout=240):
+    """헤드리스 Claude(또는 SECOND_BRAIN_ASK_CMD)에 프롬프트를 주고 JSON을 파싱해 돌려준다."""
+    import shlex
+    cfg = load_config()
+    cmd = os.environ.get("SECOND_BRAIN_ASK_CMD") or cfg.get("ask_cmd") or "claude -p --output-format text"
+    argv = shlex.split(cmd)
+    r = subprocess.run(argv, input=prompt, capture_output=True, text=True, timeout=timeout)
+    if r.returncode != 0:
+        raise BrainError(f"Claude 호출 실패: {(r.stderr or r.stdout).strip()[:200]}")
+    out = r.stdout.strip()
+    m = re.search(r"```(?:json)?\s*(.*?)```", out, re.S)
+    if m:
+        out = m.group(1).strip()
+    cands = [i for i in (out.find("["), out.find("{")) if i >= 0]
+    start = min(cands) if cands else 0
+    end = max(out.rfind("]"), out.rfind("}"))
+    for chunk in (out[start:], out[start:end + 1] if end >= start else ""):
+        if not chunk:
+            continue
+        try:
+            return json.loads(chunk)
+        except ValueError:
+            continue
+    raise BrainError(f"Claude 응답이 JSON이 아니에요: {out[:160]}")
+
+
+def enrich_prompt(notes, catalog):
+    items = []
+    for n in notes:
+        items.append({"stem": n.stem, "type": n.type, "title": n.title, "tags": n.tags, "body": " ".join(n.body.split())[:ENRICH_BODY_CHARS]})
+    return ("너는 개인 지식 창고(마크다운 노트) 사서다. 아래 [노트들] 각각에 대해 JSON 배열로만 답한다(설명·마크다운 금지). 항목 형식:\n"
+            '{"stem": 그대로, "title": 40자 이내 한국어 명사구(원래 뜻 유지, 이모지·체크표시·따옴표·"사용자가 …" 같은 서술 제거, 고유명사·명령 이름은 그대로), '
+            '"summary": 2~3문장 220자 이내 평서문(무엇을 왜, 어떻게 적용하는지), "tags": 3~5개 한국어 명사(기존 태그 중 쓸 만한 것은 유지, 영문 도구명 허용), '
+            '"links": [카탈로그] 중 내용상 관련 있는 stem 최대 3개(자기 자신 제외, 억지로 채우지 말 것)}\n'
+            "노트에 없는 사실을 만들지 마라. 요약은 노트 원문 근거로만.\n\n[카탈로그 stem | 제목]\n"
+            + "\n".join(f"{s} | {t}" for s, t in catalog) + "\n\n[노트들]\n" + json.dumps(items, ensure_ascii=False))
+
+
+def apply_enrichment(vault, note, item, stems, force=False):
+    """한 노트에 Claude 결과 적용. 반환: 바뀐 필드 목록."""
+    changed = []
+    meta = dict(note.meta)
+    title = " ".join(str(item.get("title") or "").split())
+    if title and title != note.title and len(title) <= 60:
+        if not meta.get("original_title"):
+            meta["original_title"] = note.title
+        meta["title"] = title
+        changed.append("title")
+    summary = " ".join(str(item.get("summary") or "").split())
+    if summary and (force or not meta.get("summary")):
+        meta["summary"] = summary[:300]
+        changed.append("summary")
+    tags = [str(t).strip().lstrip("#") for t in (item.get("tags") or []) if str(t).strip()]
+    if tags:
+        merged = list(dict.fromkeys([t for t in note.tags if t not in ("claude-memory",)] + tags))[:7]
+        if merged != note.tags:
+            meta["tags"] = merged
+            changed.append("tags")
+    links = [str(x) for x in (item.get("links") or []) if str(x) in stems and str(x) != note.stem]
+    if links:
+        cur = as_list(meta.get("links"))
+        new = [wikilink(x) for x in links if wikilink(x) not in cur]
+        if new:
+            meta["links"] = cur + new[:3]
+            changed.append("links")
+    if changed:
+        write_note(note.path, meta, note.body)
+    return changed
+
+
+def cmd_enrich(args):
+    """Claude로 노트 정제: 제목·요약·태그·링크. 기본은 가져온(imported_from) 노트 중 요약이 없는 것."""
+    v = require_vault()
+    notes = load_notes(v)
+    stems = {n.stem for n in notes}
+    if args.paths:
+        targets = [n for n in notes if n.rel in args.paths or n.stem in args.paths]
+    elif args.all:
+        targets = [n for n in notes if n.type != "event"]
+    else:
+        targets = [n for n in notes if n.meta.get("imported_from")]
+    if not args.force:
+        targets = [n for n in targets if not n.meta.get("summary")]
+    if args.limit:
+        targets = targets[:args.limit]
+    if not targets:
+        emit(args, {"done": 0}, "정제할 노트가 없어요(이미 요약이 있거나 대상이 없음). --force 또는 --all")
+        return EXIT_OK
+    catalog = [(n.stem, n.title[:40]) for n in notes]
+    report, failed = [], []
+    for i in range(0, len(targets), ENRICH_BATCH):
+        batch = targets[i:i + ENRICH_BATCH]
+        if args.dry_run:
+            report.extend({"stem": n.stem, "changed": ["(dry)"]} for n in batch)
+            continue
+        try:
+            items = _run_claude_json(enrich_prompt(batch, catalog))
+        except BrainError as e:
+            log(f"경고: 배치 {i // ENRICH_BATCH + 1} 실패: {e}")
+            failed.extend(n.stem for n in batch)
+            continue
+        by = {str(it.get("stem")): it for it in items if isinstance(it, dict)}
+        for n in batch:
+            it = by.get(n.stem)
+            if not it:
+                failed.append(n.stem)
+                continue
+            ch = apply_enrichment(v, n, it, stems, force=args.force)
+            report.append({"stem": n.stem, "changed": ch, "title": it.get("title")})
+        log(f"정제 {min(i + ENRICH_BATCH, len(targets))}/{len(targets)}")
+    if not args.dry_run and report:
+        build_index(v)
+        git_commit(v, f"brain: enrich {len(report)} notes")
+    lines = [f"- {r['stem']}: {', '.join(r['changed']) or '변경 없음'}" + (f" → {r['title']}" if r.get('title') and 'title' in r['changed'] else "") for r in report]
+    if failed:
+        lines.append(f"실패 {len(failed)}: " + ", ".join(failed[:6]))
+    emit(args, {"done": len(report), "failed": failed, "report": report}, f"정제 {len(report)}개" + (" (dry-run)" if args.dry_run else "") + "\n" + "\n".join(lines))
+    return EXIT_OK if not failed else EXIT_INPUT
+
+
 def cmd_backup(args):
     v = require_vault()
     res = backup_vault(v, args.dest, args.keep)
@@ -4085,6 +4209,13 @@ def build_parser():
     s.add_argument("--password-file", help="앱 비밀번호가 한 줄 든 파일(기본 ~/.config/second-brain/mail.pass)")
     s.add_argument("--host", help="IMAP 호스트(gmail/naver는 자동)")
     s.add_argument("--sent-folder", help="보낸편지함 폴더 이름")
+
+    s = add("enrich", "Claude로 노트 정제: 제목·요약·태그·관련 링크 (기본: 가져온 노트 중 요약 없는 것)", cmd_enrich)
+    s.add_argument("paths", nargs="*", help="특정 노트 경로/stem만")
+    s.add_argument("--all", action="store_true", help="가져온 노트뿐 아니라 전부(일정 노트 제외)")
+    s.add_argument("--force", action="store_true", help="요약이 있어도 다시")
+    s.add_argument("--limit", type=int, help="최대 N개")
+    s.add_argument("--dry-run", action="store_true", help="대상만 보여주고 호출하지 않음")
 
     s = add("backup", "볼트를 zip으로 백업(~/.cache/second-brain/backups/, 기본 14개 보관)", cmd_backup)
     s.add_argument("--dest", help="백업 폴더(기본 ~/.cache/second-brain/backups)")

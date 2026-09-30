@@ -37,7 +37,7 @@ Claude Code에서 두 줄이면 끝납니다.
 - **먼저 말하기**: 카톡 헬퍼가 있으면 아침 7시 브리핑, 10분마다 출발·시작 알림(동선 10분 전, 일정 30분 전), 21:30 저녁 마감을 보냅니다(launchd 예시는 SPEC.md 참고).
 - **미팅 준비**: 3일 안 일정마다 제목·참석자·장소로 내 기록을 검색해 관련 노트를 붙여 줍니다. 「준비할 일정」 카드에서 바로 열립니다.
 - **말하는 코어**: 코어 화면이 브리핑을 한국어 음성으로 읽고, "이번 주 일정", "자동화 상태", "할 일 추가: 우유 사기 내일", "이름은 자비스로 해" 같은 말을 즉시 처리합니다. 그 밖의 질문은 오늘 상태와 볼트 검색 결과를 붙여 헤드리스 Claude에 물어 두세 문장으로 답합니다.
-- **자동화 감시**: `~/.config/second-brain/widgets.json`에 크론 로그·상태 JSON·CSV 지표·마크다운 결과를 등록하면 보드 카드와 사무실 직원으로 뜹니다. 살았는지(ok/fail/stale), 마지막 결과, 추이. 끝난 자동화는 `"state": "paused"`로 「멈춤」에 접어 둡니다. 첫날 이 기능이 조용히 죽어 있던 크론 3개를 찾아냈습니다. `\"allow_run\": true`를 켜면 행이나 사무실 책상에서 「지금 실행」으로 그 자동화를 바로 한 번 돌리고, 「멈춤/다시 켜기」로 경고 대상에서 빼거나 되돌립니다.
+- **자동화 감시**: `~/.config/second-brain/widgets.json`에 크론 로그·상태 JSON·CSV 지표·마크다운 결과를 등록하면 보드 카드와 사무실 직원으로 뜹니다. 살았는지(ok/fail/stale), 마지막 결과, 추이. 사무실에서는 직원마다 「일하고 있어요 / 놀고 있어요 / 일하는 척하고 있어요 / 멘붕이에요 / 휴가 중이에요」 상태와 시간대·요일 따라 바뀌는 속마음(「퇴근하고 싶다…」「배고파,,,」)이 붙습니다. 끝난 자동화는 `"state": "paused"`로 「멈춤」에 접어 둡니다. 첫날 이 기능이 조용히 죽어 있던 크론 3개를 찾아냈습니다. `\"allow_run\": true`를 켜면 행이나 사무실 책상에서 「지금 실행」으로 그 자동화를 바로 한 번 돌리고, 「멈춤/다시 켜기」로 경고 대상에서 빼거나 되돌립니다.
 
 ```bash
 python3 scripts/brain.py calendar add ics 구글 --url-file ~/.config/second-brain/google.ics.url
@@ -53,6 +53,7 @@ python3 scripts/brain.py event todo "2026-10-03|제주도" "렌터카 예약 확
 python3 scripts/brain.py event step "2026-10-03|제주도" "14:00 집 출발 (자가용 50분)"
 python3 scripts/brain.py config set assistant_name 자비스
 python3 scripts/brain.py backup                        # 볼트 zip 백업(14개 보관)
+python3 scripts/brain.py enrich [--dry-run]            # Claude가 노트 제목·요약·태그·관련 링크 정제(가져온 노트 우선)
 python3 scripts/brain.py agents install                # 07:00 브리핑·10분 알림·21:30 마감·23:00 백업 launchd 설치
 python3 scripts/brain.py config init-widgets           # 예시 widgets.json
 ```

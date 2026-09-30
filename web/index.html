@@ -545,6 +545,7 @@ h1, h2, h3 { text-wrap: balance; }
 .panel-body { padding: 16px 20px 40px; overflow-y: auto; flex: 1; }
 .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .tag { font-size: 12px; padding: 2px 7px; border-radius: 4px; background: var(--surface-3); color: var(--ink-2); }
+.note-summary { margin: 0 0 14px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 var(--r) var(--r) 0; font-size: 14px; line-height: 1.6; color: var(--ink); }
 .fm { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 16px; }
 .fm th, .fm td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
 .fm th { color: var(--muted); font-weight: 400; width: 90px; }
@@ -1388,11 +1389,12 @@ h1, h2, h3 { text-wrap: balance; }
       $("panelTitle").textContent = n.title || path;
       $("panelType").innerHTML = typeBadge(n.type || fm.type || "note");
       $("panelTags").innerHTML = (fm.tags || []).map(function (t) { return '<span class="tag">#' + esc(t) + "</span>"; }).join("");
-      var rows = Object.keys(fm).filter(function (k) { return k !== "title" && k !== "tags"; }).map(function (k) {
+      var rows = Object.keys(fm).filter(function (k) { return k !== "title" && k !== "tags" && k !== "summary"; }).map(function (k) {
         return "<tr><th>" + esc(k) + "</th><td>" + fmVal(fm[k]) + "</td></tr>";
       }).join("");
       var body = String(n.body || "").replace(/^#\s+.*\n+/, ""); // 제목 H1은 헤더와 중복이라 생략
-      $("panelBody").innerHTML = (rows ? '<table class="fm"><caption class="sr-only">프론트매터</caption>' + rows + "</table>" : "") +
+      var summary = fm.summary ? '<p class="note-summary">' + esc(fm.summary) + "</p>" : "";
+      $("panelBody").innerHTML = summary + (rows ? '<table class="fm"><caption class="sr-only">프론트매터</caption>' + rows + "</table>" : "") +
         '<div class="md">' + renderMd(body) + '</div><div class="links">' +
         linkList("들어오는 링크", n.links_in) + linkList("나가는 링크", n.links_out) + "</div>";
       $("panelBody").scrollTop = 0;
