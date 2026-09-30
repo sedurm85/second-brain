@@ -478,3 +478,8 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `web/core.html`의 `answer(q)`에 백엔드 무변경으로 4가지 손대지 않는 음성 동작 추가: 준비 제안 채택/무시("제주도 제안 채택해"·"제안 다 받아"·"수잔 제안 무시해", `POST /api/suggestion`), 준비 항목 체크("여권 체크"·"체크: 모바일 탑승권"·"여권 챙겼어", `POST /api/event-note` check), 준비 남은 항목 안내("내일/제주도 준비 뭐 남았어" — 기존 준비 규칙에 내일/오늘 날짜 우선 매칭만 보강), 할 일 완료("할 일 완료: 보고서"·"보고서 했어", `POST /api/task` check). 이벤트 대상은 기존 준비 규칙과 같은 낱말-겹침 매칭을 재사용, 변경 후 `load()`로 `S.today` 새로 고침
 - 안전장치: 전체 채택/전체 무시("다·전부·모두")만 `S.pendingAction`(20초 만료)에 담아 먼저 "N건을 모두 채택할까요?"로 확인받고 "응/그래/네/좋아"로 실행, "아니/취소"로 취소. 단일 일정 채택·체크박스 하나는 바로 실행
 - 검증: `node`로 `<script>` 블록 `new Function` 문법 확인, `python3 -m unittest tests.test_core -q` 통과(백엔드 무변경). Playwright로 데모 서버(7798)에서 "팀 주간회의 제안 채택해"(자막에 "적었어요", `/api/today` 제안 2→1) → "제안 다 무시해"(확인 질문) → "응"(1→0) 실측 확인
+## v0.29 보드 「사람」 섹션
+
+- `dash_people(vault, agenda=None, today=None)`(`GET /api/people`): 사람 노트마다 `link_graph` 인접 수(`mentions`)·`attach_event_notes`가 붙인 `people` 필드로 매칭된 가장 가까운 일정(`next_event`)·그 사람 노트에 링크된 최근 노트 최대 3개(`recent_notes`/`last_note`)를 모아 next_event 임박 순(없으면 mentions 내림차순)으로 정렬. `unmatched_attendees`는 매칭 안 된 참석자를 정규화 이름으로 묶어 다음 일정·건수를 붙인다. 라우트는 `dash_tasks`/`/api/agenda`와 같은 패턴으로 `agenda_cache.get(14)` 사본에 `attach_event_notes`를 한 번 더 돌려 `people` 필드를 채운 뒤 넘긴다
+- 보드에 「사람」 섹션 추가(프로젝트 다음): 사람 카드 격자(이름 클릭 → 노트 패널, D-n 배지, 기록 건수, 최근 노트 링크)와 옆 칸에 「아직 노트가 없는 참석자」 목록(행마다 「사람 노트 만들기」 버튼이 기존 `POST /api/person` create 액션을 재사용). `boot()`과 `refreshLive()` 양쪽에서 `loadPeople()`로 불러 최신 상태를 유지
+- 테스트 `tests/test_people_section.py` 3건: 매칭된 사람(기록·다음 만남·최근 노트)과 미매칭 참석자, 사람 노트가 하나도 없는 볼트, `GET /api/people` 응답 모양. 전체 스위트 426 통과(기존 423 + 신규 3)

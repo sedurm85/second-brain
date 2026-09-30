@@ -27,7 +27,7 @@ The first "remember this" asks once whether to create the vault at `~/brain/`. T
 | Board `/` | Core `/core` | Office `/office` |
 |---|---|---|
 | ![Board](web/preview-live-desktop.png) | ![Core](web/preview-core.png) | ![Office](web/preview-office.png) |
-| The assistant's report in sentences, today's timeline, tasks in four columns, this week, knowledge graph, automations, decisions, timeline, projects | A living orb with bands of light, minimal HUD, spoken briefing (Korean TTS), ask by microphone or text | One automation = one employee, rooms per team, typing while running, red lamp on failure, a workshop for Claude's background jobs |
+| The assistant's report in sentences, today's timeline, tasks in four columns, this week, knowledge graph, automations, decisions, timeline, projects, people | A living orb with bands of light, minimal HUD, spoken briefing (Korean TTS), ask by microphone or text | One automation = one employee, rooms per team, typing while running, red lamp on failure, a workshop for Claude's background jobs |
 
 "Show me the dashboard" (or `/second-brain:brain-view`) starts `brain.py serve`, which listens on your machine only. No external services or libraries: three HTML files and one Python script. `/report` is a printable one-page weekly report. Without a vault, `python3 scripts/brain.py serve --demo` shows a demo with fabricated data, fully isolated from your real `~/.cache/second-brain` cache (offline): three events today, five tasks including an overdue one and a waiting item, a meeting with a prep checklist, a trip to a located airport (Gimpo) with a four-step itinerary and a seeded weather cache, four automations (one failing, with a week of history), two pending suggestion cards, a staff brief, and a core-chat log.
 

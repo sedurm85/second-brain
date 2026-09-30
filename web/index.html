@@ -579,6 +579,24 @@ h1, h2, h3 { text-wrap: balance; }
 .pcard li svg { width: 9px; height: 9px; flex: none; }
 .pcard .p-last { font-size: 12.5px; color: var(--muted); }
 
+/* ───────── 사람: 카드 격자 + 미확인 참석자 ───────── */
+.people-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .people-layout { grid-template-columns: minmax(0, 1fr); } }
+.people { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+.pplcard h3 { flex-wrap: wrap; }
+.pplcard h3 .card-open { background: none; border: 0; padding: 0; margin: 0; display: inline-flex; align-items: center; gap: 8px; font: inherit; font-weight: inherit; color: inherit; cursor: pointer; }
+.pplcard h3 .card-open:hover { text-decoration: underline; text-underline-offset: 3px; }
+.ppl-badge { margin-left: auto; font-size: 11.5px; font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 2px 9px; }
+.ppl-next { font-size: 12.5px; color: var(--ink-2); margin: 0 0 6px; }
+.ppl-recent { margin: 0; }
+.ppl-recent .lnk { background: none; border: 0; padding: 0; font-size: 13px; color: var(--ink-2); cursor: pointer; text-align: left; }
+.ppl-recent .lnk:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.ppl-unmatched { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.ppl-unmatched li { display: flex; flex-direction: column; gap: 4px; }
+.ppl-unmatched .unmatched { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border: 1px dashed var(--rule-strong); border-radius: 999px; color: var(--ink-2); width: fit-content; }
+.ppl-unmatched small { color: var(--muted); font-size: 12px; }
+.ppl-unmatched .mk-person { width: fit-content; }
+
 /* ───────── 빈 상태 ───────── */
 .empty { padding: 48px 0; max-width: 60ch; }
 .empty h2 { font-size: 22px; font-weight: 600; margin: 16px 0 8px; }
@@ -712,6 +730,7 @@ h1, h2, h3 { text-wrap: balance; }
       <li><a href="#timeline"><span class="dot"></span>타임라인</a></li>
       <li><a href="#journals"><span class="dot"></span>일지</a></li>
       <li><a href="#projects"><span class="dot"></span>프로젝트</a></li>
+      <li><a href="#people"><span class="dot"></span>사람</a></li>
     </ul>
     </nav>
     <div class="header-tools">
@@ -814,6 +833,17 @@ h1, h2, h3 { text-wrap: balance; }
       <section class="section" id="projects" aria-labelledby="pj-h">
         <div class="section-head"><h2 id="pj-h">프로젝트</h2></div>
         <div id="pj"><div class="loading">프로젝트 불러오는 중…</div></div>
+      </section>
+
+      <section class="section" id="people" aria-labelledby="ppl-h">
+        <div class="section-head"><h2 id="ppl-h">사람</h2><p>누구와 함께 일하는지, 다음 만남이 언제인지, 무엇을 기록했는지.</p></div>
+        <div class="people-layout">
+          <div id="pplGrid"><div class="loading">사람 불러오는 중…</div></div>
+          <div class="tcard" id="pplUnmatchedCard">
+            <h3>아직 노트가 없는 참석자</h3>
+            <ul id="pplUnmatched" class="ppl-unmatched"></ul>
+          </div>
+        </div>
       </section>
     </div>
 </main>
@@ -1462,6 +1492,44 @@ h1, h2, h3 { text-wrap: balance; }
           return '<li><button type="button" data-path="' + esc(r.path) + '">' + shapeSvg(r.type) + "<span>" + esc(r.title) + "</span></button></li>";
         }).join("") + "</ul>" : "") + "</div>";
     }).join("") + "</div>";
+  }
+
+  /* ───────── 사람 ───────── */
+  function renderPeople(d) {
+    var ps = (d && d.people) || [];
+    $("pplGrid").innerHTML = !ps.length
+      ? '<div class="card loading">아직 사람 노트가 없어요. 결정이나 회의에 <code>people: [[이름]]</code>을 적거나 일정 참석자에서 만들 수 있어요.</div>'
+      : '<div class="people">' + ps.map(function (p) {
+          var badge = p.next_event ? '<span class="ppl-badge">' + dLeft(p.next_event.days_left) + "</span>" : "";
+          var next = p.next_event ? esc(p.next_event.title) + " · " + esc(fmtDate(p.next_event.start)) : "다가오는 만남 없음";
+          var last = p.last_note
+            ? '<button type="button" class="lnk" data-path="' + esc(p.last_note.path) + '">' + esc(p.last_note.title) + "</button>"
+            : '<span class="t-empty">아직 기록이 없어요.</span>';
+          return '<div class="pcard glass pplcard"><h3><button type="button" class="card-open" data-path="' + esc(p.path) + '">' +
+            shapeSvg("person") + esc(p.title) + "</button>" + badge + "</h3>" +
+            '<div class="p-nums"><div><b>' + (p.mentions || 0) + "</b><span>기록</span></div></div>" +
+            '<p class="ppl-next">' + next + "</p>" +
+            '<p class="ppl-recent">' + last + "</p></div>";
+        }).join("") + "</div>";
+    var um = (d && d.unmatched_attendees) || [];
+    $("pplUnmatched").innerHTML = um.length
+      ? um.map(function (p) {
+          return '<li><span class="unmatched">' + esc(p.name) + (p.count > 1 ? " · " + p.count + "건" : "") + "</span>" +
+            "<small>" + esc(p.next_event.title) + " · " + esc(fmtDate(p.next_event.start)) + "</small>" +
+            '<button type="button" class="text-btn mk-person" data-name="' + esc(p.name) + '" data-key="' + esc(p.event_key || "") + '">사람 노트 만들기</button></li>';
+        }).join("")
+      : '<li class="t-empty">아직 없어요.</li>';
+    $("pplUnmatched").querySelectorAll(".mk-person").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        btn.disabled = true; btn.textContent = "만드는 중";
+        post("person", { action: "create", name: btn.getAttribute("data-name"), event_key: btn.getAttribute("data-key") })
+          .then(function () { loadPeople(); })
+          .catch(function (err) { btn.disabled = false; btn.textContent = "사람 노트 만들기"; alert("실패: " + (err.message || err)); });
+      });
+    });
+  }
+  function loadPeople() {
+    return api("people").then(renderPeople).catch(function (err) { fail($("pplGrid"), "사람", err); });
   }
 
   /* ───────── 마크다운 (간단 렌더러: 헤딩·리스트·굵게·코드·[[링크]]) ───────── */
@@ -2244,6 +2312,7 @@ h1, h2, h3 { text-wrap: balance; }
     var a = api("today").then(function (t) { renderToday(t); return true; })
       .catch(function (err) { if (!S.live.okToday) fail($("todayGrid"), "오늘", err); else console.error("[세컨드브레인] 오늘 갱신 실패", err); return false; });
     api("mail").then(renderMail).catch(function () { $("mail").hidden = true; });
+    loadPeople();
     api("tasks").then(renderTasks).catch(function (err) { $("tasksGrid").innerHTML = '<div class="loading">할 일을 불러오지 못했어요: ' + esc(String(err && err.message || err)) + "</div>"; });
     api("agenda", { days: 7 }).then(function (ag) {
       renderWeek(ag);
@@ -2472,6 +2541,7 @@ h1, h2, h3 { text-wrap: balance; }
     api("timeline", { days: 30 }).then(renderTimeline).catch(function (err) { fail($("tl"), "타임라인", err); });
     loadJournals();
     var pj = api("projects").then(renderProjects).catch(function (err) { fail($("pj"), "프로젝트", err); });
+    loadPeople();
     // 딥링크(#decisions 등): 내용이 다 그려진 뒤에 그 위치로 (비동기 로딩이라 브라우저 기본 앵커 이동은 빈 자리로 감)
     if (location.hash) {
       pj.then(function () {

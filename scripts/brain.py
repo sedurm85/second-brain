@@ -1677,6 +1677,74 @@ def dash_projects(vault):
     return out
 
 
+def dash_people(vault, agenda=None, today=None):
+    """/api/people. 「사람」 섹션: 사람 노트마다 다음 만남·최근 기록·언급 수, 그리고
+    아직 사람 노트가 없는 참석자 목록(있으면 사람 노트 만들기로 이어짐).
+
+    agenda는 attach_event_notes로 참석자 매칭(people 필드)이 이미 붙은 dict를 받는다
+    (dash_tasks/derived_tasks와 같은 패턴 — 캐시 사본에 붙여서 호출자가 넘긴다).
+    """
+    today = today or date.today()
+    ag = agenda or {}
+    notes = load_notes(vault)
+    by_stem, adj = link_graph(notes)
+    events = (ag.get("today") or []) + (ag.get("upcoming") or [])
+
+    def matched_events_for(rel, key):
+        hits = []
+        for e in events:
+            for p in e.get("people") or []:
+                if p.get("matched") and (p.get("path") == rel or normalize_person_name(p.get("name")) == key):
+                    hits.append(e)
+                    break
+        return sorted(hits, key=lambda e: e.get("days_left") if e.get("days_left") is not None else 9999)
+
+    people = []
+    for n in notes:
+        if n.type != "person":
+            continue
+        key = normalize_person_name(n.title)
+        linked = sorted((by_stem[s] for s in adj.get(n.stem, ()) if s in by_stem and by_stem[s].type != "person"),
+                        key=lambda m: (m.created, m.rel), reverse=True)
+        matched = matched_events_for(n.rel, key)
+        next_event = None
+        if matched:
+            e0 = matched[0]
+            next_event = {"title": e0.get("title"), "start": e0.get("start"), "days_left": e0.get("days_left")}
+        item = {
+            "path": n.rel, "title": n.title, "slug": n.stem, "tags": n.tags,
+            "mentions": len(linked),
+            "last_note": ({"title": linked[0].title, "path": linked[0].rel, "created": linked[0].created}
+                         if linked else None),
+            "next_event": next_event,
+            "upcoming_count": len(matched),
+            "recent_notes": [{"title": m.title, "path": m.rel, "created": m.created} for m in linked[:3]],
+        }
+        email = str(n.meta.get("email") or "").strip()
+        if email:
+            item["email"] = email
+        people.append(item)
+    people.sort(key=lambda p: (p["next_event"]["days_left"] if p.get("next_event") else float("inf"),
+                               -p["mentions"]))
+
+    seen, unmatched = set(), []
+    for e in events:
+        for p in e.get("people") or []:
+            if p.get("matched"):
+                continue
+            key = normalize_person_name(p.get("name"))
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            same = [ee for ee in events for pp in (ee.get("people") or [])
+                    if not pp.get("matched") and normalize_person_name(pp.get("name")) == key]
+            same.sort(key=lambda ee: ee.get("days_left") if ee.get("days_left") is not None else 9999)
+            unmatched.append({"name": p.get("name"),
+                              "next_event": {"title": same[0].get("title"), "start": same[0].get("start")},
+                              "count": len(same), "event_key": same[0].get("key")})
+    return {"people": people, "unmatched_attendees": unmatched}
+
+
 # ---------------------------------------------------------------------------
 # 데모 볼트 (전부 가공 데이터)
 # ---------------------------------------------------------------------------
@@ -3058,6 +3126,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._json(200, dash_decisions(vault, today))
             if route == "/api/projects":
                 return self._json(200, dash_projects(vault))
+            if route == "/api/people":
+                ag = dict(self.server.agenda_cache.get(14))
+                attach_event_notes(vault, ag)
+                return self._json(200, dash_people(vault, ag, self.server.today))
             if route == "/api/widgets":
                 ws = collect_widgets(self.server.widget_cache)
                 cmds = widget_commands(ws)
