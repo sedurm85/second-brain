@@ -614,6 +614,17 @@ h1, h2, h3 { text-wrap: balance; }
 .wmodal .tbl-wrap { max-height: 40vh; overflow: auto; margin-top: 12px; border-top: 1px solid var(--rule); }
 .wmodal .tbl-wrap .kv th, .wmodal .tbl-wrap .kv td { padding: 4px 6px; }
 
+/* ───────── 단축키 · 명령 팔레트 (v0.29) ───────── */
+.sc-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .35); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 49; }
+.sc-backdrop.open { opacity: 1; pointer-events: auto; }
+.shortcuts-modal .panel-body { max-height: 60vh; overflow-y: auto; }
+.sc-list { display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; margin: 0; }
+.sc-list dt { font-weight: 600; white-space: nowrap; }
+.sc-list dd { margin: 0; color: var(--ink-2); }
+.sc-list kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--rule-strong); border-radius: 5px; background: var(--surface); font-family: inherit; font-size: 12px; }
+.shortcut-toast { position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 12px); z-index: 60; padding: 8px 16px; border-radius: 999px; background: var(--surface); border: 1px solid var(--rule-strong); box-shadow: var(--panel-shadow); font-size: 13px; color: var(--ink); opacity: 0; pointer-events: none; transition: opacity .16s, transform .16s; }
+.shortcut-toast.show { opacity: 1; transform: translate(-50%, 0); }
+
 /* ───────── 반응형 ───────── */
 @media (max-width: 1000px) {
   .hero-text { grid-template-columns: minmax(0, 1fr); }
@@ -641,6 +652,8 @@ h1, h2, h3 { text-wrap: balance; }
   .tile-value { font-size: 32px; }
   .tl-day { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .top-w .t { max-width: 60%; }
+  .sc-list { grid-template-columns: minmax(0, 1fr); }
+  .sc-list dt { white-space: normal; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -696,6 +709,9 @@ h1, h2, h3 { text-wrap: balance; }
         </div>
         <button class="icon-btn" id="themeBtn" type="button" aria-label="테마 전환">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"/></svg>
+        </button>
+        <button class="icon-btn" id="shortcutsBtn" type="button" aria-label="키보드 단축키 도움말">
+          <span aria-hidden="true" style="font-weight:700;font-size:15px;line-height:1">?</span>
         </button>
       </div>
   </div>
@@ -811,6 +827,28 @@ h1, h2, h3 { text-wrap: balance; }
   </div>
   <div class="panel-body" id="wmBody"></div>
 </div>
+<div class="sc-backdrop" id="scBackdrop"></div>
+<div class="wmodal shortcuts-modal" id="scModal" role="dialog" aria-modal="true" aria-labelledby="scTitle" aria-hidden="true">
+  <div class="panel-head">
+    <h2 id="scTitle">키보드 단축키</h2>
+    <button class="icon-btn" id="scClose" type="button" aria-label="닫기 (ESC)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+  <div class="panel-body">
+    <dl class="sc-list">
+      <div><dt><kbd>/</kbd> · <kbd>⌘/Ctrl K</kbd></dt><dd>검색창 포커스</dd></div>
+      <div><dt><kbd>⌘/Ctrl ⇧ P</kbd> · 검색창에 <kbd>&gt;</kbd></dt><dd>명령 팔레트 열기</dd></div>
+      <div><dt><kbd>g</kbd> → <kbd>t/h/w/a/d/l/j/p</kbd></dt><dd>오늘·할 일·이번 주·자동화·결정·타임라인·일지·프로젝트로 이동</dd></div>
+      <div><dt><kbd>n</kbd></dt><dd>할 일 추가 입력창 포커스</dd></div>
+      <div><dt><kbd>r</kbd></dt><dd>새로 고침</dd></div>
+      <div><dt><kbd>t</kbd></dt><dd>테마 전환</dd></div>
+      <div><dt><kbd>?</kbd></dt><dd>이 도움말 열기</dd></div>
+      <div><dt><kbd>Esc</kbd></dt><dd>검색 · 명령 팔레트 · 이 도움말 닫기</dd></div>
+    </dl>
+  </div>
+</div>
+<div class="shortcut-toast" id="scToast" aria-live="polite" role="status"></div>
 
 <script>
 (function () {
@@ -936,20 +974,21 @@ h1, h2, h3 { text-wrap: balance; }
     ["surface", "ink", "ink-2", "muted", "axis", "grid", "accent"].forEach(function (k) { S.colors[k] = cs.getPropertyValue("--" + k).trim(); });
     TYPES.forEach(function (t) { S.colors[t] = cs.getPropertyValue("--t-" + t).trim(); });
   }
+  function toggleTheme() {
+    var cur = document.documentElement.getAttribute("data-theme") ||
+      (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+    var next = cur === "light" ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("brain-theme", next); } catch (e) { console.error("[세컨드브레인] 테마 저장 불가", e); }
+    readColors(); draw();
+  }
   function initTheme() {
     var saved = null;
     try { saved = localStorage.getItem("brain-theme"); } catch (e) { console.error("[세컨드브레인] 테마 읽기 불가", e); }
     var forced = params.get("theme"); // ?theme=light|dark 로 강제 (캡처·공유용, 저장하지 않음)
     if (forced === "light" || forced === "dark") saved = forced;
     if (saved === "light" || saved === "dark") document.documentElement.setAttribute("data-theme", saved);
-    $("themeBtn").addEventListener("click", function () {
-      var cur = document.documentElement.getAttribute("data-theme") ||
-        (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
-      var next = cur === "light" ? "dark" : "light";
-      document.documentElement.setAttribute("data-theme", next);
-      try { localStorage.setItem("brain-theme", next); } catch (e) { console.error("[세컨드브레인] 테마 저장 불가", e); }
-      readColors(); draw();
-    });
+    $("themeBtn").addEventListener("click", toggleTheme);
     matchMedia("(prefers-color-scheme: light)").addEventListener("change", function () { readColors(); draw(); });
     readColors();
   }
@@ -1688,16 +1727,39 @@ h1, h2, h3 { text-wrap: balance; }
       box.hidden = false; input.setAttribute("aria-expanded", "true");
     }
     function select(i) {
-      var opts = box.querySelectorAll("[data-path]"); if (!opts.length) return;
+      var opts = box.querySelectorAll("[data-path],[data-cmd]"); if (!opts.length) return;
       SR.sel = (i + opts.length) % opts.length;
       opts.forEach(function (o, j) { o.setAttribute("aria-selected", String(j === SR.sel)); });
       input.setAttribute("aria-activedescendant", "opt" + SR.sel);
       opts[SR.sel].scrollIntoView({ block: "nearest" });
     }
+    /* 명령 팔레트: 검색창 첫 글자가 ">"이면 노트 검색 대신 명령 목록을 보여줌 */
+    function renderCmds(q2) {
+      var text = q2.trim(), needle = text.toLowerCase();
+      var matches = CMD_LIST.filter(function (c) { return !needle || c.label.toLowerCase().indexOf(needle) !== -1; });
+      var dynamic = text ? [{
+        label: "할 일 추가: " + text,
+        run: function () {
+          taskPost({ action: "add", text: text }).then(function () { toast("할 일 추가됨"); })
+            .catch(function (err) { alert("추가 실패: " + (err.message || err)); });
+        }
+      }] : [];
+      SR.cmds = matches.concat(dynamic); SR.sel = -1;
+      box.innerHTML = SR.cmds.length ? SR.cmds.map(function (c, i) {
+        return '<li role="option" id="opt' + i + '" aria-selected="false" data-cmd="' + i + '"><div class="r-title">' + esc(c.label) + "</div></li>";
+      }).join("") : '<li class="r-empty" role="option" aria-disabled="true">명령을 찾지 못했어요</li>';
+      box.hidden = false; input.setAttribute("aria-expanded", "true");
+    }
+    function runCmd(i) {
+      var c = SR.cmds && SR.cmds[i];
+      hide(); input.value = ""; input.blur();
+      if (c) c.run();
+    }
     input.addEventListener("input", function () {
       clearTimeout(SR.timer);
       var q = input.value.trim();
       if (!q) { hide(); return; }
+      if (q.charAt(0) === ">") { renderCmds(q.slice(1)); return; }
       SR.timer = setTimeout(function () {
         var seq = ++SR.seq;
         api("search", { q: q, limit: 20 }).then(function (r) { if (seq === SR.seq) render(r || [], q); })
@@ -1712,18 +1774,21 @@ h1, h2, h3 { text-wrap: balance; }
       if (ev.key === "ArrowDown") { ev.preventDefault(); select(SR.sel + 1); }
       else if (ev.key === "ArrowUp") { ev.preventDefault(); select(SR.sel - 1); }
       else if (ev.key === "Enter") {
-        var o = box.querySelectorAll("[data-path]")[SR.sel < 0 ? 0 : SR.sel];
-        if (o) { ev.preventDefault(); openNote(o.getAttribute("data-path")); hide(); }
-      } else if (ev.key === "Escape") { ev.stopPropagation(); hide(); }
+        var o = box.querySelectorAll("[data-path],[data-cmd]")[SR.sel < 0 ? 0 : SR.sel];
+        if (o) {
+          ev.preventDefault();
+          if (o.hasAttribute("data-cmd")) runCmd(+o.getAttribute("data-cmd"));
+          else { openNote(o.getAttribute("data-path")); hide(); }
+        }
+      } else if (ev.key === "Escape") { ev.stopPropagation(); hide(); input.blur(); }
     });
     box.addEventListener("mousedown", function (ev) {
-      var o = ev.target.closest("[data-path]"); if (!o) return;
-      ev.preventDefault(); openNote(o.getAttribute("data-path")); hide();
+      var o = ev.target.closest("[data-path],[data-cmd]"); if (!o) return;
+      ev.preventDefault();
+      if (o.hasAttribute("data-cmd")) runCmd(+o.getAttribute("data-cmd"));
+      else { openNote(o.getAttribute("data-path")); hide(); }
     });
     input.addEventListener("blur", function () { setTimeout(hide, 120); });
-    document.addEventListener("keydown", function (ev) {
-      if (ev.key === "/" && document.activeElement !== input && !S.panel.open) { ev.preventDefault(); input.focus(); }
-    });
   }
 
   /* ───────── 오늘 · 자동화 위젯 (v0.3) ───────── */
@@ -2226,13 +2291,122 @@ h1, h2, h3 { text-wrap: balance; }
     }
   }
 
+  /* ───────── 단축키 · 명령 팔레트 (v0.29) ───────── */
+  var SC = { chord: null, chordTimer: 0, toastTimer: 0, helpOpen: false, lastFocus: null };
+  var GOTO_MAP = { t: "today-section", h: "tasks", w: "week", a: "automation", d: "decisions", l: "timeline", j: "journals", p: "projects" };
+  var CMD_LIST = [
+    { label: "오늘로", run: function () { go("today-section"); } },
+    { label: "할 일로", run: function () { go("tasks"); } },
+    { label: "이번 주로", run: function () { go("week"); } },
+    { label: "자동화로", run: function () { go("automation"); } },
+    { label: "결정으로", run: function () { go("decisions"); } },
+    { label: "타임라인으로", run: function () { go("timeline"); } },
+    { label: "일지로", run: function () { go("journals"); } },
+    { label: "프로젝트로", run: function () { go("projects"); } },
+    { label: "코어 열기", run: function () { location.href = "/core"; } },
+    { label: "사무실 열기", run: function () { location.href = "/office"; } },
+    { label: "리포트 열기", run: function () { location.href = "/report"; } },
+    { label: "테마 전환", run: function () { toggleTheme(); toast("테마 전환"); } },
+    { label: "새로 고침", run: function () { refreshLive(true); toast("새로 고침"); } }
+  ];
+  function isTypingTarget(el) {
+    if (!el) return false;
+    var tag = el.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+  }
+  function toast(msg) {
+    var el = $("scToast"); if (!el) return;
+    el.textContent = msg; el.classList.add("show");
+    clearTimeout(SC.toastTimer);
+    SC.toastTimer = setTimeout(function () { el.classList.remove("show"); }, 1600);
+  }
+  function go(id) {
+    var el = $(id); if (!el) return;
+    el.scrollIntoView({ block: "start", behavior: reduceMotion ? "auto" : "smooth" });
+  }
+  function focusSearch() {
+    var el = $("q"); if (!el) return;
+    el.focus();
+    try { el.select(); } catch (e) { /* 무시: select 미지원 환경 */ }
+  }
+  function focusTaskInput() {
+    var el = document.querySelector("#taskAdd [name=text]"); if (el) el.focus();
+  }
+  function openCommandPalette() {
+    var el = $("q"); if (!el) return;
+    el.value = ">"; el.focus();
+    try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) { /* 무시 */ }
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  function openShortcutsSheet() {
+    var m = $("scModal"), bd = $("scBackdrop"); if (!m) return;
+    SC.lastFocus = document.activeElement; SC.helpOpen = true;
+    m.classList.add("open"); m.setAttribute("aria-hidden", "false");
+    if (bd) bd.classList.add("open");
+    var f = $("scClose"); if (f) f.focus();
+  }
+  function closeShortcutsSheet() {
+    var m = $("scModal"), bd = $("scBackdrop"); if (!m || !SC.helpOpen) return;
+    SC.helpOpen = false;
+    m.classList.remove("open"); m.setAttribute("aria-hidden", "true");
+    if (bd) bd.classList.remove("open");
+    if (SC.lastFocus && SC.lastFocus.focus) SC.lastFocus.focus();
+  }
+  function initShortcuts() {
+    document.addEventListener("keydown", function (ev) {
+      // Cmd/Ctrl+K → 검색 포커스 (다른 곳에 포커스가 있어도 허용)
+      if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && !ev.shiftKey && ev.key.toLowerCase() === "k") {
+        ev.preventDefault(); focusSearch(); return;
+      }
+      // Cmd/Ctrl+Shift+P → 명령 팔레트
+      if ((ev.metaKey || ev.ctrlKey) && ev.shiftKey && !ev.altKey && ev.key.toLowerCase() === "p") {
+        ev.preventDefault(); openCommandPalette(); return;
+      }
+      if (SC.helpOpen) {
+        if (ev.key === "Escape") { ev.preventDefault(); closeShortcutsSheet(); return; }
+        if (ev.key === "Tab") { // 도움말 시트 안에 포커스 가두기
+          var f = $("scModal").querySelectorAll("button, a[href], input");
+          if (!f.length) return;
+          var first = f[0], last = f[f.length - 1];
+          if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+          else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+        }
+        return;
+      }
+      if (ev.metaKey || ev.ctrlKey || ev.altKey) return; // 나머지는 조합키 없이 눌렀을 때만
+      if (isTypingTarget(document.activeElement)) return;
+      if (S.panel.open || S.wm.open) return; // 노트 패널·위젯 모달이 열려 있으면 보드 단축키 비활성
+      if (SC.chord === "g") {
+        clearTimeout(SC.chordTimer); SC.chord = null;
+        var target = GOTO_MAP[ev.key];
+        if (target) { ev.preventDefault(); go(target); }
+        return;
+      }
+      switch (ev.key) {
+        case "/": ev.preventDefault(); focusSearch(); break;
+        case "g":
+          ev.preventDefault(); SC.chord = "g"; toast("g → 어디로?");
+          clearTimeout(SC.chordTimer);
+          SC.chordTimer = setTimeout(function () { SC.chord = null; }, 1200);
+          break;
+        case "n": ev.preventDefault(); focusTaskInput(); break;
+        case "r": ev.preventDefault(); refreshLive(true); toast("새로 고침"); break;
+        case "t": ev.preventDefault(); toggleTheme(); toast("테마 전환"); break;
+        case "?": ev.preventDefault(); openShortcutsSheet(); break;
+      }
+    });
+    $("scClose").addEventListener("click", closeShortcutsSheet);
+    $("shortcutsBtn").addEventListener("click", openShortcutsSheet);
+    var bd = $("scBackdrop"); if (bd) bd.addEventListener("click", closeShortcutsSheet);
+  }
+
   /* ───────── 부트 ───────── */
   function boot() {
     // 해시 없이 열면 기본 위치는 「오늘」(페이지 맨 위)
     if (!location.hash && "scrollRestoration" in history) { history.scrollRestoration = "manual"; window.scrollTo(0, 0); }
     // 첫 로드 등장 시퀀스: 탭이 보이고 모션 축소가 아닐 때만, 1.6초 뒤 해제(멈춘 프레임 방지)
     if (!document.hidden && !reduceMotion) { document.documentElement.classList.add("entering"); setTimeout(function () { document.documentElement.classList.remove("entering"); }, 1600); }
-    initTheme(); renderHeader(); initGraphEvents(); initSearch(); initLive(); initGlobal(); initTasks();
+    initTheme(); renderHeader(); initGraphEvents(); initSearch(); initLive(); initGlobal(); initTasks(); initShortcuts();
     if (!MOCK) api("session").then(function (s) { S.token = s.token; S.writable = !!s.writable; S.assistantName = s.assistant_name || "브레인"; }).catch(function () { S.token = null; });
     api("summary").then(function (s) {
       if (!s.counts || !s.counts.total) { renderEmpty(); return; }
