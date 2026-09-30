@@ -95,3 +95,4 @@
 - 18:48 wt/people-section(보드 「사람」)·wt/core-settings(음성·속도·자막·자동 브리핑)·wt/search-ops(검색 연산자·패싯, 38 테스트) 머지 → 테스트 493. 워커 추가: wt/quick-capture(보드·코어 빠른 캡처), wt/export-html(볼트 한 파일 내보내기). 가동 중: vault-lint, quick-capture, export-html
 - 18:55 관리자: 참석자에서 본인 계정 제외(캘린더 이름·config me), 검색 연산자·doctor 실제 볼트 확인(노트 107·요약 101, 에이전트 7/7). 워커 추가: wt/overview-stats(개요 통계·12주 활동 차트·일지 연속)
 - 19:00 wt/vault-lint 머지(17개 점검 코드·5개 자동 수정, 테스트 501). 실제 볼트 lint: 이슈 6(오래된 고아 4, 예시 텍스트의 [[파일]] 2 — 둘 다 사용자 판단 영역, 자동 수정 대상 아님). 워커 추가: wt/widget-edit(사무실 직원 설정 편집)
+- 19:05 wt/quick-capture 머지(both-added 충돌 양쪽 유지, 테스트 511). 관리자: `brain.py ask` CLI 추가(512). 실수 1건: 테스트 실패에도 커밋된 체인(tail 종료코드) → 즉시 보정, lessons.md 기록. 워커 추가: wt/obsidian-init. 가동 중: export-html, overview-stats, widget-edit, obsidian-init
