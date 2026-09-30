@@ -228,6 +228,8 @@ h1, h2, h3 { text-wrap: balance; }
 .ev-rel li:first-child { border-top: 0; }
 .ev-rel .lnk { background: none; border: 0; padding: 0; color: var(--ink); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .ev-rel small { display: block; color: var(--muted); font-size: 12.5px; }
+.rq-h { margin: 12px 0 4px; font-size: 12.5px; color: var(--muted); font-weight: 600; } .rq-h small { font-weight: 400; margin-left: 6px; }
+.rq { list-style: none; margin: 0; padding: 0; } .rq li { padding: 4px 0; font-size: 13.5px; line-height: 1.5; } .rq label { display: flex; gap: 8px; align-items: baseline; cursor: pointer; } .rq li.done span { text-decoration: line-through; color: var(--muted); }
 .ev-sug { margin: 14px 0 6px; padding: 12px 14px; border: 1px dashed var(--accent); border-radius: var(--r); background: var(--accent-soft); }
 .ev-sug .ev-h { margin-top: 0; }
 .sug-list { list-style: none; margin: 0 0 10px; padding: 0; }
@@ -1599,13 +1601,16 @@ h1, h2, h3 { text-wrap: balance; }
     var paused = ws.paused || 0, active = total - paused, out = [];
     if (!active) out.push("아직 연결된 자동화가 없어요.");
     else if (!tops.length) out.push("자동화 " + active + "개가 모두 정상이에요.");
+    else if (!tops.some(function (w) { return w.status !== "unknown"; })) out.push("자동화 " + (ws.ok || 0) + "개가 정상이고, 새로 등록한 " + tops.length + "개는 아직 첫 기록이 없어요.");
     else {
+      var fresh = tops.filter(function (w) { return w.status === "unknown"; }).length;
+      tops = tops.filter(function (w) { return w.status !== "unknown"; });
       var nm = tops.slice(0, 2).map(function (w) { return shortTitle(w.title); });
       var names = nm.length === 2 ? nm[0] + josa(nm[0], "과", "와") + " " + nm[1] : nm[0];
       var tail = tops.length > 2 ? " 외 " + (tops.length - 2) + "개" : "";
       var subj = tail || nm[nm.length - 1];
       var word = tops[0].status === "fail" ? "실패" : tops[0].status === "stale" ? "오래된" : tops[0].status === "missing" ? "기록 없는" : tops[0].status === "unknown" ? "알 수 없는" : "주의";
-      out.push("자동화 " + (ws.ok || 0) + "개가 정상이고, " + names + tail + josa(subj, "이", "가") + " " + word + " 상태예요.");
+      out.push("자동화 " + (ws.ok || 0) + "개가 정상이고, " + names + tail + josa(subj, "이", "가") + " " + word + " 상태예요." + (fresh ? " 새로 등록한 " + fresh + "개는 아직 첫 기록이 없어요." : ""));
     }
     if (t.agenda && t.agenda.sentence) out.push(t.agenda.sentence);
     if (t.mail && t.mail.sentence) out.push(t.mail.sentence);
@@ -1645,7 +1650,11 @@ h1, h2, h3 { text-wrap: balance; }
       var cls = dl == null ? "badge" : dl <= 0 ? "badge over" : dl <= 7 ? "badge soon" : "badge";
       return '<li><button type="button" class="rv-item" data-path="' + esc(d.path) + '"><span class="t">' + esc(d.title) + "</span>" +
         (lab ? '<span class="' + cls + '">' + lab + "</span>" : "") + "</button></li>";
-    }).join("") + "</ul>" : '<p class="t-empty">이번 주에 되돌아볼 결정이 없어요.</p>';
+    }).join("") + "</ul>" : (t.retro_questions && t.retro_questions.length ? "" : '<p class="t-empty">이번 주에 되돌아볼 결정이 없어요.</p>');
+    var rq = t.retro_questions || [];
+    if (rq.length) rvHtml += '<h4 class="rq-h">회고 질문 <small>' + esc(rq[0].date || "") + "</small></h4><ul class=\"rq\">" + rq.map(function (q) {
+      return '<li><label><input type="checkbox" data-rq-path="' + esc(q.path) + '" data-rq-line="' + q.line + '"> <span>' + esc(q.text) + "</span></label></li>";
+    }).join("") + "</ul>";
     var tk = t.tasks || { counts: {}, today: [] }, tkc = tk.counts || {};
     var ibHtml = (tk.today && tk.today.length) ? '<ul aria-label="오늘 할 일">' + tk.today.slice(0, 5).map(function (it) {
       return '<li class="inbox-item"><span class="box" aria-hidden="true"></span><span>' + esc(it.text) + (it.kind && it.kind !== "task" ? ' <span class="muted" style="font-size:12px">· ' + ({ decision: "결정", automation: "자동화", prep: "준비" }[it.kind] || it.kind) + "</span>" : "") + "</span></li>";
@@ -1653,6 +1662,15 @@ h1, h2, h3 { text-wrap: balance; }
       '<p class="t-empty">오늘 할 일이 없어요.' + ((tkc.week || 0) + (tkc.someday || 0) ? " 이번 주 " + (tkc.week || 0) + " · 언젠가 " + (tkc.someday || 0) + (tkc.waiting ? " · 기다림 " + tkc.waiting : "") : ' 아래 <a href="#tasks">할 일</a>에서 추가해요.') + "</p>";
     var inboxCount = tkc.today != null ? tkc.today : inbox.length;
     renderDaybar(t.agenda || {}, t.now);
+    setTimeout(function () {
+      document.querySelectorAll("[data-rq-path]").forEach(function (cb) {
+        cb.addEventListener("change", function () {
+          post("event-note", { action: "check", path: cb.getAttribute("data-rq-path"), line: +cb.getAttribute("data-rq-line"), done: cb.checked })
+            .then(function () { cb.closest("li").classList.add("done"); setTimeout(function () { refreshLive(true); }, 800); })
+            .catch(function (err) { cb.checked = !cb.checked; alert("저장 실패: " + (err.message || err)); });
+        });
+      });
+    }, 0);
     var up = (t.agenda && t.agenda.upcoming) || [];
     up.forEach(function (e) { S.events[e.id] = e; });
     S.suggestions = (t.suggestions && t.suggestions.by_key) || {};
@@ -1667,7 +1685,7 @@ h1, h2, h3 { text-wrap: balance; }
     }).join("") + "</ul>" : "";
     $("todayGrid").innerHTML =
       '<div class="tcard wide"><h3>지금 볼 것</h3>' + auHtml + prepHtml + (upHtml ? '<h3 style="margin-top:12px">다가오는 일정 <span class="count">' + up.length + "</span></h3>" + upHtml : "") + "</div>" +
-      '<div class="tcard"><h3>되돌아볼 결정 <span class="count">' + rv.length + "</span></h3>" + rvHtml + "</div>" +
+      '<div class="tcard"><h3>되돌아볼 결정 <span class="count">' + (rv.length + (t.retro_questions || []).length) + "</span></h3>" + rvHtml + "</div>" +
       '<div class="tcard"><h3>할 일 <span class="count">' + inboxCount + "</span></h3>" + ibHtml + "</div>";
   }
 

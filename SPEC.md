@@ -291,3 +291,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 
 - `README.en.md` 추가(한국어 README와 상호 링크). UI·프롬프트는 한국어 우선이라고 명시
 - staff brief: 로그 줄에 날짜가 없어 `widget_history`가 0을 내면 runs_7d/fails_7d를 비워서 보낸다(Claude가 "집계 불일치"를 문제로 짚던 오탐 제거). README의 「Claude가 대신 쓰는 것」 항목 정리
+
+## v0.25 회고 질문 노출·첫 문장 보정 (2026-09-30)
+
+- `retro_questions`: 14일 안 가장 최근 주간 회고의 「되돌아볼 질문」 중 미체크 항목(최대 3)을 `/api/today.retro_questions{text, line, path, date}`로. 보드 「되돌아볼 결정」 카드 아래 체크박스(체크는 기존 `event-note check`로 그 노트 줄을 토글), 코어 "결정/회고" 질문에 첫 질문을 읽어 줌
+- 보드 첫 문장: 아직 첫 기록이 없는(unknown) 자동화는 실패·오래됨과 묶지 않고 「새로 등록한 N개는 아직 첫 기록이 없어요」로 따로 말함
+- 테스트 178

@@ -137,3 +137,21 @@ print("```json\\n" + json.dumps(out, ensure_ascii=False) + "\\n```")
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RetroQuestionsTest(RetroTest):
+    def test_questions_exposed_and_checkable(self):
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            brain.main(["retro"])
+        t = brain.dash_today(self.vault, today=self.today, widgets=[], agenda={"today": [], "upcoming": []})
+        qs = t["retro_questions"]
+        self.assertEqual(len(qs), 3)
+        self.assertTrue(qs[0]["text"].startswith("로컬 서버 결정은"))
+        self.assertTrue(qs[0]["path"].endswith("-weekly.md"))
+        # 보드가 쓰는 체크 액션으로 첫 질문을 닫으면 다음 today에서 빠진다
+        brain.event_note_action(self.vault, {"action": "check", "path": qs[0]["path"], "line": qs[0]["line"], "done": True})
+        t2 = brain.dash_today(self.vault, today=self.today, widgets=[], agenda={"today": [], "upcoming": []})
+        self.assertEqual(len(t2["retro_questions"]), 2)
+        self.assertNotIn("로컬 서버", " ".join(q["text"] for q in t2["retro_questions"]))
+        # 15일 전 회고는 안 보임
+        self.assertEqual(brain.retro_questions(brain.load_notes(self.vault), self.today + timedelta(days=15)), [])

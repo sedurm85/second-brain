@@ -2187,6 +2187,32 @@ def task_action(vault, body, today=None):
     return {"ok": True}
 
 
+def retro_questions(notes, today, days=14, limit=3):
+    """가장 최근 주간 회고(14일 안)의 「되돌아볼 질문」 중 아직 체크하지 않은 것. 보드·코어에 노출, 체크는 event-note check로."""
+    since = (today - timedelta(days=days)).isoformat()
+    weekly = [n for n in notes if n.type == "journal" and n.stem.endswith("-weekly") and n.created >= since]
+    if not weekly:
+        return []
+    n = max(weekly, key=lambda x: x.created)
+    sec = note_sections(n.body).get("되돌아볼 질문", "")
+    if not sec:
+        return []
+    # 절의 줄 번호를 본문 기준으로 맞춘다
+    lines = n.body.split("\n")
+    try:
+        start = next(i for i, l in enumerate(lines) if l.strip() == "## 되돌아볼 질문")
+    except StopIteration:
+        return []
+    out = []
+    for j in range(start + 1, len(lines)):
+        if lines[j].startswith("## "):
+            break
+        m = CHECKBOX_RE.match(lines[j])
+        if m and m.group(2).lower() != "x":
+            out.append({"text": m.group(4).strip(), "line": j, "path": n.rel, "date": n.created})
+    return out[:limit]
+
+
 def _revisit_soon(notes, today, days=7):
     limit = (today + timedelta(days=days)).isoformat()
     out = []
@@ -2336,6 +2362,7 @@ def dash_today(vault, today=None, now=None, widgets=None, agenda=None):
         "greeting": greeting_for(now.hour),
         "weekday": WEEKDAYS_KO[today.weekday()],
         "revisit": _revisit_soon(notes, today),
+        "retro_questions": retro_questions(notes, today) if vault else [],
         "inbox": parse_inbox(vault),
         "this_week": {"new_notes": sum(1 for n in week if n.type != "decision"),
                       "new_decisions": sum(1 for n in week if n.type == "decision")},
