@@ -54,3 +54,8 @@
 - 17:38 wt/report-page 머지(brain.py 라우트 충돌은 양쪽 유지로 해소, 테스트 226), wt/notify-fallback 머지(notify() 통합·macOS 알림 센터 폴백·`notify test`, 테스트 239). 서버 재시작
 - 가동 중: office-kpi, weather-integration, board-plan, reminders
 - 17:39 /report 실제 화면 확인(기간·숫자 띠·이번 주·결정 카드·질문 체크). 시각 표기 오류 정정(앞선 기록의 18:xx는 실제 17:2x~17:3x)
+- 17:48 wt/board-plan 머지(이번 주 계획 카드·검색 요약, 테스트 247), wt/office-kpi 머지(팀 KPI 띠·회사 전체 성공률, 테스트 253)
+
+### 사이클 5 (17:45~)
+- 워커 추가: wt/note-append(보드 노트 패널에서 메모·태그·할 일 기록), wt/hire(사무실 직원 채용·부서 이동·퇴사, allow_hire 게이트), wt/docs-arch(아키텍처 문서·기획 진행표)
+- 가동 중: weather-integration, reminders, note-append, hire, docs-arch
