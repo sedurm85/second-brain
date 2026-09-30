@@ -531,8 +531,30 @@ h1, h2, h3 { text-wrap: balance; }
 .tile { padding: 8px 0 0; position: static; overflow: visible; min-width: 120px; }
 .tile::after { content: none; }
 .tile-label { font-size: 13.5px; color: var(--ink-2); font-weight: 500; order: 1; }
+.tile-value-row { display: flex; align-items: baseline; gap: 4px; }
 .tile-value { font-weight: 700; font-size: 40px; line-height: 1.05; letter-spacing: -0.03em; color: var(--accent); text-shadow: 0 0 22px var(--accent-soft); }
+.tile-unit { font-size: 14px; color: var(--muted); font-weight: 500; }
 .tile-sub { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+
+/* ───────── 개요: 12주 활동 · 타입 분포 · 태그 (v0.30) ───────── */
+.ov-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; margin-top: 18px; }
+.ov-card { padding: 18px 20px; }
+.ov-card-h { margin: 0 0 12px; font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
+.ov-tags-h { margin-top: 20px; }
+.ov-chart-svg { display: block; width: 100%; height: 190px; overflow: visible; }
+.ov-chart-svg rect.ov-bar { transition: opacity .12s; }
+.ov-chart-svg g:hover rect.ov-bar { opacity: .78; }
+.ov-legend { display: flex; gap: 16px; margin-top: 10px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.ov-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.ov-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.ov-type-row { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+.ov-type-label { flex: none; width: 66px; font-size: 12.5px; color: var(--ink-2); }
+.ov-type-bar { flex: 1; height: 12px; overflow: visible; }
+.ov-type-count { flex: none; width: 30px; text-align: right; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ov-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.ov-tag-chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--rule-strong); background: var(--surface-2); font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+.ov-tag-chip:hover { border-color: var(--accent); color: var(--ink); background: var(--accent-soft); }
+.ov-tag-chip .c { color: var(--muted); }
 
 /* ───────── 결정 보드: 세 열, 카드 대신 굵은 상단 괘선 ───────── */
 .board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
@@ -674,6 +696,7 @@ h1, h2, h3 { text-wrap: balance; }
 @media (max-width: 1000px) {
   .hero-text { grid-template-columns: minmax(0, 1fr); }
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ov-grid { grid-template-columns: minmax(0, 1fr); }
   .board { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .journals { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .wgrid, .wgrid.attention { grid-template-columns: minmax(0, 1fr); }
@@ -826,8 +849,20 @@ h1, h2, h3 { text-wrap: balance; }
 
   <div id="content">
     <section class="section" id="overview" aria-labelledby="ov-h">
-      <div class="section-head"><h2 id="ov-h">개요</h2></div>
+      <div class="section-head"><h2 id="ov-h">개요</h2><p id="ovSentence"></p></div>
       <div class="tiles" id="tiles"><div class="loading">요약 불러오는 중</div></div>
+      <div class="ov-grid">
+        <div class="glass ov-card ov-chart-card">
+          <h3 class="ov-card-h">최근 12주 활동</h3>
+          <div id="ovChart"><div class="loading">활동 불러오는 중</div></div>
+        </div>
+        <div class="glass ov-card ov-side-card">
+          <h3 class="ov-card-h">타입 분포</h3>
+          <div id="ovTypes"></div>
+          <h3 class="ov-card-h ov-tags-h">태그 top 10</h3>
+          <div id="ovTags" class="ov-tags"></div>
+        </div>
+      </div>
     </section>
 
       <section class="section" id="decisions" aria-labelledby="dec-h">
@@ -1068,23 +1103,116 @@ h1, h2, h3 { text-wrap: balance; }
       if (p < 1) requestAnimationFrame(step);
     })(t0);
   }
+  function signed(n) { n = n || 0; return (n > 0 ? "+" : "") + n; }
+
+  /* 12주 활동 스택 바 차트 (노트/결정/일지, 막대마다 <title> 툴팁) */
+  function ovBarChart(weeks) {
+    if (!weeks || !weeks.length) return '<p class="t-empty">아직 활동이 없어요.</p>';
+    var n = weeks.length, W = 640, H = 160, padT = 6, padB = 6, padL = 4, padR = 4;
+    var innerW = W - padL - padR, innerH = H - padT - padB;
+    var slot = innerW / n, barW = Math.max(4, slot * 0.6);
+    var baseline = padT + innerH, maxV = 1;
+    weeks.forEach(function (w) { maxV = Math.max(maxV, (w.notes || 0) + (w.decisions || 0) + (w.journals || 0)); });
+    var bars = weeks.map(function (w, i) {
+      var x = padL + i * slot + (slot - barW) / 2;
+      var title = esc(w.week + " (" + w.start + "~) · 노트 " + (w.notes || 0) +
+        " · 결정 " + (w.decisions || 0) + " · 일지 " + (w.journals || 0));
+      var cursor = baseline;
+      var rects = [["note", w.notes], ["decision", w.decisions], ["journal", w.journals]].map(function (s) {
+        var v = s[1] || 0, h = (v / maxV) * innerH, y = cursor - h;
+        cursor = y;
+        return v > 0 ? '<rect class="ov-bar" x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) +
+          '" height="' + h.toFixed(1) + '" fill="var(--t-' + s[0] + ')"/>' : "";
+      }).join("");
+      return "<g>" + "<title>" + title + "</title>" +
+        '<rect x="' + x.toFixed(1) + '" y="' + padT + '" width="' + barW.toFixed(1) + '" height="' + innerH + '" fill="transparent"/>' +
+        rects + "</g>";
+    }).join("");
+    return '<svg class="ov-chart-svg" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" role="img" aria-label="최근 12주 노트·결정·일지 활동">' +
+      '<line x1="' + padL + '" x2="' + (W - padR) + '" y1="' + baseline.toFixed(1) + '" y2="' + baseline.toFixed(1) +
+      '" stroke="var(--grid)" stroke-width="1" vector-effect="non-scaling-stroke"/>' + bars + "</svg>" +
+      '<div class="ov-legend"><span><i style="background:var(--t-note)"></i>노트</span>' +
+      '<span><i style="background:var(--t-decision)"></i>결정</span>' +
+      '<span><i style="background:var(--t-journal)"></i>일지</span></div>';
+  }
+
+  /* 타입 분포 가로 바 (인라인 SVG rect, 라벨/개수는 HTML) */
+  function ovTypeBars(byType) {
+    byType = byType || {};
+    var order = TYPES.concat(["journal"]).filter(function (t) { return byType[t]; });
+    Object.keys(byType).forEach(function (t) { if (order.indexOf(t) === -1 && byType[t]) order.push(t); });
+    if (!order.length) return '<p class="t-empty">아직 기록이 없어요.</p>';
+    var max = 1;
+    order.forEach(function (t) { max = Math.max(max, byType[t] || 0); });
+    return order.map(function (t) {
+      var v = byType[t] || 0, pct = Math.max(2, (v / max) * 100);
+      return '<div class="ov-type-row"><span class="ov-type-label">' + esc(TYPE_KO[t] || t) + '</span>' +
+        '<svg class="ov-type-bar" viewBox="0 0 100 12" preserveAspectRatio="none" role="img" aria-label="' +
+        esc(TYPE_KO[t] || t) + " " + v + '개"><rect x="0" y="0" width="' + pct.toFixed(1) +
+        '" height="12" rx="2" fill="var(--t-' + t + ')"/></svg>' +
+        '<span class="ov-type-count">' + v + "</span></div>";
+    }).join("");
+  }
+
+  /* 태그 top10 칩: 클릭하면 검색창에 tag:x 를 넣고 검색 실행 */
+  function ovTagChips(topTags) {
+    if (!topTags || !topTags.length) return '<p class="t-empty">태그가 아직 없어요.</p>';
+    return topTags.map(function (pair) {
+      return '<button type="button" class="ov-tag-chip" data-ovtag="' + esc(pair[0]) + '">' +
+        esc(pair[0]) + ' <span class="c">' + pair[1] + "</span></button>";
+    }).join("");
+  }
+
+  function runOverviewTagSearch(tag) {
+    var q = "tag:" + tag;
+    if (typeof window.runSearch === "function") { window.runSearch(q); return; }
+    var input = $("q"); if (!input) return;
+    input.value = q;
+    input.focus();
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
   function renderSummary(s) {
     S.summary = s;
     $("vault").textContent = s.vault || "";
     $("gen").textContent = s.generated_at ? "볼트 인덱스 " + fmtDate(s.generated_at.slice(0, 10)) + " " + (s.generated_at.slice(11, 16) || "") : "";
-    var c = s.counts || {}, w = s.this_week || {};
+    var c = s.counts || {}, st = s.stats || {};
+    var weeks = st.weeks || [], streak = st.journal_streak || { current: 0, best: 0 };
+    var dec = st.decisions || { open: 0, decided: 0, superseded: 0, due: 0 };
+    var links = st.links || { total: 0, orphans: 0, avg_per_note: 0 };
+    var cov = st.summary_coverage || { with: 0, without: 0 };
+    var covTotal = (cov.with || 0) + (cov.without || 0);
+    var covPct = covTotal ? Math.round((cov.with / covTotal) * 100) : 0;
+    var thisWk = weeks[weeks.length - 1] || { notes: 0 }, lastWk = weeks[weeks.length - 2] || { notes: 0 };
+    var diff = (thisWk.notes || 0) - (lastWk.notes || 0);
+
+    var sentence = $("ovSentence");
+    if (sentence) {
+      sentence.textContent = "이번 주 노트 " + (thisWk.notes || 0) + "개, 지난주보다 " + signed(diff) + "개예요.";
+    }
+
     var tiles = [
-      { label: "전체 기록", v: c.total || 0, sub: "노트 " + (c.notes || 0) + ", 사람 " + (c.people || 0) },
-      { label: "결정", v: c.decisions || 0, sub: "열린 결정 " + ((s.open_decisions || []).length) + "건" },
-      { label: "프로젝트", v: c.projects || 0, sub: "진행 중인 흐름" },
-      { label: "이번 주 신규", v: (w.new_notes || 0) + (w.new_decisions || 0), sub: "노트 " + (w.new_notes || 0) + ", 결정 " + (w.new_decisions || 0) }
+      { label: "노트", v: c.total || 0, unit: "개", sub: "이번 주 " + (thisWk.notes || 0) + "개 · 지난주 대비 " + signed(diff) + "개" },
+      { label: "결정 (열림)", v: dec.open || 0, unit: "건", sub: "도래 " + (dec.due || 0) + "건 · 결정 " + (dec.decided || 0) + "건" },
+      { label: "일지 연속", v: streak.current || 0, unit: "일", sub: "최장 " + (streak.best || 0) + "일" },
+      { label: "링크", v: links.total || 0, unit: "개", sub: "고아 " + (links.orphans || 0) + "개 · 평균 " + (links.avg_per_note || 0) + "개/노트" },
+      { label: "요약 커버리지", v: covPct, unit: "%", sub: (cov.with || 0) + "/" + covTotal + "개 노트" }
     ];
     var el = $("tiles");
     el.innerHTML = tiles.map(function (t) {
-      return '<div class="tile glass"><div class="tile-value" data-v="' + t.v + '">0</div><div class="tile-label">' + esc(t.label) + '</div>' +
+      return '<div class="tile glass stat-tile"><div class="tile-value-row"><span class="tile-value" data-v="' + t.v +
+        '">0</span><span class="tile-unit">' + esc(t.unit) + '</span></div><div class="tile-label">' + esc(t.label) + '</div>' +
         '<div class="tile-sub">' + esc(t.sub) + "</div></div>";
     }).join("");
     el.querySelectorAll(".tile-value").forEach(function (v) { countUp(v, +v.getAttribute("data-v")); });
+
+    $("ovChart").innerHTML = ovBarChart(weeks);
+    $("ovTypes").innerHTML = ovTypeBars(st.by_type);
+    var tagsEl = $("ovTags");
+    tagsEl.innerHTML = ovTagChips(st.top_tags);
+    tagsEl.querySelectorAll("[data-ovtag]").forEach(function (btn) {
+      btn.addEventListener("click", function () { runOverviewTagSearch(btn.getAttribute("data-ovtag")); });
+    });
   }
   function renderEmpty() {
     $("content").hidden = true;

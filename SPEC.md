@@ -514,3 +514,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `brain.py export --html <out.html> [--since] [--type] [--project] [--no-body]`: 외부 자산 없이 인라인 CSS(A4 인쇄용, 결정마다 페이지 나눔)만 쓰는 단일 HTML로 볼트(또는 필터링한 일부)를 내보낸다. `export_html()`이 목차(타입·프로젝트별 개수)·결정(상태 배지·상황·결정·이유·되돌아볼 날)·프로젝트 허브·일지·회고·노트·사람·일정 노트 섹션을 만들고, `md_to_html()`(작은 서버사이드 렌더러: 헤딩·문단·목록·체크박스(☐/☑ 텍스트)·볼드/이탤릭·인라인 코드·링크·인용, 그 외는 escape)로 본문을 그린다
 - `[[stem]]` 위키링크는 이번 내보내기에 포함된 노트면 `#n-<stem>` 인페이지 앵커로, 아니면 흐린 텍스트(`wikilink-broken`)로 남는다. 본문 20,000자 초과 시 잘라내고 안내 문구를 붙여(500개 노트 기준 ~2MB 목표) 파일 크기를 억제한다. 검색창 하나짜리 선택적 클라이언트 필터 스크립트 외 자바스크립트는 불필요
 - 테스트 `tests/test_export.py` 10건: 섹션·제목 포함, 위키링크 앵커 해석/부재, `--since`·`--type`·`--project` 필터, `--no-body` 본문 생략, `html.parser` 정합성(`<h2>` 개수=섹션 개수), 외부 자산 없음(사용자 링크만 예외), CLI/JSON, 잘못된 타입 오류. 전체 스위트 465 통과(기존 455 + 신규 10)
+## v0.30 개요 통계
+
+- `dash_summary`(`GET /api/summary`)에 `"stats"` 키를 non-breaking으로 추가: 최근 12주 활동(`weeks`, 노트/결정/일지 건수), `by_type`, `top_tags`(상위 10), `journal_streak`(일간 일지 연속·최장, 주간 회고는 제외), `decisions`(open/decided/superseded/due), `links`(총/고아/노트당 평균, `link_graph` 재사용), `summary_coverage`, `oldest`/`newest`/`size_kb`. `load_notes` 캐시를 그대로 한 번씩 순회하는 저비용 집계다
+- 보드 「개요」를 실제 대시보드로 다시 그렸다: 통계 타일 5개(노트/결정(열림·도래)/일지 연속 N일/링크·고아/요약 커버리지 %), 12주 활동 스택 바 차트(막대마다 `<title>` 툴팁, 인라인 SVG), 타입 분포 가로 바, 태그 top10 칩(클릭하면 검색창에 `tag:x`를 넣고 입력 이벤트를 발생시켜 검색 실행). 섹션 머리말에 "이번 주 노트 N개, 지난주보다 +M개예요" 같은 해요체 한 줄을 매 로드마다 채운다
+- 모바일에서 타일은 2열로 줍고(기존 1000px 분기 재사용), 차트/타입-태그 카드는 한 열로 쌓인다(`ov-grid` 신규 분기). 색상은 전부 기존 토큰(`var(--accent)`, `var(--t-<type>)`)만 쓰고 새 색은 추가하지 않았다
+- 테스트 `tests/test_summary_stats.py` 11건(임시 HOME, 노트 19개 구성): 스트릭 3/5, 결정 open/decided/superseded/due, top_tags, by_type, links/orphans/평균, summary_coverage, 12주 버킷 합, `/api/summary`의 `stats` 응답까지 확인. 전체 스위트 504 통과(기존 493 + 신규 11). `node --check`로 `<script>` 문법 확인, 신규 렌더 함수(`ovBarChart`/`ovTypeBars`/`ovTagChips`)와 타일 템플릿을 Node로 발췌 실행해 `<svg>`·`<title>`·`.stat-tile` 5개가 실제로 나오는지 확인

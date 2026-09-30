@@ -1756,6 +1756,102 @@ def _decision_status(n):
     return s if s in DECISION_STATUSES else "open"
 
 
+def _journal_streak(notes, today):
+    """일간 일지(주간 회고 제외) 날짜 집합에서 연속 기록일을 센다.
+    current: 오늘 또는 어제로 끝나는 연속일, best: 전체 구간에서 가장 긴 연속일."""
+    days = set()
+    for n in notes:
+        if n.type == "journal" and not n.stem.endswith("-weekly") and n.created != "0000-00-00":
+            try:
+                days.add(parse_date(n.created))
+            except BrainError:
+                continue
+    best = 0
+    run = 0
+    prev = None
+    for d in sorted(days):
+        run = run + 1 if prev is not None and (d - prev).days == 1 else 1
+        best = max(best, run)
+        prev = d
+    if today in days:
+        cursor = today
+    elif (today - timedelta(days=1)) in days:
+        cursor = today - timedelta(days=1)
+    else:
+        cursor = None
+    current = 0
+    while cursor is not None and cursor in days:
+        current += 1
+        cursor -= timedelta(days=1)
+    return {"current": current, "best": best}
+
+
+def _dash_stats(notes, today):
+    """개요 대시보드용 12주 활동·타입 분포·태그·결정·링크·요약 커버리지 통계.
+    load_notes로 이미 캐시된 notes를 그대로 받아 한 번씩 순회하는 저비용 집계다."""
+    week_start = today - timedelta(days=today.weekday())
+    weeks = []
+    for i in range(11, -1, -1):
+        start = week_start - timedelta(weeks=i)
+        end = start + timedelta(days=6)
+        lo, hi = start.isoformat(), end.isoformat()
+        y, w, _ = start.isocalendar()
+        bucket = {"notes": 0, "decisions": 0, "journals": 0}
+        for n in notes:
+            if not (lo <= n.created <= hi):
+                continue
+            if n.type == "decision":
+                bucket["decisions"] += 1
+            elif n.type == "journal":
+                bucket["journals"] += 1
+            else:
+                bucket["notes"] += 1
+        weeks.append({"week": f"{y}-W{w:02d}", "start": lo, "notes": bucket["notes"],
+                      "decisions": bucket["decisions"], "journals": bucket["journals"]})
+
+    by_type = Counter(n.type for n in notes)
+    top_tags = Counter(t for n in notes for t in n.tags).most_common(10)
+
+    decisions = {"open": 0, "decided": 0, "superseded": 0, "due": 0}
+    for n in notes:
+        if n.type != "decision":
+            continue
+        st = _decision_status(n)
+        decisions[st] = decisions.get(st, 0) + 1
+        if st == "open":
+            rv = str(n.meta.get("revisit") or "") or None
+            days_left = _days_left(rv, today)
+            if days_left is not None and days_left <= 0:
+                decisions["due"] += 1
+
+    _, adj = link_graph(notes)
+    total_links = sum(len(v) for v in adj.values()) // 2
+    orphans = sum(1 for n in notes if not adj.get(n.stem))
+    avg_per_note = round((total_links * 2) / len(notes), 2) if notes else 0.0
+
+    with_summary = sum(1 for n in notes if str(n.meta.get("summary") or "").strip())
+    dated = sorted(n.created for n in notes if n.created != "0000-00-00")
+    size_kb = 0
+    for n in notes:
+        try:
+            size_kb += n.path.stat().st_size
+        except OSError:
+            continue
+
+    return {
+        "weeks": weeks,
+        "by_type": dict(by_type),
+        "top_tags": [[t, c] for t, c in top_tags],
+        "journal_streak": _journal_streak(notes, today),
+        "decisions": decisions,
+        "links": {"total": total_links, "orphans": orphans, "avg_per_note": avg_per_note},
+        "summary_coverage": {"with": with_summary, "without": len(notes) - with_summary},
+        "oldest": dated[0] if dated else None,
+        "newest": dated[-1] if dated else None,
+        "size_kb": size_kb // 1024,
+    }
+
+
 def dash_summary(vault, today=None):
     today = today or date.today()
     notes = load_notes(vault)
@@ -1789,6 +1885,7 @@ def dash_summary(vault, today=None):
         "open_decisions": open_items,
         "recent": [{"path": n.rel, "title": n.title, "type": n.type, "created": n.created,
                     "project": n.project, "tags": n.tags} for n in recent],
+        "stats": _dash_stats(notes, today),
     }
 
 
