@@ -217,3 +217,11 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - brain-setup 스킬에 「비서 설정」 절: 캘린더·이름·카톡·에이전트·allow_run·화면 안내
 - 사장님 환경의 기존 에이전트(k-skill-cron 로그 경로)는 그대로 두고 건너뜀
 - 테스트 +3, 총 142
+
+## v0.15 메일 (2026-09-30, 2차 3단계, 기본 꺼짐)
+
+- `scripts/mailer.py`(stdlib imaplib, 읽기 전용): IMAP SSL, 폴더 readonly select, `BODY.PEEK[HEADER.FIELDS (...)]`로 헤더만(본문 안 읽음), 최근 N일·최대 M통, 보낸편지함도 읽어 답장 여부 판단. 10분 캐시 `~/.cache/second-brain/mail.json`, 실패 시 캐시 stale 폴백
+- 분류 `triage`: reply(사람이 보낸 안 읽은/깃발), waiting(내가 보낸 메일 중 In-Reply-To로 답이 오지 않은 것), info(List-Id/Unsubscribe·Auto-Submitted·Precedence bulk·noreply류 주소·광고/뉴스레터/영수증/인증번호 제목). `bookings`(예약·booking·e-ticket 제목) 별도
+- 설정 `config.json mail {host, port, user, password_file, folder, sent_folder, days, max, aliases, web}`. 비밀번호는 별도 파일(앱 비밀번호, 600). CLI `mail add <주소> --password-file F [--host] [--sent-folder]`(gmail/naver 호스트 자동) · `test` · `list` · `remove`
+- `/api/mail`, `/api/today`에 `mail{configured,status,counts,reply[3],waiting[3],sentence,web}`. 보고 문장 "답장할 메일 N통, 먼저 …", 카톡 조각 "메일 답장 N·대기 M". 보드 「메일」 3열(설정됐을 때만 표시, 클릭 시 웹메일 rfc822msgid 검색으로 열기). 코어 "메일" 질문 답변
+- Mail.app(JXA) 방식은 사장님 환경에 Mail.app이 없어 보류. 테스트 +3, 총 145(가짜 비밀번호로 실접속 실패 → status fail 경로 포함)

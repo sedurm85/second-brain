@@ -22,6 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import agenda as agenda_mod  # noqa: E402 - 일정 어댑터(같은 폴더)
+import mailer as mail_mod  # noqa: E402 - 메일 어댑터(IMAP 읽기 전용, 기본 꺼짐)
 
 VERSION = "0.1.0"
 
@@ -2141,6 +2142,9 @@ def kakao_brief(t):
     ag_bit = agenda_mod.agenda_kakao(t.get("agenda") or {})
     if ag_bit:
         parts.append(ag_bit)
+    mk = mail_mod.mail_kakao(t.get("mail") or {})
+    if mk:
+        parts.append(mk)
     if t["revisit"]:
         parts.append("결정 " + ", ".join(f"{d['title']}({_dleft(d)})" for d in t["revisit"][:3]))
     bad = [w for w in t["top_widgets"] if w["status"] in ("fail", "stale")]
@@ -2175,6 +2179,45 @@ class AgendaCache:
         with self._lock:
             self._data[days] = (time.monotonic(), data)
         return data
+
+
+def collect_mail_safe(force=False):
+    try:
+        return mail_mod.collect_mail(load_config(), force=force)
+    except Exception as e:  # noqa: BLE001
+        log(f"경고: 메일 수집 실패({type(e).__name__}: {e})")
+        return {"configured": False, "status": "fail", "error": f"{type(e).__name__}: {e}", "counts": {"reply": 0, "waiting": 0, "info": 0}}
+
+
+def cmd_mail(args):
+    cfg = load_config()
+    if args.action == "add":
+        if not args.user:
+            raise BrainError("사용법: mail add <메일주소> --password-file <앱 비밀번호 파일> [--host imap.gmail.com] [--sent-folder ...]")
+        pf = Path(os.path.expanduser(args.password_file or "~/.config/second-brain/mail.pass"))
+        if not pf.is_file():
+            raise BrainError(f"비밀번호 파일이 없어요: {pf} (앱 비밀번호 한 줄, chmod 600)")
+        try:
+            os.chmod(pf, 0o600)
+        except OSError:
+            pass
+        host = args.host or ("imap.gmail.com" if args.user.lower().endswith("@gmail.com") else "imap.naver.com" if args.user.lower().endswith("@naver.com") else "")
+        if not host:
+            raise BrainError("--host 를 적어 주세요(예: imap.gmail.com)")
+        mcfg = {"host": host, "port": 993, "user": args.user, "password_file": str(pf), "folder": "INBOX",
+                "sent_folder": args.sent_folder or ("[Gmail]/Sent Mail" if "gmail" in host else "Sent"), "days": 7, "max": 120}
+        cfg["mail"] = mcfg
+        save_config(cfg)
+        emit(args, mcfg, f"메일 소스 저장: {args.user} ({host}). `brain.py mail test`로 확인해 보세요. 읽기 전용, 헤더만 읽어요.")
+        return EXIT_OK
+    if args.action == "remove":
+        cfg.pop("mail", None)
+        save_config(cfg)
+        emit(args, {"removed": True}, "메일 소스 제거")
+        return EXIT_OK
+    m = collect_mail_safe(force=(args.action == "test"))
+    emit(args, m, mail_mod.mail_human(m))
+    return EXIT_OK if m.get("status") in ("ok", "stale", "unconfigured") else EXIT_INPUT
 
 
 def collect_agenda_safe(days=7, now=None):
@@ -2222,6 +2265,11 @@ def dash_today(vault, today=None, now=None, widgets=None, agenda=None):
     t["agenda"]["sentence"] = agenda_mod.agenda_sentence(ag)
     tb = dash_tasks(vault, today, widgets, ag)
     t["tasks"] = {"counts": tb["counts"], "today": tb["today"][:8], "waiting": tb["waiting"][:5]}
+    m = collect_mail_safe()
+    t["mail"] = {k: m.get(k) for k in ("configured", "status", "counts", "user", "web", "error")}
+    t["mail"]["reply"] = (m.get("reply") or [])[:3]
+    t["mail"]["waiting"] = (m.get("waiting") or [])[:3]
+    t["mail"]["sentence"] = mail_mod.mail_sentence(m)
     # 표시용 inbox: 오늘 묶음(직접 적은 것 우선). 예전 계약(문자열 목록) 유지
     t["inbox"] = [x["text"] for x in tb["today"] if x.get("kind") == "task"] or t["inbox"]
     t["kakao"] = kakao_brief(t)
@@ -2234,6 +2282,8 @@ def today_human(t):
     ag = t.get("agenda") or {}
     if ag.get("sentence"):
         out.append(ag["sentence"])
+    if (t.get("mail") or {}).get("sentence"):
+        out.append(t["mail"]["sentence"])
     bad_src = [s_ for s_ in (ag.get("sources") or []) if s_.get("status") != "ok"]
     if bad_src and not ag.get("today"):
         out.append("일정 연결 안 됨: " + "; ".join(f"{s_['name']} {s_['status']}" for s_ in bad_src[:2]))
@@ -2397,6 +2447,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 cmds = widget_commands(d["widgets"])
                 d["runnable"] = {k: v["kind"] for k, v in cmds.items()} if allow else {}
                 return self._json(200, d)
+            if route == "/api/mail":
+                return self._json(200, collect_mail_safe(force=bool(qs.get("force"))))
             if route == "/api/tasks":
                 widgets = collect_widgets(self.server.widget_cache)
                 ag = dict(self.server.agenda_cache.get())
@@ -3860,6 +3912,13 @@ def build_parser():
     s.add_argument("--body-file", help="내용 파일('-'면 stdin)")
     s.add_argument("--end", help="여러 날 일정이면 종료일 YYYY-MM-DD(같은 이름의 날짜들에 함께 붙음)")
     s.add_argument("--location", help="장소 메모")
+
+    s = add("mail", "메일(IMAP 읽기 전용): add <주소> --password-file F · test · list · remove", cmd_mail)
+    s.add_argument("action", choices=("add", "test", "list", "remove"))
+    s.add_argument("user", nargs="?", help="add: 메일 주소")
+    s.add_argument("--password-file", help="앱 비밀번호가 한 줄 든 파일(기본 ~/.config/second-brain/mail.pass)")
+    s.add_argument("--host", help="IMAP 호스트(gmail/naver는 자동)")
+    s.add_argument("--sent-folder", help="보낸편지함 폴더 이름")
 
     s = add("agents", "비서 알림 에이전트(launchd): install [brief remind evening] · status · remove", cmd_agents)
     s.add_argument("action", choices=("install", "status", "remove"))
