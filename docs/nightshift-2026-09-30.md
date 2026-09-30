@@ -74,3 +74,8 @@
 - 가동 중: edge-tests, demo-rich, people-link, office-schedule
 - 다음 후보: 여행 모드(여러 날 일정 → 짐 목록·일자별 동선), 보드 단축키(Cmd+K), 21:30 저녁 마감 실행 검증
 - 18:14 wt/edge-tests 머지(경계 테스트 54개, `_tail_lines` 초대형 한 줄 버그 수정, 테스트 361). 워커 추가: wt/widget-cli(widget add/list/… CLI + brain-office 스킬)
+- 18:20 wt/office-schedule(오늘 근무표·다음 근무, 테스트 378)·wt/demo-rich(데모 캐시 격리·전 기능 데이터, 381)·wt/widget-cli(widget CLI·brain-office 스킬, 391) 머지. 관리자: brain-evening 위젯 소스를 launchd 로그로 교정(다음 근무 21:30으로 정상화), 같은 로그 크론 2줄 슬롯 버그 수정, 데모 미리보기 재캡처
+
+### 사이클 8 (18:20~)
+- 워커 추가: wt/board-shortcuts(보드 단축키·명령 팔레트), wt/brief-polish(저녁 마감에 내일 날씨, 회고에 자동화 신뢰도)
+- 가동 중: people-link, board-shortcuts, brief-polish
