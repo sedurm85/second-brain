@@ -3900,12 +3900,14 @@ def people_index(notes):
     return idx
 
 
-def _is_self_attendee(name, ag):
-    """캘린더 소스 이름(구글 계정 주소 등)·config `me`와 같은 참석자는 '나'로 보고 사람 목록에서 뺀다."""
+def _is_self_attendee(name, ag, e=None):
+    """캘린더 이름(구글 계정 주소)·소스 이름·config `me`와 같은 참석자는 '나'로 보고 사람 목록에서 뺀다."""
     key = " ".join(str(name).lower().split())
     if not key:
         return True
     mine = set()
+    if e and e.get("calendar"):
+        mine.add(str(e["calendar"]).lower().strip())
     for src in ag.get("sources") or []:
         nm = str(src.get("name") or "").lower().strip()
         if nm:
@@ -3937,7 +3939,7 @@ def attach_event_notes(vault, ag):
                         break
             e["note"] = _event_note_payload(n) if n else None
             attendees = [str(a or "").strip() for a in (e.get("attendees") or []) if str(a or "").strip()]
-            attendees = [a for a in attendees if not _is_self_attendee(a, ag)]  # 내 캘린더 계정(주최자)은 참석자에서 제외
+            attendees = [a for a in attendees if not _is_self_attendee(a, ag, e)]  # 내 캘린더 계정(주최자)은 참석자에서 제외
             if attendees and (e.get("days_left") or 0) <= 7:
                 people = []
                 for a in attendees:
