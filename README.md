@@ -143,7 +143,7 @@ Obsidian → **Open folder as vault** → `~/brain` 선택. 그래프 뷰·백�
 `/second-brain:brain-setup`에서 git 자동 커밋을 켜고 볼트를 개인 private 저장소에 push하거나, iCloud·Dropbox 폴더로 볼트 위치를 옮기면 됩니다.
 
 **카톡 알림은 어떻게?**
-카카오 "나에게 보내기" 헬퍼 스크립트 경로를 `config set kakao_cmd <경로>`로 지정하면 `brief --kakao`, `remind --kakao`가 그것을 부릅니다. 헬퍼가 없으면 터미널 출력만 합니다.
+카카오 "나에게 보내기" 헬퍼 스크립트 경로를 `config set kakao_cmd <경로>`로 지정하면 `brief --kakao`(별칭 `--notify`), `remind --kakao`가 그것을 부릅니다. 헬퍼가 없으면 macOS에서는 알림 센터(`osascript`)로 자동 대체되고, 그것도 안 되면 터미널 출력만 합니다. `notify test`로 어느 채널이 실제로 뜨는지 미리 확인할 수 있습니다.
 
 **임베딩 / AI 의미 검색은요?**
 키워드 기반 검색(제목·태그 가중 + 최근성, 한글 2-gram)입니다. 임베딩 검색은 외부 API 키가 필요해서 "키 0개" 원칙에 맞춰 옵션으로 미뤘습니다.

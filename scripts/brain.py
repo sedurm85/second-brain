@@ -3960,16 +3960,15 @@ def cmd_remind(args):
     fresh = [d for d in due if d["id"] not in state]
     sent = 0
     if fresh and args.kakao:
-        helper = kakao_helper_path()
-        if not helper:
-            log("카톡 헬퍼가 없어요.")
+        msg = "⏰ " + " / ".join(d["text"] for d in fresh)[:190]
+        res = notify(msg)
+        if res["sent"]:
+            sent = len(fresh)
+        elif not res["channels"]:
+            log("알림 채널이 없어요(카톡 헬퍼 또는 macOS 알림 센터).")
         else:
-            msg = "⏰ " + " / ".join(d["text"] for d in fresh)[:190]
-            r = subprocess.run([sys.executable, str(helper), msg], capture_output=True, text=True, timeout=60)
-            if r.returncode == 0:
-                sent = len(fresh)
-            else:
-                log(f"카톡 발송 실패: {(r.stderr or r.stdout).strip()[:160]}")
+            errs = "; ".join(c["error"] for c in res["channels"] if c.get("error"))
+            log(f"알림 발송 실패: {errs[:160]}")
     if fresh and (sent or not args.kakao):
         for d in fresh:
             state[d["id"]] = now.isoformat(timespec="minutes")
@@ -4018,6 +4017,89 @@ def kakao_helper_path(cfg=None):
     return p if p.is_file() else None
 
 
+NOTIFY_CHANNELS_DEFAULT = ("kakao", "center")
+
+
+def _osa_quote(text):
+    """AppleScript 문자열 리터럴에 안전히 넣도록 백슬래시·쌍따옴표를 이스케이프."""
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _notify_log(channel, ok, text):
+    """SECOND_BRAIN_NOTIFY_LOG가 설정돼 있으면 시도 한 건을 한 줄로 남긴다(테스트용)."""
+    path = os.environ.get("SECOND_BRAIN_NOTIFY_LOG")
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"{channel}\t{ok}\t{text[:80]}\n")
+    except OSError:
+        pass
+
+
+def _notify_center_available(cfg):
+    return sys.platform == "darwin" and cfg.get("notify_center") is not False
+
+
+def notify(text, title="세컨드브레인", cfg=None):
+    """알림 발송(카톡 헬퍼 → 없으면 macOS 알림 센터). 절대 예외를 던지지 않는다.
+
+    config notify_channels(list, 기본 ["kakao", "center"])로 채널·순서를 고른다.
+    앞에서부터 실제로 쓸 수 있는(설치돼 있거나 플랫폼이 맞는) 첫 채널 하나만 시도한다
+    (둘 다 매번 울리면 카톡을 이미 쓰는 사람에게 중복 알림이 되므로).
+    env SECOND_BRAIN_NOTIFY_DRY=1이면 아무것도 실행하지 않고 시도할 채널만 ok로 반환(테스트용).
+    env SECOND_BRAIN_NOTIFY_LOG=경로면 시도마다 한 줄(채널\tok\ttext[:80])을 남긴다.
+    반환: {"sent": bool, "channels": [{"name", "ok", "error"}], "text": text}
+    """
+    cfg = cfg or load_config()
+    dry = os.environ.get("SECOND_BRAIN_NOTIFY_DRY") == "1"
+    wanted = cfg.get("notify_channels")
+    if not isinstance(wanted, list) or not wanted:
+        wanted = list(NOTIFY_CHANNELS_DEFAULT)
+    wanted = [c for c in wanted if c in NOTIFY_CHANNELS_DEFAULT]
+
+    channels = []
+    for name in wanted:
+        if name == "kakao":
+            helper = kakao_helper_path(cfg)
+            if not helper:
+                continue
+            if dry:
+                channels.append({"name": "kakao", "ok": True, "error": None})
+                _notify_log("kakao", True, text)
+                break
+            try:
+                r = subprocess.run([sys.executable, str(helper), text], capture_output=True, text=True, timeout=60)
+                ok, err = r.returncode == 0, None
+                if not ok:
+                    err = (r.stderr or r.stdout).strip()[:200]
+            except Exception as e:  # noqa: BLE001 - 알림은 실패해도 앱을 죽이지 않는다
+                ok, err = False, str(e)[:200]
+            channels.append({"name": "kakao", "ok": ok, "error": err})
+            _notify_log("kakao", ok, text)
+            break
+        elif name == "center":
+            if not _notify_center_available(cfg):
+                continue
+            if dry:
+                channels.append({"name": "center", "ok": True, "error": None})
+                _notify_log("center", True, text)
+                break
+            script = f'display notification "{_osa_quote(text)}" with title "{_osa_quote(title)}"'
+            try:
+                r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=10)
+                ok, err = r.returncode == 0, None
+                if not ok:
+                    err = (r.stderr or r.stdout).strip()[:200]
+            except Exception as e:  # noqa: BLE001 - 알림은 실패해도 앱을 죽이지 않는다
+                ok, err = False, str(e)[:200]
+            channels.append({"name": "center", "ok": ok, "error": err})
+            _notify_log("center", ok, text)
+            break
+
+    return {"sent": any(c["ok"] for c in channels), "channels": channels, "text": text}
+
+
 def evening_brief(t, tomorrow_events):
     """저녁 마감 문장(≤200자): 오늘 남은 할 일, 내일 첫 일정·동선, 되돌아볼 결정."""
     tk = t.get("tasks") or {}
@@ -4058,16 +4140,16 @@ def cmd_brief(args):
             except BrainError as e:
                 log(f"일지 건너뜀: {e}")
     if args.kakao:
-        helper = kakao_helper_path()
-        if not helper:
-            log("카톡 헬퍼가 없어요(~/.local/k-skill-cron/notify_kakao.py 또는 config kakao_cmd).")
-            emit(args, dict(t, sent=False), today_human(t))
+        res = notify(t["kakao"])
+        t["sent"] = res["sent"]
+        if not res["channels"]:
+            log("알림 채널이 없어요(카톡 헬퍼 또는 macOS 알림 센터). ~/.local/k-skill-cron/notify_kakao.py 또는 config kakao_cmd를 확인하세요.")
+            emit(args, t, today_human(t))
             return EXIT_INPUT
-        r = subprocess.run([sys.executable, str(helper), t["kakao"]], capture_output=True, text=True, timeout=60)
-        t["sent"] = r.returncode == 0
-        if r.returncode != 0:
-            log(f"카톡 발송 실패: {(r.stderr or r.stdout).strip()[:200]}")
-        emit(args, t, (t["kakao"] if t.get("evening") else today_human(t)) + ("\n\n카톡 발송 완료" if t["sent"] else "\n\n카톡 발송 실패"))
+        if not t["sent"]:
+            errs = "; ".join(c["error"] for c in res["channels"] if c.get("error"))
+            log(f"알림 발송 실패: {errs[:200]}")
+        emit(args, t, (t["kakao"] if t.get("evening") else today_human(t)) + ("\n\n알림 발송 완료" if t["sent"] else "\n\n알림 발송 실패"))
         return EXIT_OK if t["sent"] else EXIT_INPUT
     emit(args, t, (t["kakao"] if t.get("evening") else today_human(t)))
     return EXIT_OK
@@ -4444,12 +4526,10 @@ def cmd_journal(args):
         return EXIT_OK
     sent = None
     if getattr(args, "kakao", False) and r.get("kakao"):
-        helper = kakao_helper_path()
-        if helper:
-            rr = subprocess.run([sys.executable, str(helper), f"[{today.isoformat()[5:]} 일지] {r['kakao']}"], capture_output=True, text=True, timeout=60)
-            sent = rr.returncode == 0
+        res = notify(f"[{today.isoformat()[5:]} 일지] {r['kakao']}")
+        sent = res["sent"]
     r["sent"] = sent
-    emit(args, r, f"일지 {'작성' if r['created'] else '갱신'}: {r['path']}\n" + "\n".join(f"- {l}" for l in (r.get("lines") or [])) + (f"\n\n카톡: {r['kakao']}" if r.get("kakao") else "") + ("\n카톡 발송 완료" if sent else ""))
+    emit(args, r, f"일지 {'작성' if r['created'] else '갱신'}: {r['path']}\n" + "\n".join(f"- {l}" for l in (r.get("lines") or [])) + (f"\n\n카톡: {r['kakao']}" if r.get("kakao") else "") + ("\n알림 발송 완료" if sent else ""))
     return EXIT_OK
 
 
@@ -4557,12 +4637,10 @@ def cmd_retro(args):
     rel = str(path.relative_to(Path(v)))
     sent = None
     if args.kakao and kakao:
-        helper = kakao_helper_path()
-        if helper:
-            rr = subprocess.run([sys.executable, str(helper), f"[주간 회고] {kakao}" + (" / 질문: " + qs[0] if qs else "")], capture_output=True, text=True, timeout=60)
-            sent = rr.returncode == 0
+        res = notify(f"[주간 회고] {kakao}" + (" / 질문: " + qs[0] if qs else ""))
+        sent = res["sent"]
     emit(args, {"path": rel, "created": created, "questions": qs, "kakao": kakao, "sent": sent},
-         f"주간 회고 {'작성' if created else '갱신'}: {rel}\n" + "\n".join(f"- {l}" for l in (raw.get("week") or [])) + "\n\n되돌아볼 질문\n" + "\n".join(f"- {q}" for q in qs) + (f"\n\n카톡: {kakao}" if kakao else "") + ("\n카톡 발송 완료" if sent else ""))
+         f"주간 회고 {'작성' if created else '갱신'}: {rel}\n" + "\n".join(f"- {l}" for l in (raw.get("week") or [])) + "\n\n되돌아볼 질문\n" + "\n".join(f"- {q}" for q in qs) + (f"\n\n카톡: {kakao}" if kakao else "") + ("\n알림 발송 완료" if sent else ""))
     return EXIT_OK
 
 
@@ -5056,6 +5134,20 @@ def cmd_calendar(args):
     raise BrainError("action은 list · add · remove · test 중 하나")
 
 
+def cmd_notify(args):
+    """알림 채널 시험 발송: 카톡 헬퍼 → 없으면 macOS 알림 센터. 설정 확인용."""
+    if args.action != "test":
+        raise BrainError("action은 test만 지원합니다")
+    text = args.message or "세컨드브레인 알림 테스트예요."
+    res = notify(text)
+    if not res["channels"]:
+        lines = ["알림 채널이 없어요(카톡 헬퍼 또는 macOS 알림 센터). ~/.local/k-skill-cron/notify_kakao.py를 두거나 macOS에서 실행하세요."]
+    else:
+        lines = [f"{'OK ' if c['ok'] else '!! '}{c['name']}" + (f": {c['error']}" if c.get("error") else "") for c in res["channels"]]
+    emit(args, res, f"알림 테스트: {text}\n" + "\n".join(lines))
+    return EXIT_OK if res["sent"] else EXIT_INPUT
+
+
 def cmd_config(args):
     if args.action == "init-widgets":
         p, created = init_widgets_config()
@@ -5155,7 +5247,7 @@ def build_parser():
     s = add("retro", "주간 회고: Claude가 지난 N일을 되돌아본 노트(journal/YYYY/날짜-weekly.md) + 코칭 질문 3개", cmd_retro)
     s.add_argument("--days", type=int, default=7, help="기간(일, 기본 7)")
     s.add_argument("--force", action="store_true", help="같은 날 회고가 있어도 다시")
-    s.add_argument("--kakao", action="store_true", help="한 줄 요약을 카톡으로")
+    s.add_argument("--kakao", "--notify", dest="kakao", action="store_true", help="알림 보내기(카톡 헬퍼 → 없으면 macOS 알림 센터)")
     s.add_argument("--dry-run", action="store_true", help="재료만 보여주고 호출하지 않음")
 
     s = add("decide", "결정 대체 처리(옛 결정을 superseded로)", cmd_decide)
@@ -5176,8 +5268,12 @@ def build_parser():
     s = add("config", "설정 조회/변경", cmd_config)
     s.add_argument("action", choices=("get", "set", "init-widgets"),
                    help="get · set · init-widgets(예시 widgets.json 생성, 기존 파일 보존)")
-    s.add_argument("key", nargs="?", help="vault | git_autocommit | index_head | assistant_name | ask_cmd | kakao_cmd")
+    s.add_argument("key", nargs="?", help="vault | git_autocommit | index_head | assistant_name | ask_cmd | kakao_cmd | notify_channels | notify_center")
     s.add_argument("value", nargs="?", help="set할 값")
+
+    s = add("notify", "알림 채널 시험 발송(카톡 헬퍼 → 없으면 macOS 알림 센터). 설정 점검용", cmd_notify)
+    s.add_argument("action", choices=("test",), help="test: 시험 메시지 발송")
+    s.add_argument("message", nargs="?", help="보낼 메시지(기본: 안내 문구)")
 
     s = add("serve", "로컬 대시보드 서버(127.0.0.1 전용)", cmd_serve)
     s.add_argument("--port", type=int, default=7777, help="포트(기본 7777, 0이면 임의)")
@@ -5191,19 +5287,19 @@ def build_parser():
     s.add_argument("--days", type=int, default=7, help="며칠치(기본 7)")
 
     s = add("remind", "출발·시작 알림: 곧 시작하는 동선 단계(기본 10분 전)·시간 일정(30분 전). 같은 알림은 하루 한 번", cmd_remind)
-    s.add_argument("--kakao", action="store_true", help="카톡으로 발송")
+    s.add_argument("--kakao", "--notify", dest="kakao", action="store_true", help="알림 보내기(카톡 헬퍼 → 없으면 macOS 알림 센터)")
     s.add_argument("--steps-before", type=int, default=10, help="동선 단계 몇 분 전(기본 10)")
     s.add_argument("--events-before", type=int, default=30, help="시간 일정 몇 분 전(기본 30)")
 
-    s = add("brief", "아침 브리핑(today와 같음). --kakao면 카톡으로 200자 발송", cmd_brief)
-    s.add_argument("--kakao", action="store_true", help="카톡 나에게 보내기(헬퍼 필요)")
+    s = add("brief", "아침 브리핑(today와 같음). --kakao면 알림으로 200자 발송", cmd_brief)
+    s.add_argument("--kakao", "--notify", dest="kakao", action="store_true", help="알림 보내기(카톡 헬퍼 → 없으면 macOS 알림 센터)")
     s.add_argument("--evening", action="store_true", help="저녁 마감: 남은 할 일·내일 첫 일정")
     s.add_argument("--journal", action="store_true", help="(--evening과) Claude가 오늘 일지를 먼저 쓰고 한 줄을 붙임")
 
     s = add("journal", "오늘 일지를 Claude가 5줄로 씀(journal/YYYY/날짜.md). --dry-run은 재료만", cmd_journal)
     s.add_argument("--date", help="YYYY-MM-DD (기본 오늘)")
     s.add_argument("--force", action="store_true", help="이미 있으면 다시 씀")
-    s.add_argument("--kakao", action="store_true", help="한 줄 요약을 카톡으로")
+    s.add_argument("--kakao", "--notify", dest="kakao", action="store_true", help="알림 보내기(카톡 헬퍼 → 없으면 macOS 알림 센터)")
     s.add_argument("--dry-run", action="store_true", help="재료만 보여주고 호출하지 않음")
 
     s = add("task", "할 일: add <내용> [--due D|--tomorrow|--someday|--waiting 누구] · list · done <줄> · move <줄> <today|tomorrow|week|someday|clear|날짜> · remove <줄>", cmd_task)

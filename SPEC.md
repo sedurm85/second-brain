@@ -309,6 +309,15 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `web/report.html` (`/report`): A4 인쇄용 한 장. `@page`+`@media print`로 툴바 숨김, 헤더(기간·비서 이름·생성 시각)·숫자 띠·이번 주·결정 카드·질문·다음 주(체크 표시, 읽기 전용)·일지 요약·새 기록 2열·자동화 표·할 일 현황 순. 화면에서는 7/14/30일 선택 + 인쇄 버튼, 390px에서도 1열로 읽힘
 - index.html 상단 내비게이션에 「리포트」 링크 추가(사무실 옆)
 - 테스트 188
+## v0.27 알림 채널 통합·macOS 알림 센터 (2026-09-30)
+
+- `notify(text, title, cfg)` 하나로 `brief`/`remind`/`journal`/`retro` 네 곳의 개별 카톡 발송 코드를 통합. 채널은 config `notify_channels`(기본 `["kakao", "center"]`) 순서대로 "실제로 쓸 수 있는 첫 채널 하나"만 시도한다 — 카톡이 있으면 계속 카톡만 쓰고, macOS 알림 센터를 매번 같이 띄우지 않는다
+- 카톡 헬퍼(`kakao_helper_path`)가 없을 때만 macOS에서 `osascript display notification`으로 자동 대체(`notify_center: false`로 끌 수 있음). 텍스트는 `_osa_quote`로 `"`·`\` 이스케이프
+- `--kakao` 플래그는 그대로 두고 `--notify` 별칭 추가(`brief`/`remind`/`journal`/`retro`), 도움말을 "알림 보내기(카톡 헬퍼 → 없으면 macOS 알림 센터)"로 갱신. 새 `notify test [메시지]`로 실제 발송 없이(`SECOND_BRAIN_NOTIFY_DRY=1`) 또는 실제로 채널별 결과를 바로 확인
+- 채널이 하나도 없을 때만 "알림 채널이 없어요(카톡 헬퍼 또는 macOS 알림 센터)" 로그 + 종료 코드 2, 그 외에는 어느 채널이든 성공하면 성공 처리
+- 테스트 193 (tests/test_notify.py 13개 추가)
+
+## CI
 
 - `.github/workflows/tests.yml`: push(main)·PR마다 ubuntu-latest+macOS-latest에서 `python -m unittest discover -s tests -q` 실행. Python 3.9~3.13 매트릭스, macOS는 비용 절감 위해 3.12·3.13만
 - `scripts/brain.py`에 `from __future__ import annotations` 추가(3.9 방어용). `agenda.py`/`mailer.py`는 이미 있었고 `str | None` 같은 PEP 604 어노테이션도 그 덕에 3.9에서 안전함을 확인

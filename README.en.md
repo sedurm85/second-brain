@@ -147,7 +147,7 @@ The vault is outside the plugin and stays put. Reinstall and continue.
 Turn on git auto-commit in `/second-brain:brain-setup` and push the vault to a private repository, or move the vault into an iCloud or Dropbox folder.
 
 **KakaoTalk notifications?**
-Point `config set kakao_cmd <path>` at a "message to myself" helper script and `brief --kakao` and `remind --kakao` will call it. Without a helper the output stays in the terminal.
+Point `config set kakao_cmd <path>` at a "message to myself" helper script and `brief --kakao` (alias `--notify`) and `remind --kakao` will call it. Without a helper, macOS falls back to Notification Center (`osascript`) automatically; if that's not available either, output stays in the terminal. Run `notify test` to check which channel actually fires.
 
 **Embeddings / semantic search?**
 Search is keyword based (weighted title and tags plus recency, Korean 2-grams). Embedding search would need an external API key, which conflicts with the "zero keys" rule, so it is deferred as an option. `review --semantic` uses headless Claude instead.

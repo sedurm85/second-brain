@@ -39,7 +39,7 @@ allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py *) Read
 
 - **캘린더**: 구글만 쓰면 구글 캘린더 설정 → 해당 캘린더 → "iCal 형식의 비공개 주소"를 복사해 `~/.config/second-brain/google.ics.url` 첫 줄에 직접 저장하도록 안내한다(주소는 비밀이라 대화에 붙이지 말라고 말한다). 파일이 생기면 `calendar add ics 구글 --url-file ~/.config/second-brain/google.ics.url` → `calendar test`. 맥 캘린더 앱에 계정이 있으면 `calendar add eventkit 맥`(첫 실행 때 권한 허용).
 - **비서 이름**: `config set assistant_name <이름>` (코어 화면·자유 질문의 자기 호칭).
-- **카톡**: 카카오 "나에게 보내기" 헬퍼 스크립트가 있으면 `config set kakao_cmd <경로>`. 없으면 알림은 로그에만 남는다고 설명한다.
+- **알림**: 카카오 "나에게 보내기" 헬퍼 스크립트가 있으면 `config set kakao_cmd <경로>`. 없으면 macOS에서는 알림 센터(`osascript`)로 자동 대체되고, 그것도 안 되면 로그에만 남는다고 설명한다. `notify test`로 실제로 어느 채널이 뜨는지 바로 확인시켜준다.
 - **Claude가 대신 쓰는 것**: `enrich`(가져온 노트 정제), `prepare`(준비 제안, 06:40 에이전트), `journal`(21:30 마감이 씀), `retro`(월 09:00 에이전트), `review --semantic`. 모두 제안이고 볼트 반영은 사용자가 보드에서 채택하거나 `link A B`를 실행할 때만이라고 설명한다.
 - **알림 에이전트(macOS)**: `agents install`(기본 넷: brief remind evening backup) 또는 `agents install prepare retro`처럼 골라서. `--dry-run`으로 만들 파일을 먼저 보여줄 수 있다. `agents status`로 확인, `agents remove`로 제거. 위젯(brain-brief 등)이 자동으로 추가된다. 다른 OS면 cron에 `brain.py brief --kakao`(07:00)·`remind --kakao`(*/10)·`brief --evening --kakao`(21:30)를 직접 등록하도록 안내.
 - **지금 실행 버튼**: 보드·사무실에서 자동화를 바로 돌리려면 `~/.config/second-brain/widgets.json`에 `"allow_run": true`. 크론 `>> 로그` 또는 launchd `StandardOutPath`가 위젯 `source`와 같은 것만 실행할 수 있다.
