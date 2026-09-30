@@ -80,3 +80,9 @@
 - 워커 추가: wt/board-shortcuts(보드 단축키·명령 팔레트), wt/brief-polish(저녁 마감에 내일 날씨, 회고에 자동화 신뢰도)
 - 가동 중: people-link, board-shortcuts, brief-polish
 - 18:26 wt/people-link 머지(참석자↔사람 노트·/api/person·브리핑 이름, 테스트 398). 워커 추가: wt/trip-mode(여러 날 일정 → 여행 인식·날짜 탭·짐 목록 제안). 21:30 저녁 마감은 launchd가 repo main의 brain.py를 직접 실행하므로 main은 항상 테스트 통과 상태 유지
+- 18:27 wt/board-shortcuts(단축키·명령 팔레트, Playwright 실측)·wt/brief-polish(저녁 날씨·회고 KPI·init 안내, 테스트 417) 머지
+
+### 사이클 9 (18:27~)
+- 워커 추가: wt/core-actions(음성으로 제안 채택·체크·할 일 완료), wt/serve-agent(대시보드 상주 launchd), wt/apple-notes(Apple Notes 가져오기), wt/search-ops(검색 연산자 type:/tag:/since: + 보드 필터)
+- 가동 중: trip-mode, core-actions, serve-agent, apple-notes, search-ops
+- 사용자 약속: 자정까지 워커 3명 이상 상시 가동, 멈추지 않기
