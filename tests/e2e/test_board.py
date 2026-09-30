@@ -93,6 +93,35 @@ class BoardTest(E2ETestCase):
         self.assertGreaterEqual(pg.locator("#pplGrid .pplcard").count(), 1)
         self.assert_no_js_errors()
 
+    def test_09_decision_keep_toasts_and_moves_revisit(self):
+        # 데모 데이터의 d5(「대시보드를 로컬 서버로 띄울지」)는 revisit이 오늘+2일이라 되돌아볼 결정 카드에 뜬다.
+        before = self.api_json("today")
+        rv_before = [d for d in (before.get("revisit") or []) if "대시보드" in d["title"]]
+        self.assertEqual(1, len(rv_before), "데모 데이터에 되돌아볼 결정(대시보드)이 있어야 해요")
+
+        pg = self.page("/")
+        pg.wait_for_selector(".rv-row .rv-item", timeout=8000)
+        row = pg.locator(".rv-row", has_text="대시보드").first
+        row.locator('.rv-act[data-ract="keep"]').click()
+        pg.wait_for_selector(".rv-inline form", timeout=4000)
+        pg.locator(".rv-inline select[name=days]").select_option("30")
+        pg.locator(".rv-inline form button[type=submit]").click()
+        pg.wait_for_selector("#scToast.show", timeout=6000)
+        self.assertIn("유지", pg.locator("#scToast").inner_text())
+
+        # +30일로 밀리면 7일 창(t.revisit)에서는 빠지지만, 결정 보드(open)의 revisit 값 자체는 바뀐다.
+        def revisit_moved():
+            j = self.api_json("decisions")
+            hit = [d for d in (j.get("open") or []) if "대시보드" in d["title"]]
+            return bool(hit) and hit[0]["revisit"] != rv_before[0]["revisit"]
+
+        for _ in range(20):
+            if revisit_moved():
+                break
+            pg.wait_for_timeout(300)
+        self.assertTrue(revisit_moved(), "유지 처리 후 revisit이 앞으로 밀려야 해요")
+        self.assert_no_js_errors()
+
     def test_08_mobile_width_no_horizontal_scroll(self):
         pg = self.page("/", width=390, height=844)
         pg.wait_for_selector("#report p", timeout=8000)

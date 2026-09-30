@@ -121,6 +121,7 @@ Claude: 신규 노트 6개(아이디어 3 · 자료 2 · 회의 1)
         고아 노트 2개 · 링크 제안 3쌍 (승인하면 연결해요)
         BRAIN.md 갱신 완료
 ```
+되돌아볼 날이 된 결정은 보드(되돌아볼 결정 카드·결정 섹션)의 「유지」「종결」「변경」 버튼이나 코어에서 "결정 유지해 배포 요일" 같은 말로 바로 처리할 수 있고, `brain.py decision keep|close|change`로도 같은 일을 합니다.
 
 그 밖에 `/second-brain:brain-today`(오늘 브리핑), `/second-brain:brain-event`(일정에 메모·준비·동선), `/second-brain:brain-import <경로>`(Obsidian 볼트·Claude Code 메모리 가져오기), `/second-brain:brain-setup`(볼트 위치·git 자동 커밋), `/second-brain:brain-journal`(오늘 일지·주간 회고), `/second-brain:brain-doctor`(설치·연결 점검), `/second-brain:brain-office`(자동화 위젯 채용·이동·퇴사·실행을 대화로, 대시보드 없이)이 있습니다.
 

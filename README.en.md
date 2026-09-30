@@ -124,6 +124,7 @@ Claude: 6 new notes (3 ideas · 2 sources · 1 meeting)
         2 orphan notes · 3 link suggestions (connected when you approve)
         BRAIN.md updated
 ```
+Once a decision is due for review, the board's "Keep"/"Close"/"Change" buttons (on the due-decisions card and the decisions section) or a core voice command like "keep the deploy day decision" handle it right away, and `brain.py decision keep|close|change` does the same from the CLI.
 
 Also available: `/second-brain:brain-today` (today's briefing), `/second-brain:brain-event` (memos, prep and itinerary on an event), `/second-brain:brain-import <path>` (import an Obsidian vault or Claude Code memory), `/second-brain:brain-setup` (vault location, git auto-commit), `/second-brain:brain-journal` (daily journal, weekly retro), `/second-brain:brain-doctor` (install/connection health check), `/second-brain:brain-office` (hire, move, retire or run automation widgets by chat, no dashboard needed).
 

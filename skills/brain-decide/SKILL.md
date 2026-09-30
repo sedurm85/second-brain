@@ -26,3 +26,14 @@ allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py *) Read Write
 7. 출력: 결정 파일 경로, 되돌아볼 날짜, 링크한 노트 수, (해당 시) 대체한 결정 1줄.
 
 볼트가 없으면(종료 코드 3) `init` 을 한 번 제안한다.
+
+## 되돌아볼 날짜가 되면: 유지·종결·변경
+
+보드(되돌아볼 결정 카드·결정 섹션·노트 패널)·코어(음성 "결정 유지해/종결해 <제목 일부>")에서도 같은 처리를 할 수 있지만, 대화 중에 사용자가 직접 요청하면 CLI로도 처리한다. 기록은 매번 `## 되돌아볼 날짜` 절에 한 줄씩 쌓는다(별도 `## 검토 기록` 절을 새로 만들지 않음 — 기존 결정 템플릿에 이미 있는 절을 그대로 씀).
+
+- 유지(아직 그대로 간다): `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py decision keep <결정 경로> [--days N(기본 90)] [--note "짧은 메모"]`
+  → `revisit`을 오늘+N일로 미루고 `- YYYY-MM-DD 유지 → 다음 검토 YYYY-MM-DD. <메모>` 한 줄 추가.
+- 종결(더 되돌아볼 필요 없음): `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py decision close <결정 경로> [--note "짧은 메모"]`
+  → `status: decided`로 바꾸고 `revisit`을 지우며 `- YYYY-MM-DD 종결. <메모>` 한 줄 추가.
+- 변경(결정을 뒤집는다): `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py decision change <옛 결정 경로> --title "<새 결정 제목>" --decision "<새 결정>" --why "<새 이유>" [--revisit-days N]`
+  → 새 decision 노트를 만들고(`## 상황`에 "「옛 제목」을 다시 검토한 결과" 자동 기입) 내부적으로 `decide --supersede`와 같은 동작으로 옛 결정을 superseded 처리한다. 옛 파일은 삭제하지 않는다.

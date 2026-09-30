@@ -583,3 +583,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 호출마다 `claude_usage_log(kind, ok, ms, chars_in, chars_out)`가 `~/.cache/second-brain/claude_usage.jsonl`에 한 줄을 남긴다(kind = ask/enrich/prepare/journal/retro/brief/links). `claude_usage(hours=24)`가 이걸 집계해 `{calls, by_kind, last, hour_calls}`을 만들고, 새 라우트 `GET /api/claude-usage`(+`limit`, `remaining_hour`), `doctor_report`의 "Claude 사용량" 항목, `dash_office`의 `claude_usage` 키가 모두 같은 집계를 재사용한다
 - `web/office.html` Claude 작업실 방 머리에 "오늘 Claude 호출 N회" 한 줄을 추가했다(그 방에만, 자동화 팀 방 루프는 그대로)
 - 테스트 `tests/test_claude_guard.py` 7건(kind별 로그, 상한 3번째 호출 차단·언리밋 우회, 락 충돌 두 경로, `/api/claude-usage` 응답 모양, doctor 항목). 전체 스위트 590 통과(기존 583 + 신규 7)
+## v0.31 결정 되돌아보기 처리
+
+- `decision_action(vault, body, today)`(keep/close/change) + `POST /api/decision` + CLI `brain.py decision keep|close|change` 신규: 되돌아볼 날이 된 결정을 유지(revisit을 오늘+N일로 미룸, 기본 90일)·종결(`status: decided`로 바꾸고 revisit 제거)·변경(새 결정 노트를 만들어 기존 `supersede()`로 옛 결정을 superseded 처리)한다. 기록은 새 절을 만들지 않고 기존 `## 되돌아볼 날짜` 절에 `- YYYY-MM-DD 유지 → 다음 검토 YYYY-MM-DD. <메모>` 또는 `- YYYY-MM-DD 종결. <메모>` 한 줄로 쌓는다
+- 보드: 「되돌아볼 결정」 카드와 「결정」 섹션의 임박한(7일 이내) open 항목 각각에 유지·종결·변경 작은 버튼을 붙이고, 유지·종결은 그 자리 인라인 폼(일수 선택 30/90/180 + 메모)으로, 변경은 노트 패널을 열어 본문 아래 제목·결정·이유 인라인 폼으로 처리해 성공 시 새 결정을 바로 연다. 노트 패널도 결정 타입(open)이면 같은 유지·종결·변경 폼을 제공. 처리 후 매번 `refreshLive(true)` + 토스트
+- 코어: 음성 규칙 "결정 유지해/종결해 <제목 일부>" 1개(`checkDecisionReview`) 추가 — `t.revisit` 제목 부분일치로 첫 매치를 확인 없이 바로 처리하고 결과를 말해 준다
+- 신규 테스트 `tests/test_decision_review.py` 13건(keep/close/change 각 동작·검증 5종·HTTP·CLI 왕복) + e2e 1건(데모의 임박 결정에서 유지 클릭 → 토스트 → revisit 이동). 전체 스위트 626 통과(기존 612 + 신규 14, 회귀 없음)

@@ -3777,6 +3777,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._json(200, res)
             if route == "/api/note-append":
                 return self._json(200, note_append_action(vault, body))
+            if route == "/api/decision":
+                return self._json(200, decision_action(vault, body, self.server.today))
             if route == "/api/person":
                 res = person_action(vault, body)
                 self.server.agenda_cache.invalidate()
@@ -4209,6 +4211,34 @@ def cmd_decide(args):
                 "old_status": "superseded"},
          f"대체 처리: {po.relative_to(v).as_posix()} → superseded, "
          f"{pn.relative_to(v).as_posix()} supersedes [[{po.stem}]]")
+    return EXIT_OK
+
+
+def cmd_decision(args):
+    v = require_vault()
+    today = date.today()
+    body = {"action": args.action, "path": args.path}
+    if args.action == "keep":
+        body["days"] = args.days
+        if args.note:
+            body["note"] = args.note
+        res = decision_action(v, body, today)
+        emit(args, res, f"유지: {res['path']} → 다음 검토 {res['revisit']}")
+        return EXIT_OK
+    if args.action == "close":
+        if args.note:
+            body["note"] = args.note
+        res = decision_action(v, body, today)
+        emit(args, res, f"종결: {res['path']} → status decided")
+        return EXIT_OK
+    # change
+    if not args.title or not args.decision or not args.why:
+        raise BrainError("decision change에는 --title · --decision · --why가 모두 필요해요")
+    body.update({"title": args.title, "decision": args.decision, "why": args.why})
+    if args.revisit_days is not None:
+        body["revisit_days"] = args.revisit_days
+    res = decision_action(v, body, today)
+    emit(args, res, f"새 결정: {res['path']} (옛 결정 {res['old_path']}은 superseded)")
     return EXIT_OK
 
 
@@ -5908,6 +5938,103 @@ def note_append_action(vault, body):
         write_note(n.path, meta, n.body)
     git_commit(vault, f"brain: note {action} {n.rel}")
     return {"ok": True, "note": dash_note(vault, n.rel)}
+
+
+DECISION_REVIEW_ACTIONS = ("keep", "close", "change")
+
+
+def _decision_note(vault, rel):
+    """되돌아볼 결정 처리 공용: 경로 검증 + decision 타입 확인."""
+    p = safe_vault_path(vault, rel)
+    if not p.is_file():
+        raise FileNotFoundError(rel)
+    n = Note(vault, p)
+    if n.type != "decision":
+        raise BrainError(f"결정 노트가 아닙니다: {rel}")
+    return n
+
+
+def decision_action(vault, body, today=None):
+    """보드·코어·CLI 공용. 되돌아볼 결정을 처리한다.
+
+    body: {action: keep|close|change, path, ...}
+    - keep: {days? (기본 90), note?} → revisit을 오늘+days로 미루고 「## 되돌아볼 날짜」 절에
+      기록 한 줄을 남긴다.
+    - close: {note?} → status를 decided로 바꾸고 revisit을 지우며 같은 절에 종결 기록을 남긴다.
+    - change: {title, decision, why, revisit_days?} → 새 결정 노트를 만들고 옛 결정을
+      supersede(옛 결정은 superseded, 새 결정은 supersedes)한다.
+    """
+    action = body.get("action")
+    if action not in DECISION_REVIEW_ACTIONS:
+        raise BrainError("action은 keep · close · change 중 하나")
+    vault = Path(vault).resolve()  # 임시 폴더 심볼릭 링크(/var→/private/var)에서도 같은 기준으로 비교
+    today = today or date.today()
+    today_s = today.isoformat()
+    rel = str(body.get("path") or "")
+    n = _decision_note(vault, rel)
+
+    note_text = " ".join(str(body.get("note") or "").split())
+    if len(note_text) > 2000:
+        raise BrainError("메모는 한 번에 2000자까지만")
+
+    if action == "keep":
+        days = body.get("days")
+        days = 90 if days is None or days == "" else days
+        try:
+            days = int(days)
+        except (TypeError, ValueError):
+            raise BrainError("days는 정수여야 합니다")
+        days = max(1, min(3650, days))
+        new_revisit = (today + timedelta(days=days)).isoformat()
+        meta = dict(n.meta)
+        meta["revisit"] = new_revisit
+        line = f"- {today_s} 유지 → 다음 검토 {new_revisit}." + (f" {note_text}" if note_text else "")
+        new_body = _append_section(n.body, "## 되돌아볼 날짜", line)
+        write_note(n.path, meta, new_body)
+        build_index(vault)
+        git_commit(vault, f"brain: decision keep {n.rel}")
+        return {"ok": True, "action": "keep", "path": n.rel, "revisit": new_revisit}
+
+    if action == "close":
+        meta = dict(n.meta)
+        meta["status"] = "decided"
+        meta.pop("revisit", None)
+        line = f"- {today_s} 종결." + (f" {note_text}" if note_text else "")
+        new_body = _append_section(n.body, "## 되돌아볼 날짜", line)
+        write_note(n.path, meta, new_body)
+        build_index(vault)
+        git_commit(vault, f"brain: decision close {n.rel}")
+        return {"ok": True, "action": "close", "path": n.rel, "status": "decided"}
+
+    # change: 새 결정을 만들어 옛 결정을 supersede
+    title = str(body.get("title") or "").strip()
+    decision_text = str(body.get("decision") or "").strip()
+    why = str(body.get("why") or "").strip()
+    if not title:
+        raise BrainError("새 결정 제목(title)이 필요해요")
+    if not decision_text:
+        raise BrainError("새 결정 내용(decision)이 필요해요")
+    if not why:
+        raise BrainError("이유(why)가 필요해요")
+    if len(title) > 200 or len(decision_text) > 2000 or len(why) > 2000:
+        raise BrainError("제목은 200자, 결정·이유는 각 2000자까지만")
+    revisit = None
+    revisit_days = body.get("revisit_days")
+    if revisit_days not in (None, ""):
+        try:
+            revisit_days = int(revisit_days)
+        except (TypeError, ValueError):
+            raise BrainError("revisit_days는 정수여야 합니다")
+        revisit = (today + timedelta(days=max(1, min(3650, revisit_days)))).isoformat()
+    situation = f"「{n.title}」을 다시 검토한 결과"
+    new_body = (f"# {title}\n\n## 상황\n\n{situation}\n\n## 고려한 선택지\n\n"
+                f"## 결정\n\n{decision_text}\n\n## 이유\n\n{why}\n\n## 되돌아볼 날짜\n")
+    new_path = create_note(vault, "decision", title, revisit=revisit, body=new_body)
+    supersede(vault, n.path, new_path)
+    new_rel = new_path.relative_to(vault).as_posix()
+    build_index(vault)
+    git_commit(vault, f"brain: decision change {n.rel} -> {new_rel}")
+    return {"ok": True, "action": "change", "path": new_rel, "old_path": n.rel}
 
 
 def person_action(vault, body):
@@ -8237,7 +8364,7 @@ def build_parser():
                "  자주 쓰는 것  init · new · capture · search · show · today · task · event\n"
                "  비서         ask · brief · journal · retro · prepare · remind · enrich\n"
                "  자동화       agents · widget · widgets · calendar · serve · notify · reminders · mail\n"
-               "  관리         doctor · backup · restore · export · lint · relink · link · decide · config · index · review · import\n\n"
+               "  관리         doctor · backup · restore · export · lint · relink · link · decide · decision · config · index · review · import\n\n"
                "종료 코드: 0 성공 · 2 입력 오류 · 3 볼트 없음. 모든 서브커맨드는 --json을 지원합니다.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         add_help=False,
@@ -8307,6 +8434,17 @@ def build_parser():
     s = add("decide", "결정 대체 처리(옛 결정을 superseded로)", cmd_decide)
     s.add_argument("--supersede", required=True, metavar="OLD_PATH", help="대체될 옛 결정")
     s.add_argument("new_path", metavar="NEW_PATH", help="새 결정")
+
+    s = add("decision", "되돌아볼 결정 처리: keep <경로> [--days N] [--note] · close <경로> [--note] · "
+            "change <옛경로> --title --decision --why [--revisit-days N]", cmd_decision)
+    s.add_argument("action", choices=("keep", "close", "change"))
+    s.add_argument("path", help="결정 노트 경로(옛 결정, change 포함)")
+    s.add_argument("--days", type=int, default=90, help="keep: 다음 검토까지 일수(기본 90)")
+    s.add_argument("--note", help="keep/close: 되돌아볼 날짜 절에 남길 짧은 메모")
+    s.add_argument("--title", help="change: 새 결정 제목")
+    s.add_argument("--decision", help="change: 새 결정 내용")
+    s.add_argument("--why", help="change: 새 결정 이유")
+    s.add_argument("--revisit-days", type=int, dest="revisit_days", help="change: 새 결정의 되돌아볼 날짜(오늘+N일)")
 
     s = add("link", "두 노트를 서로 연결(프론트매터 links)", cmd_link)
     s.add_argument("a", help="노트 A")

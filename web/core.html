@@ -467,6 +467,8 @@ button { cursor: pointer; }
     if (chkRes) return chkRes;
     var doneRes = checkTaskDone(q);
     if (doneRes) return doneRes;
+    var decRes = checkDecisionReview(q);
+    if (decRes) return decRes;
     if (/(남은|오늘)\s*할\s*일.*(내일|옮겨|넘겨)|내일로\s*(옮겨|넘겨)/.test(q)) {
       return fetch("/api/task", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify({ action: "carry" }) })
         .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
@@ -668,6 +670,28 @@ button { cursor: pointer; }
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
       .then(function () { load(); speak(["「" + h.text + "」 완료로 표시했어요."]); })
       .catch(function (err) { speak(["완료 처리하지 못했어요. " + (err.message || "")]); });
+  }
+
+  /* ───────── 되돌아볼 결정 유지·종결(음성): "결정 유지해 배포 요일" · "결정 종결해 로그 저장소" ───────── */
+  function parseDecisionReviewPhrase(q) {
+    var m = /^결정\s*(유지|종결)해?\s*[:：]?\s*(.+?)\s*[.!]?$/.exec(q);
+    if (!m || !m[2].trim()) return null;
+    return { act: m[1] === "유지" ? "keep" : "close", phrase: m[2].trim() };
+  }
+  function checkDecisionReview(q) {
+    var parsed = parseDecisionReviewPhrase(q);
+    if (!parsed) return null;
+    var t = S.today || {}, rv = t.revisit || [];
+    var hits = rv.filter(function (d) { return d.title.indexOf(parsed.phrase) >= 0; });
+    if (!hits.length) return null;
+    var h = hits[0];
+    return fetch("/api/decision", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify({ action: parsed.act, path: h.path }) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
+      .then(function (j) {
+        load();
+        speak([parsed.act === "keep" ? "「" + h.title + "」 유지했어요. 다음 검토는 " + (j.revisit || "") + "예요." : "「" + h.title + "」 종결했어요."]);
+      })
+      .catch(function (err) { speak(["처리하지 못했어요. " + (err.message || "")]); });
   }
 
   /* ───────── 듣기(STT): 있으면 마이크, 없으면 입력창 ───────── */
