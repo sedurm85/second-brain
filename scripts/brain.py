@@ -4135,6 +4135,102 @@ def backup_vault(vault, dest_dir=None, keep=BACKUP_KEEP, now=None):
     return {"path": str(target), "files": count, "bytes": target.stat().st_size, "removed": removed}
 
 
+def _restore_zip_targets(vault, names):
+    """zip 멤버 이름을 볼트 경로로 매핑하면서 zip-slip(절대경로·.. ·볼트 밖 탈출)을 거부한다."""
+    from pathlib import PurePosixPath
+    vault_real = vault.resolve()
+    targets = {}
+    for name in names:
+        p = PurePosixPath(name.replace("\\", "/"))
+        if p.is_absolute() or ".." in p.parts:
+            raise BrainError(f"안전하지 않은 백업 zip입니다(위험한 경로): {name}")
+        target = (vault / name).resolve()
+        try:
+            target.relative_to(vault_real)
+        except ValueError:
+            raise BrainError(f"안전하지 않은 백업 zip입니다(볼트 밖 경로): {name}")
+        targets[name] = target
+    return targets
+
+
+def restore_vault(vault, zip_path, dry=False, keep_current=True, safety_backup=True, dest_dir=None, now=None):
+    """백업 zip을 볼트에 복구한다(backup_vault의 역연산).
+
+    - zip이 볼트 백업 형태(BRAIN.md 또는 notes/ 포함)가 아니면 거부.
+    - zip-slip(절대경로/..) 멤버가 있으면 거부.
+    - keep_current=True(기본)면 zip에 없는 기존 파일은 그대로 둔다(보존).
+      False(--replace)면 그런 파일을 지운다.
+    - dry=True면 아무것도 쓰지 않고 계획만 돌려준다.
+    - safety_backup=True(기본)면 덮어쓰기 전에 backup_vault로 안전 백업을 만든다.
+    """
+    import shutil
+    import zipfile
+    vault = Path(vault)
+    now = now or datetime.now()
+    zip_path = Path(zip_path)
+    if not zip_path.is_file():
+        raise BrainError(f"백업 zip을 찾을 수 없습니다: {zip_path}")
+    with zipfile.ZipFile(zip_path) as z:
+        names = [i.filename for i in z.infolist() if not i.filename.endswith("/")]
+    if "BRAIN.md" not in names and not any(n.startswith("notes/") for n in names):
+        raise BrainError(f"볼트 백업 zip이 아닌 것 같아요(BRAIN.md·notes/ 없음): {zip_path.name}")
+    targets = _restore_zip_targets(vault, names)
+
+    existing = {}
+    for root_dir, dirs, files in os.walk(vault):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        for fn in files:
+            fp = Path(root_dir) / fn
+            existing[fp.relative_to(vault).as_posix()] = fp
+
+    zip_names = set(names)
+    created = sorted(n for n in zip_names if n not in existing)
+    overwritten = sorted(n for n in zip_names if n in existing)
+    preserved = sorted(n for n in existing if n not in zip_names)
+
+    result = {"zip": str(zip_path), "created": created, "overwritten": overwritten,
+              "preserved": preserved, "removed": [], "dry_run": bool(dry), "safety_backup": None}
+    if dry:
+        return result
+
+    if safety_backup:
+        b = backup_vault(vault, dest_dir=dest_dir, now=now)
+        src = Path(b["path"])
+        dst = src.parent / f"brain-{now:%Y%m%d}-before-restore-{now:%H%M%S}.zip"
+        if src != dst:
+            shutil.move(str(src), str(dst))
+        result["safety_backup"] = str(dst)
+
+    if not keep_current:
+        removed = []
+        for rel, fp in existing.items():
+            if rel in zip_names:
+                continue
+            fp.unlink()
+            removed.append(rel)
+        for root_dir, dirs, files in os.walk(vault, topdown=False):
+            rd = Path(root_dir)
+            if rd == vault or any(part in SKIP_DIRS for part in rd.relative_to(vault).parts):
+                continue
+            try:
+                if not any(rd.iterdir()):
+                    rd.rmdir()
+            except OSError:
+                pass
+        result["removed"] = sorted(removed)
+
+    with zipfile.ZipFile(zip_path) as z:
+        for name in names:
+            target = targets[name]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with z.open(name) as src_f, open(target, "wb") as dst_f:
+                shutil.copyfileobj(src_f, dst_f)
+
+    build_index(vault)
+    git_commit(vault, f"brain: restore from {zip_path.name}")
+    return result
+
+
 ENRICH_BATCH = 6
 ENRICH_BODY_CHARS = 1600
 
@@ -4752,6 +4848,51 @@ def cmd_backup(args):
     return EXIT_OK
 
 
+def cmd_restore(args):
+    import zipfile
+    v = require_vault()
+    dest = agenda_mod.cache_dir() / "backups"
+    if args.list:
+        zips = sorted(dest.glob("brain-*.zip"))
+        items = []
+        for p in zips:
+            st = p.stat()
+            try:
+                with zipfile.ZipFile(p) as z:
+                    n = len([i for i in z.infolist() if not i.filename.endswith("/")])
+            except zipfile.BadZipFile:
+                n = 0
+            items.append({"name": p.name, "bytes": st.st_size, "files": n,
+                          "mtime": datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds")})
+        lines = [f"- {i['name']} ({i['files']}개 파일, {i['bytes'] // 1024}KB, {i['mtime']})" for i in items]
+        emit(args, {"backups": items}, "\n".join(lines) or f"백업이 없어요: {dest}")
+        return EXIT_OK
+
+    if args.zip:
+        zpath = Path(args.zip).expanduser()
+        if not zpath.is_file():
+            cand = dest / args.zip
+            if cand.is_file():
+                zpath = cand
+    else:
+        zips = sorted(dest.glob("brain-*.zip"))
+        if not zips:
+            raise BrainError(f"백업이 없어요: {dest} — 먼저 `brain.py backup`을 실행하세요.")
+        zpath = zips[-1]
+    if not zpath.is_file():
+        raise BrainError(f"백업 zip을 찾을 수 없습니다: {args.zip}")
+
+    res = restore_vault(v, zpath, dry=args.dry_run, keep_current=not args.replace,
+                        safety_backup=not args.no_safety_backup)
+    lines = [f"백업: {Path(res['zip']).name}" + (" (dry-run, 실제로 바뀌지 않음)" if res["dry_run"] else "")]
+    lines.append(f"덮어쓰기 {len(res['overwritten'])}개 · 새로 생성 {len(res['created'])}개 · 보존 {len(res['preserved'])}개"
+                + (f" · 삭제(--replace) {len(res['removed'])}개" if res["removed"] else ""))
+    if res["safety_backup"]:
+        lines.append(f"복구 전 안전 백업: {res['safety_backup']}")
+    emit(args, res, "\n".join(lines))
+    return EXIT_OK
+
+
 def cmd_agents(args):
     names = [n for n in (args.names or list(AGENT_SPECS)) if n in AGENT_SPECS]
     if not names:
@@ -5029,7 +5170,14 @@ def build_parser():
     s.add_argument("--dest", help="백업 폴더(기본 ~/.cache/second-brain/backups)")
     s.add_argument("--keep", type=int, default=BACKUP_KEEP, help="보관 개수(기본 14)")
 
-    s = add("agents", "비서 알림 에이전트(launchd): install [brief remind evening backup] · status · remove", cmd_agents)
+    s = add("restore", "백업 zip에서 볼트 복구(덮어쓰기 전 안전 백업 자동)", cmd_restore)
+    s.add_argument("zip", nargs="?", help="복구할 백업 zip 경로/파일명(기본: 최신 백업)")
+    s.add_argument("--list", action="store_true", help="사용 가능한 백업 목록만 보여주고 종료")
+    s.add_argument("--dry-run", action="store_true", help="실제로 바꾸지 않고 계획만 보여줌")
+    s.add_argument("--replace", action="store_true", help="zip에 없는 기존 파일을 삭제(기본은 보존)")
+    s.add_argument("--no-safety-backup", action="store_true", help="복구 전 안전 백업을 만들지 않음")
+
+    s = add("agents","비서 알림 에이전트(launchd): install [brief remind evening backup] · status · remove", cmd_agents)
     s.add_argument("action", choices=("install", "status", "remove"))
     s.add_argument("names", nargs="*", help="brief(07:00 브리핑) remind(10분 알림) evening(21:30 마감+일지) backup(23:00 백업) prepare(06:40 준비 제안) retro(월 09:00 회고). 비우면 전부")
     s.add_argument("--dry-run", action="store_true", help="쓰지 않고 만들 파일만 보여줌")

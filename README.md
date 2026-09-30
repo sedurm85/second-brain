@@ -56,6 +56,7 @@ python3 scripts/brain.py event todo "2026-10-03|제주도" "렌터카 예약 확
 python3 scripts/brain.py event step "2026-10-03|제주도" "14:00 집 출발 (자가용 50분)"
 python3 scripts/brain.py config set assistant_name 자비스
 python3 scripts/brain.py backup                        # 볼트 zip 백업(14개 보관)
+python3 scripts/brain.py restore [zip] [--dry-run]     # 백업에서 복구(덮어쓰기 전 안전 백업 자동)
 python3 scripts/brain.py enrich [--dry-run]            # Claude가 노트 제목·요약·태그·관련 링크 정제(가져온 노트 우선)
 python3 scripts/brain.py prepare [--days 7]           # 다가오는 일정에 준비 체크리스트·동선 초안 제안(보드에서 채택)
 python3 scripts/brain.py journal [--dry-run]           # 오늘 일지 5줄(journal/YYYY/날짜.md), 21:30 저녁 마감이 자동으로 씀

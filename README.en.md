@@ -58,6 +58,7 @@ python3 scripts/brain.py event todo "2026-10-03|Jeju" "Confirm rental car"
 python3 scripts/brain.py event step "2026-10-03|Jeju" "14:00 leave home (car, 50 min)"
 python3 scripts/brain.py config set assistant_name Jarvis
 python3 scripts/brain.py backup                        # zip backup of the vault (keeps 14)
+python3 scripts/brain.py restore [zip] [--dry-run]     # restore from a backup (auto safety backup before overwrite)
 python3 scripts/brain.py enrich [--dry-run]            # Claude refines titles, summaries, tags, links
 python3 scripts/brain.py prepare [--days 7]            # Claude drafts prep lists for upcoming events
 python3 scripts/brain.py journal [--dry-run]           # five-line journal for today

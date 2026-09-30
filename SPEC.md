@@ -339,3 +339,11 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 이번 워크트리(`wt/weather`)에서는 `brain.py`를 건드리지 않았다(병합 충돌 방지) — 연결 지점은 `docs/weather-integration.md`에 정리(attach_event_notes/kakao_brief/today_human/prepare_prompt/보드 이벤트 패널)
 - 실네트워크 확인: 정식 지명("김포국제공항","서울특별시")은 조회되나 구어체("서울","제주도","김포공항")는 Open-Meteo 지오코딩 데이터에 없어 못 찾음 — 모듈 로직 문제 아닌 API 데이터 한계, 필요 시 별칭 테이블은 후속 과제로 문서에 남김
 - 테스트 +24, 총 204
+## v0.27 복구(restore) (2026-09-30)
+
+- `brain.py restore [zip] [--list] [--dry-run] [--replace] [--no-safety-backup]`: `backup`의 역연산. zip 인자 없으면 백업 폴더의 최신 zip을 씀, `--list`는 백업 목록(이름·파일 수·용량·시각)만 보여줌
+- 안전장치: 절대경로·`..`·볼트 밖으로 탈출하는 멤버(zip-slip)가 있거나 `BRAIN.md`/`notes/`가 없는(볼트 백업이 아닌) zip은 거부
+- 덮어쓰기 전 `backup_vault`로 `brain-YYYYMMDD-before-restore-HHMMSS.zip` 안전 백업을 먼저 만듦(`--no-safety-backup`로 건너뛸 수 있음)
+- zip에 없는 기존 파일은 기본은 보존, `--replace`면 삭제. 복구 후 인덱스 재생성·git 커밋
+- `--dry-run`은 생성/덮어쓰기/보존 개수만 보여주고 디스크를 건드리지 않음
+- 테스트 185
