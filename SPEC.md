@@ -309,3 +309,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `scripts/brain.py`에 `from __future__ import annotations` 추가(3.9 방어용). `agenda.py`/`mailer.py`는 이미 있었고 `str | None` 같은 PEP 604 어노테이션도 그 덕에 3.9에서 안전함을 확인
 - match문·zip(strict=)·PEP 695 제네릭 등 3.10+ 전용 런타임 문법은 scripts/*.py에서 발견되지 않음
 - 테스트 180
+
+## v0.27 노트 캐시 (2026-09-30)
+
+- `load_notes(vault)`가 요청마다 전체 마크다운을 다시 읽던 것을 프로세스 생존 기간 캐시로 바꿈. 캐시 키는 볼트 지문(노트 디렉토리를 `os.walk`+`stat`만으로 훑은 (경로, mtime_ns, size) 튜플) — 내용을 읽지 않아 매 호출마다 검사해도 저비용이고, 생성·수정·삭제·이름변경(Obsidian 등 외부 편집 포함)을 자동으로 감지한다. `write_note()`가 모든 쓰기 경로(create_note/import/relink/enrich 등)의 단일 통로라 그 안에서 `invalidate_notes_cache()`를 한 번 더 호출해 지문 방식 위에 belt-and-braces를 얹었다
+- 노트 300개 볼트에서 `dash_today()` 측정: 캐시 전 평균 145.6ms/호출·`load_notes` 3회·`Note` 실제 파싱 903회(3×300) → 캐시 후 평균 29.7ms/호출(첫 호출만 콜드 67ms, 이후 4회는 ~20ms)·`load_notes` 호출 수는 여전히 3회지만 파싱은 첫 호출 301회 이후 0회
+- `SECOND_BRAIN_NO_NOTE_CACHE=1`로 캐시를 완전히 끌 수 있다(테스트용). `tests/test_notes_cache.py` 추가(생성/외부 편집/삭제 즉시 반영, 캐시 적중 시 내용 동일+Note 재사용, 환경변수로 비활성화). 테스트 185

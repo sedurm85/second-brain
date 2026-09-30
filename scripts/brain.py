@@ -443,7 +443,43 @@ def wikilink(stem):
     return f"[[{stem}]]"
 
 
-def load_notes(vault):
+_NOTES_CACHE = {}  # 해석된 볼트 경로 -> (지문, Note 리스트). 서버 프로세스 생존 기간 동안만 유지.
+
+
+def _vault_note_signature(vault):
+    """볼트의 노트 디렉토리 지문: iter_note_files와 같은 필터로 (rel경로, mtime_ns, size)만 stat.
+
+    내용을 읽지 않고 os.walk + stat만 하므로 전체 파싱보다 자릿수 단위로 저비용이다.
+    파일이 추가/삭제/수정/이름변경 되면 이 튜플이 달라져 캐시가 자동으로 무효화된다
+    (Obsidian 등 외부 에디터가 서버 몰래 파일을 바꿔도 동일하게 감지됨).
+    """
+    sig = []
+    for root, dirs, files in os.walk(vault):
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS and not d.startswith("."))
+        rel_root = Path(root).relative_to(vault)
+        for f in sorted(files):
+            if not f.endswith(".md"):
+                continue
+            if rel_root == Path(".") and f in SKIP_FILES:
+                continue
+            fp = Path(root) / f
+            try:
+                st = fp.stat()
+            except OSError:
+                continue  # 스캔과 stat 사이에 삭제된 경우: 지문에서 빠지므로 자연히 캐시 미스 유발
+            sig.append((str((rel_root / f).as_posix()), st.st_mtime_ns, st.st_size))
+    return tuple(sig)
+
+
+def invalidate_notes_cache(vault=None):
+    """노트 캐시를 비운다. vault가 없으면 전체(모든 볼트), 있으면 해당 볼트만."""
+    if vault is None:
+        _NOTES_CACHE.clear()
+    else:
+        _NOTES_CACHE.pop(str(Path(vault).resolve()), None)
+
+
+def _load_notes_uncached(vault):
     notes = []
     for p in iter_note_files(vault):
         try:
@@ -451,6 +487,33 @@ def load_notes(vault):
         except OSError as e:
             log(f"경고: 읽기 실패 {p}: {e}")
     return notes
+
+
+def load_notes(vault):
+    """볼트의 모든 노트를 로드한다.
+
+    같은 요청 안에서, 그리고 서버가 살아있는 동안 여러 번 호출돼도(대시보드 폴링 등)
+    파일이 안 바뀌었으면 디스크 재파싱 없이 캐시를 반환한다.
+    캐시 키는 볼트 지문(파일 mtime/size)이라 create/edit/delete/rename 모두 자동 감지된다.
+    반환값은 항상 새 list 객체(list(cached))다 — 호출자가 리스트 자체를 정렬/추가/삭제해도
+    캐시가 오염되지 않는다. 리스트 안의 Note 객체는 캐시 적중 시 재사용되는데, 코드베이스 전체를
+    확인한 결과 Note.meta를 직접 mutate하는 곳(find_or_create_event_note, 테스트 setUp)은
+    전부 그 직후 write_note()로 즉시 디스크에 반영하고, write_note()가 캐시를 무효화하므로
+    다음 load_notes() 호출은 새로 파싱한 새 Note 인스턴스를 받는다. apply_enrichment처럼
+    서버 요청 경로에서 meta를 바꾸는 곳은 `dict(note.meta)`로 복사해 쓰므로 캐시된 Note를
+    직접 건드리지 않는다 — 그래서 Note를 매번 재파싱하지 않고 재사용해도 안전하다.
+    SECOND_BRAIN_NO_NOTE_CACHE=1이면 캐시를 완전히 끈다(테스트/디버깅용).
+    """
+    if os.environ.get("SECOND_BRAIN_NO_NOTE_CACHE"):
+        return _load_notes_uncached(vault)
+    key = str(Path(vault).resolve())
+    sig = _vault_note_signature(vault)
+    cached = _NOTES_CACHE.get(key)
+    if cached is not None and cached[0] == sig:
+        return list(cached[1])
+    notes = _load_notes_uncached(vault)
+    _NOTES_CACHE[key] = (sig, notes)
+    return list(notes)
 
 
 def link_graph(notes):
@@ -470,6 +533,8 @@ def link_graph(notes):
 def write_note(path, meta, body):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(dump_frontmatter(meta, body), encoding="utf-8")
+    invalidate_notes_cache()  # create_note/import_path/relink/enrich 등 모든 노트 쓰기가 이 함수를 거치므로
+    # 여기 한 곳에서 무효화하면 전부 커버된다(지문 기반 자동감지 위의 belt-and-braces).
 
 
 # ---------------------------------------------------------------------------
