@@ -66,3 +66,41 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 | `GET /api/timeline` | `days`(기본 30) | `[{date,items:[{path,title,type,project}]}]` 날짜 내림차순, 오늘 포함 최근 days일 |
 | `GET /api/decisions` | — | `{open,decided,superseded}` 각 `[{path,title,created,revisit,days_left,project,supersedes}]` — open은 revisit 오름차순 |
 | `GET /api/projects` | — | `[{name,path?,note_count,decision_count,last_activity,recent:[{path,title,type}]}]` last_activity 내림차순, 허브 없는 프로젝트는 path 생략 |
+
+## v0.3 비서 모드 (2026-09-30)
+
+목표: 대시보드를 "눈에 보이는 개인 비서"로. 내 상태(자동화·지표·할 일·되돌아볼 결정)를 한 화면에, "오늘 뭐 있어?"에 말로 답하고, 원하면 카톡으로 먼저 알린다. 플러그인은 범용 — 사용자별 소스는 `~/.config/second-brain/widgets.json`.
+
+### widgets.json (사용자 설정, 플러그인 밖)
+```json
+{
+  "allow_commands": false,
+  "widgets": [
+    {"id":"marketset","title":"마켓세트 카톡","kind":"log","source":"~/.local/k-skill-cron/marketset.log",
+     "status":{"ok_pattern":"len:","fail_pattern":"Traceback|Error","stale_minutes":1500},"lines":5},
+    {"id":"cafe-growth","title":"카페 회원 추이","kind":"csv","source":"~/.local/naver-publish/growth.csv","x":"date","y":"members","last":30},
+    {"id":"flight","title":"항공권 최저가","kind":"json","source":"~/.local/k-skill-cron/flight_state.json","fields":["best_price","route","checked_at"]},
+    {"id":"jobscout","title":"채용 스카우트","kind":"markdown","source":"~/.local/k-skill-cron/jobscout_result.md","lines":8},
+    {"id":"disk","title":"디스크","kind":"command","source":"df -h / | tail -1","timeout_sec":5}
+  ]
+}
+```
+- kind: `log`(마지막 N줄, 상태 패턴·stale 판정) · `json`(fields 추출) · `csv`(x/y 열, 마지막 N행 → 스파크라인) · `markdown`(첫 N줄) · `command`(`allow_commands: true`일 때만, timeout, stdout ≤ 4KB)
+- 경로는 `~` 허용, 홈 밖 금지. 존재하지 않으면 status `missing`
+- status: `ok | warn | fail | stale | missing | unknown`. stale = mtime이 `stale_minutes` 초과
+
+### API 추가 (`brain.py serve`)
+- `GET /api/widgets` → `[{id,title,kind,status,updated_at(mtime ISO),age_minutes,summary(≤200자),data}]` — data: log `{lines:[…]}` / json `{fields:{…}}` / csv `{columns,rows:[[x,y]…]}` / markdown `{text}` / command `{stdout,exit_code}`. 서버 내 60초 캐시
+- `GET /api/today` → `{date, greeting(시간대별), weekday, revisit:[결정 open + revisit ≤ 오늘+7], inbox:[inbox.md의 `- [ ]` 항목], this_week, widgets_summary:{ok,warn,fail,stale,missing}, top_widgets:[status가 fail/stale인 것 우선 5개]}`
+- CLI: `brain.py today [--json]` (same as /api/today + widgets 요약, 사람용은 카톡 200자 버전도 출력), `brain.py widgets [--json]`
+
+### 대시보드 (web/index.html)
+- 최상단 **「오늘」**: 인사 + 날짜, 3열 카드(되돌아볼 결정 / inbox 할 일(체크 불가, 표시만) / 자동화 상태 요약 pill 5개), 그 아래 **위젯 그리드**(status pill, summary, kind별 미니 뷰: log 마지막 줄·csv 스파크라인·json 필드 표·markdown 발췌·command 출력). 60초 자동 갱신, 위젯 없으면 "widgets.json으로 내 자동화를 붙여보세요" + 예시 링크
+- 기존 섹션(그래프·결정 보드·타임라인·프로젝트)은 그 아래 유지
+
+### 스킬
+- `brain-today`: "오늘 뭐 있어", "비서", "브리핑", "상태 알려줘", "자비스" 트리거 또는 `/second-brain:brain-today`. `brain.py today --json` → 3~6줄 브리핑(되돌아볼 결정 → 죽은 자동화 → inbox → 이번 주 신규). `~/.local/k-skill-cron/notify_kakao.py` 있으면 "카톡으로도 보낼까요?" 1회 제안(자동 전송 금지)
+- `brain-setup`에 위젯 설정 안내 추가(예시 widgets.json 생성 옵션 `config init-widgets`)
+
+### 사장님 개인 설정(플러그인 밖, 저장소에 넣지 않음)
+`~/.config/second-brain/widgets.json` — 크론 12개 로그·항공권/실거래/잡스카우트 상태·카페 growth.csv·블로그 발행 로그. + 콘텐츠 에이전트 lite: `~/.local/naver-publish/topic_recommender.py`(조회수·최근 글 → 반응 좋은 글 5·다음 주 주제 3, 결과 md → markdown 위젯). 크론 등록은 사장님 승인 후.
