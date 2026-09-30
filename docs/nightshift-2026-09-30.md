@@ -98,3 +98,4 @@
 - 19:05 wt/quick-capture 머지(both-added 충돌 양쪽 유지, 테스트 511). 관리자: `brain.py ask` CLI 추가(512). 실수 1건: 테스트 실패에도 커밋된 체인(tail 종료코드) → 즉시 보정, lessons.md 기록. 워커 추가: wt/obsidian-init. 가동 중: export-html, overview-stats, widget-edit, obsidian-init
 - 19:10 wt/export-html 머지(테스트 522). 실제 볼트 내보내기 107노트 260KB, Orca로 열어 목차·결정·앵커 62개 확인. 워커 추가: wt/inpage-remind(보드 토스트·코어 음성 화면 내 알림). 가동 중: overview-stats, widget-edit, obsidian-init, inpage-remind
 - 19:16 wt/overview-stats 머지(테스트 533, 실볼트: 링크 194·고아 6·요약 94%). 워커 추가: wt/agenda-gaps(일정 사이 여유·이동 경고). 가동 중: widget-edit, obsidian-init, inpage-remind, agenda-gaps
+- 19:22 wt/widget-edit 머지(직원 설정 편집·패턴 시험, 테스트 556). v0.30.0 태그·릴리스
