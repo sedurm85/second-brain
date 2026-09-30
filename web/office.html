@@ -17,6 +17,14 @@
   --floor: #16202c; --floor-2: #1a2634; --wall: #202e3f; --desk: #3a4a5c; --desk-2: #2c3a49; --screen: #7fe7ff;
   --font: "IBM Plex Sans KR", "Apple SD Gothic Neo", system-ui, -apple-system, sans-serif;
 }
+/* 라이트 테마: 보드와 같은 저장값(brain-theme)·?theme= 를 따른다 */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) { color-scheme: light; --bg: #eef1f4; --panel: #fbfbf9; --panel-2: #e6eaee; --ink: #1c1c1a; --ink-2: #4f4f4a; --muted: #6b6b64; --rule: rgba(28, 28, 26, .10); --rule-strong: rgba(28, 28, 26, .18); --accent: #0b7fc2; --accent-soft: rgba(11, 127, 194, .10); --good: #1f7a3a; --warn: #8a6500; --crit: #b8322e; --paused: #8a9199; --floor: #e6eaee; --floor-2: #dfe4ea; --wall: #d3dbe4; --desk: #8a98a8; --desk-2: #6f7d8c; --screen: #0b7fc2; }
+}
+:root[data-theme="light"] { color-scheme: light; --bg: #eef1f4; --panel: #fbfbf9; --panel-2: #e6eaee; --ink: #1c1c1a; --ink-2: #4f4f4a; --muted: #6b6b64; --rule: rgba(28, 28, 26, .10); --rule-strong: rgba(28, 28, 26, .18); --accent: #0b7fc2; --accent-soft: rgba(11, 127, 194, .10); --good: #1f7a3a; --warn: #8a6500; --crit: #b8322e; --paused: #8a9199; --floor: #e6eaee; --floor-2: #dfe4ea; --wall: #d3dbe4; --desk: #8a98a8; --desk-2: #6f7d8c; --screen: #0b7fc2; }
+:root[data-theme="light"] .room.claude, :root:not([data-theme="dark"]) .room.claude { background: linear-gradient(180deg, #d9e6f3 0, #d9e6f3 44px, #edf2f7 44px); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .room.claude { background: linear-gradient(180deg, #1c2a3e 0, #1c2a3e 44px, #141f2c 44px); } }
+:root[data-theme="dark"] .room.claude { background: linear-gradient(180deg, #1c2a3e 0, #1c2a3e 44px, #141f2c 44px); }
 *, *::before, *::after { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 400 14px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
 a { color: var(--ink); text-decoration: none; }
@@ -127,6 +135,12 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 (function () {
   "use strict";
   var $ = function (id) { return document.getElementById(id); };
+  (function initTheme() { // 보드에서 고른 테마(brain-theme)와 ?theme= 을 따른다
+    var saved = null; try { saved = localStorage.getItem("brain-theme"); } catch (e) { /* 저장소 없음 */ }
+    var forced = new URLSearchParams(location.search).get("theme");
+    var t = (forced === "light" || forced === "dark") ? forced : saved;
+    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  })();
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   var ST_KO = { ok: "정상", warn: "주의", fail: "실패", stale: "오래됨", missing: "없음", paused: "멈춤", unknown: "알 수 없음", run: "가동 중" };
   var S = { data: null, widgets: {}, frame: 0 };
