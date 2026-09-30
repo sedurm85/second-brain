@@ -228,7 +228,7 @@ h1, h2, h3 { text-wrap: balance; }
 .tcol { padding: 14px 16px 10px; min-width: 0; }
 .tcol h3 { margin: 0 0 8px; font-size: 13.5px; font-weight: 600; color: var(--ink-2); display: flex; gap: 8px; align-items: baseline; }
 .tcol h3 .count { color: var(--muted); font-weight: 500; }
-.tcol.today h3 { color: var(--accent); }
+.tcol.b-today h3 { color: var(--accent); }
 .tcol ul { list-style: none; margin: 0; padding: 0; }
 .task { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--rule); font-size: 13.5px; position: relative; }
 .task:first-child { border-top: 0; }
@@ -1628,7 +1628,7 @@ h1, h2, h3 { text-wrap: balance; }
     var cols = [["today", "오늘"], ["week", "이번 주"], ["someday", "언젠가"], ["waiting", "기다림"]];
     $("tasksGrid").innerHTML = cols.map(function (c) {
       var items = b[c[0]] || [];
-      return '<div class="tcol glass ' + c[0] + '"><h3>' + c[1] + ' <span class="count">' + items.length + "</span></h3>" + (items.length ? "<ul>" + items.map(function (t) { return taskItem(t, c[0]); }).join("") + "</ul>" : '<p class="t-empty">' + ({ today: "오늘 할 일이 없어요.", week: "이번 주 마감이 없어요.", someday: "언젠가 할 것이 없어요.", waiting: "기다리는 답이 없어요." }[c[0]]) + "</p>") + "</div>";
+      return '<div class="tcol glass b-' + c[0] + '"><h3>' + c[1] + ' <span class="count">' + items.length + "</span></h3>" + (items.length ? "<ul>" + items.map(function (t) { return taskItem(t, c[0]); }).join("") + "</ul>" : '<p class="t-empty">' + ({ today: "오늘 할 일이 없어요.", week: "이번 주 마감이 없어요.", someday: "언젠가 할 것이 없어요.", waiting: "기다리는 답이 없어요." }[c[0]]) + "</p>") + "</div>";
     }).join("");
     var c = b.counts || {};
     $("tasksSub").textContent = "오늘 " + (c.today || 0) + " · 이번 주 " + (c.week || 0) + " · 언젠가 " + (c.someday || 0) + " · 기다림 " + (c.waiting || 0) + ". 체크하면 inbox.md에 바로 표시돼요.";
