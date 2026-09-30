@@ -828,6 +828,33 @@ button { cursor: pointer; }
   function load() {
     return fetch("/api/today").then(function (r) { return r.json(); }).then(function (t) { S.today = t; renderHud(t); proactive(t); return t; });
   }
+
+  /* 화면 내 알림(v0.30): 카톡·macOS 알림이 없어도 코어가 60초마다 직접 물어서(/api/remind-peek) 한 번만 말한다.
+     보드와 같은 localStorage 키를 써서, 두 화면을 함께 열어도 서로 중복해서 알리지 않는다. */
+  function remindKey() { return "brain-announced:" + new Date().toISOString().slice(0, 10); }
+  function loadAnnounced() {
+    try { var raw = localStorage.getItem(remindKey()); return raw ? JSON.parse(raw) : []; } catch (e) { return []; }
+  }
+  function markAnnounced(ids) {
+    try {
+      var list = loadAnnounced();
+      ids.forEach(function (id) { if (list.indexOf(id) === -1) list.push(id); });
+      localStorage.setItem(remindKey(), JSON.stringify(list));
+    } catch (e) { /* 무시: 저장 공간이 없거나 시크릿 모드 */ }
+  }
+  function pollRemind() {
+    if (document.hidden) return;
+    fetch("/api/remind-peek").then(function (r) { return r.json(); }).then(function (r) {
+      var announced = loadAnnounced();
+      var items = (r.due || []).concat(r.tasks_due || []);
+      var fresh = items.filter(function (it) { return announced.indexOf(it.id) === -1; });
+      if (!fresh.length) return;
+      markAnnounced(fresh.map(function (it) { return it.id; }));
+      var lines = fresh.map(function (it) { return it.text; });
+      if (S.activated) speak(lines);
+      else caption(lines.join(" "), false);
+    }).catch(function (err) { console.error("[세컨드브레인] 알림 확인 실패", err); });
+  }
   fetch("/api/session").then(function (r) { return r.json(); }).then(function (s) { S.token = s.token; S.name = s.assistant_name || S.name; $("name").textContent = S.name; document.title = S.name + " · 세컨드브레인"; }).catch(function () { $("name").textContent = S.name; });
   load().then(function (t) {
     var first = briefLines(t);
@@ -838,6 +865,8 @@ button { cursor: pointer; }
   }).catch(function (err) { caption("보드 서버에 연결하지 못했어요. brain.py serve가 켜져 있는지 봐 주세요.", false); console.error(err); });
   fetch("/api/agenda?days=7").then(function (r) { return r.json(); }).then(function (ag) { S.agenda = ag; }).catch(function () {});
   setInterval(function () { if (!document.hidden) load(); }, 60000);
+  pollRemind();
+  setInterval(pollRemind, 60000);
 })();
 </script>
 </body>

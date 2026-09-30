@@ -692,6 +692,17 @@ h1, h2, h3 { text-wrap: balance; }
 .shortcut-toast { position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 12px); z-index: 60; padding: 8px 16px; border-radius: 999px; background: var(--surface); border: 1px solid var(--rule-strong); box-shadow: var(--panel-shadow); font-size: 13px; color: var(--ink); opacity: 0; pointer-events: none; transition: opacity .16s, transform .16s; }
 .shortcut-toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* 화면 내 알림(v0.30): 카톡·macOS 알림 없이도 보드가 직접 물어서 띄우는 지속형 토스트 */
+.remind-toasts { position: fixed; right: 20px; bottom: 28px; z-index: 61; display: flex; flex-direction: column-reverse; gap: 10px; max-width: min(340px, calc(100vw - 40px)); }
+.remind-toast { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--rule-strong); border-left: 3px solid var(--accent); box-shadow: var(--panel-shadow); font-size: 13px; color: var(--ink); animation: remind-in .18s ease-out; }
+.remind-toast span { flex: 1; line-height: 1.4; }
+.remind-toast button { flex: none; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--rule-strong); background: transparent; color: var(--ink); font-size: 12px; cursor: pointer; }
+.remind-toast button:hover { background: var(--accent-soft); }
+@keyframes remind-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.remind-lamp { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); opacity: .3; margin-left: 4px; }
+.remind-lamp.blink { animation: remind-blink 1.1s ease-in-out 3; }
+@keyframes remind-blink { 0%, 100% { opacity: .3; box-shadow: none; } 50% { opacity: 1; box-shadow: 0 0 6px 2px var(--accent-soft); } }
+
 /* ───────── 반응형 ───────── */
 @media (max-width: 1000px) {
   .hero-text { grid-template-columns: minmax(0, 1fr); }
@@ -794,7 +805,7 @@ h1, h2, h3 { text-wrap: balance; }
       <header class="header">
         <div class="header-title">
           <h1 id="greet">오늘</h1>
-          <div class="header-meta"><span id="today">날짜</span><span class="refresh-pill" id="refreshed" aria-live="polite"></span><span id="gen"></span><span class="vault" id="vault"></span></div>
+          <div class="header-meta"><span id="today">날짜</span><span class="refresh-pill" id="refreshed" aria-live="polite"></span><span id="gen"></span><span class="vault" id="vault"></span><span class="remind-lamp" id="remindLamp" aria-hidden="true" title="다가오는 일정·할 일 알림"></span></div>
         </div>
       </header>
       <div class="report" id="report" aria-live="polite"><p class="loading">오늘 보고를 준비하고 있어요.</p></div>
@@ -943,6 +954,7 @@ h1, h2, h3 { text-wrap: balance; }
   </div>
 </div>
 <div class="shortcut-toast" id="scToast" aria-live="polite" role="status"></div>
+<div class="remind-toasts" id="remindToasts" aria-live="polite"></div>
 
 <script>
 (function () {
@@ -2561,11 +2573,56 @@ h1, h2, h3 { text-wrap: balance; }
       $("refreshed").textContent = (r[0] || r[1] ? "갱신 " : "갱신 실패 ") + hhmm(new Date());
     });
   }
+  /* 화면 내 알림(v0.30): 카톡·macOS 알림이 없어도 보드가 60초마다 직접 물어서(/api/remind-peek) 토스트로 알린다.
+     서버는 아무것도 sent 처리하지 않으므로(읽기 전용 peek), 중복 방지는 이 탭이 localStorage로 직접 한다.
+     코어 화면과 origin이 같아 같은 키를 쓰면 두 화면을 동시에 열어도 서로 중복 알리지 않는다. */
+  function remindKey() { return "brain-announced:" + new Date().toISOString().slice(0, 10); }
+  function loadAnnounced() {
+    try { var raw = localStorage.getItem(remindKey()); return raw ? JSON.parse(raw) : []; } catch (e) { return []; }
+  }
+  function markAnnounced(id) {
+    try {
+      var list = loadAnnounced();
+      if (list.indexOf(id) === -1) { list.push(id); localStorage.setItem(remindKey(), JSON.stringify(list)); }
+    } catch (e) { /* 무시: 저장 공간이 없거나 시크릿 모드 */ }
+  }
+  function blinkRemindLamp() {
+    var el = $("remindLamp"); if (!el) return;
+    el.classList.remove("blink");
+    void el.offsetWidth; // 강제 리플로우로 애니메이션 재시작(reduced-motion이면 전역 CSS가 무효화)
+    el.classList.add("blink");
+  }
+  function showRemindToast(item) {
+    var wrap = $("remindToasts"); if (!wrap) return;
+    if (wrap.children.length >= 3) return; // 한 번에 최대 3개, 나머지는 다음 확인 때 슬롯이 나면 다시 뜬다
+    var box = document.createElement("div");
+    box.className = "remind-toast";
+    var span = document.createElement("span");
+    span.textContent = item.text;
+    var btn = document.createElement("button");
+    btn.type = "button"; btn.textContent = "확인";
+    btn.addEventListener("click", function () { markAnnounced(item.id); if (box.parentNode) wrap.removeChild(box); });
+    box.appendChild(span); box.appendChild(btn);
+    wrap.appendChild(box);
+  }
+  function pollRemind() {
+    if (document.hidden) return;
+    api("remind-peek").then(function (r) {
+      var announced = loadAnnounced();
+      var items = (r.due || []).concat(r.tasks_due || []);
+      var fresh = items.filter(function (it) { return announced.indexOf(it.id) === -1; });
+      if (!fresh.length) return;
+      blinkRemindLamp();
+      fresh.forEach(showRemindToast);
+    }).catch(function (err) { console.error("[세컨드브레인] 알림 확인 실패", err); });
+  }
   function initLive() {
     S.wm = { open: false, id: null, lastFocus: null };
     S.live = { last: 0, okToday: false, okWidgets: false };
     refreshLive(true);
     setInterval(function () { refreshLive(false); }, 60000);
+    pollRemind();
+    setInterval(pollRemind, 60000);
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden && Date.now() - S.live.last > 60000) refreshLive(true);
     });

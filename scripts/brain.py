@@ -3771,6 +3771,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 ag = dict(self.server.agenda_cache.get())
                 attach_event_notes(vault, ag)
                 return self._json(200, dash_tasks(vault, today, widgets, ag))
+            if route == "/api/remind-peek":
+                now = datetime.now().astimezone()
+                ag = dict(self.server.agenda_cache.get())
+                attach_event_notes(vault, ag)
+                widgets = collect_widgets(self.server.widget_cache)
+                return self._json(200, remind_peek(vault, today, now, widgets, ag))
             if route.startswith("/web/"):
                 return self._static(urllib.parse.unquote(route[len("/web/"):]))
             if route == "/api/summary":
@@ -5926,6 +5932,19 @@ def due_reminders(ag, now, steps_before=10, events_before=30):
         if -2 <= lead <= events_before:
             out.append({"id": f"event|{e['start']}|{e['title']}", "when": e["start"][11:16], "text": f"{e['start'][11:16]} {e['title']}" + (f" @ {e['location']}" if e.get("location") else "") + f" ({int(max(0, lead))}분 뒤)"})
     return out
+
+
+def remind_peek(vault, today, now, widgets=None, agenda=None):
+    """/api/remind-peek. 화면 내 알림용 읽기 전용 조회 — cmd_remind의 sent-log(reminded.json)는 건드리지 않는다.
+    보드(토스트)·코어(발화)가 각자 localStorage로 중복 발송을 막고, 이 엔드포인트는 그저 지금 시점의
+    후보만 돌려준다(같은 알림을 여러 번 물어봐도 항상 같은 목록)."""
+    ag = agenda if agenda is not None else {}
+    due = due_reminders(ag, now)
+    tb = dash_tasks(vault, today, widgets, ag) if vault else {"today": []}
+    today_iso = (today or date.today()).isoformat()
+    tasks_due = [{"id": f"task:{t['line']}", "text": t["text"], "due": t["due"]}
+                 for t in tb["today"] if t.get("kind") == "task" and t.get("due") == today_iso]
+    return {"due": due, "tasks_due": tasks_due, "now": now.isoformat()}
 
 
 def cmd_remind(args):

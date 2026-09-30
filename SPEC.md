@@ -532,3 +532,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 그래프 색은 `web/index.html` 라이트 테마 `--t-*` 값과 동일한 hex를 `path:decisions`·`path:projects`·`path:people`·`path:events`·`path:journal`·`path:notes`·`tag:#idea` 7개 `colorGroups`에 매칭. daily-notes의 `folder`는 moment 토큰을 못 받아 `journal` 루트로 두지만, 실제 파일은 `journal/YYYY/`에 만들어져도 프론트매터 `type: journal`로 `load_notes`가 재귀 탐색해 잡아내므로 대시보드 집계는 영향 없음
 - `SKIP_DIRS`에 `_templates`·`_attachments` 추가(템플릿·첨부파일이 노트로 집계되지 않게). 볼트가 git 저장소면 `.gitignore`에 `.obsidian/workspace*.json`을 추가(`--force` 또는 `.gitignore`가 이미 있을 때만, 새로 만들지는 않음)
 - 신규 테스트 `tests/test_obsidian.py` 15건(파일 작성·JSON 파싱·colorGroups 5개 이상·템플릿 프론트매터·`load_notes` 제외·재실행 시 건너뜀·`--force` 덮어쓰기·status 출력·gitignore). 전체 스위트 526 통과(기존 511 + 신규 15)
+## v0.30 화면 내 알림
+
+- 새 라우트 `GET /api/remind-peek` → `remind_peek(vault, today, now, widgets, agenda)`: `due_reminders(ag, now)`(동선 10분·일정 30분 전)와 `dash_tasks(...)["today"]`에서 마감이 오늘인 `kind=task` 항목(`id="task:<line>"`)을 합쳐 `{due, tasks_due, now}`로 돌려주는 읽기 전용 조회다. `cmd_remind`가 쓰는 sent-log(`reminded.json`)는 절대 만들거나 표시하지 않으므로, launchd `remind` 에이전트의 카톡 발송과는 완전히 분리되어 있다
+- 보드(`web/index.html`)는 60초마다 `/api/remind-peek`을 물어 `localStorage["brain-announced:<오늘 날짜>"]`(날짜별로 나뉘어 자정 넘으면 자연히 리셋)에 없는 항목만 「확인」 버튼이 있는 지속형 토스트(강조색 좌측 보더, 최대 3개 동시)로 띄우고 topbar 램프를 살짝 블링크한다(`prefers-reduced-motion`은 전역 CSS 규칙이 그대로 무효화)
+- 코어(`web/core.html`)도 같은 주기·같은 localStorage 키로 동일한 항목을 확인해, 오디오가 풀려 있으면(`S.activated`) `speak()`로 한 번만 말하고 아니면 자막에만 띄운다. 보드·코어가 origin이 같아 키를 공유하므로 두 화면을 동시에 열어도 중복으로 알리지 않는다
+- 테스트 `tests/test_remind_peek.py` 2건: 실제 시각 기준 20분 뒤 ICS 일정이 두 번 물어봐도 계속 같은 항목으로 오는지(마킹 없음)·`reminded.json`이 생기지 않는지, 오늘 마감 할 일이 한 번만 포함되고 먼 마감은 빠지는지. 전체 스위트 524 통과(기존 522 + 신규 2)
