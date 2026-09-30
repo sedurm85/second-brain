@@ -53,6 +53,13 @@ if "[후보]" in p:
     out.append({"a": "없는-stem", "b": cat[0], "reason": "버려야 함"})
     print(json.dumps(out, ensure_ascii=False)); sys.exit(0)
 mat = json.loads(p.rsplit("[재료]", 1)[1])
+if mat.get("period") == "monthly":
+    out = {"month": ["이번 달엔 대시보드를 로컬 서버로 띄우기로 정했다.", "주간 회고를 " + str(mat["counts"]["weekly_retros"]) + "편 썼다.",
+                      "결정을 " + str(mat["counts"]["decisions"]) + "건 남겼다.", "고아 노트가 눈에 밟혔다."],
+           "themes": ["대시보드 관련 기록이 한 달 대부분이다."],
+           "questions": ["이 방향을 다음 달에도 유지할 건가요?", "매주 반복한 습관 중 지킬 건 무엇인가요?", "다음 달엔 무엇을 그만둘 건가요?"],
+           "next_month": ["되돌아볼 결정 1건 재검토"], "kakao": "이번 달 결정 1·주간회고 요약, 대시보드에 집중"}
+    print(json.dumps(out, ensure_ascii=False)); sys.exit(0)
 out = {"week": ["Orca 캡처 요령과 사무실 속마음 아이디어를 적었다.", "대시보드를 로컬 서버로 띄우기로 결정했다.", "일지 " + str(mat["counts"]["journals"]) + "편을 썼다."],
        "patterns": ["대시보드 관련 기록이 이번 주 대부분이다."],
        "questions": ["로컬 서버 결정은 외부에서 볼 필요가 생겨도 유지할 건가요?", "고아 노트를 어디에 연결할 수 있을까요?", "다음 주 가장 먼저 닫을 미결은 무엇인가요?"],
@@ -202,3 +209,56 @@ class WeekPlanTest(RetroTest):
         self.assertEqual(t2["week_plan"], [])
         # 15일 전 회고는 안 보임
         self.assertEqual(brain.week_plan(brain.load_notes(self.vault), self.today + timedelta(days=15)), [])
+
+
+class MonthlyRetroTest(RetroTest):
+    """월간 회고: 그 달의 주간 회고를 재료로 방향·습관·중단할 것 질문 3개. RetroTest.setUp은 주간 회고 노트를 만들지 않으므로
+    여기선 '주간 회고 없이 월간만 있는' 상태를 그대로 검증할 수 있다."""
+
+    def test_material_period_monthly(self):
+        mat = brain.retro_material_monthly(self.vault, self.today, widgets=[])
+        self.assertEqual(mat["period"], "monthly")
+        self.assertFalse(mat["empty"])
+        self.assertEqual(mat["counts"]["weekly_retros"], 0)  # 이 테스트 볼트엔 주간 회고가 없다
+        self.assertEqual(mat["decisions"][0]["decision"], "127.0.0.1 전용 서버")
+        self.assertEqual(len(mat["revisit_due"]), 1)
+
+    def test_cli_creates_monthly_note(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            rc = brain.main(["retro", "--monthly"])
+        self.assertEqual(rc, 0, buf.getvalue())
+        ym = self.today.isoformat()[:7]
+        rel = f"journal/{self.today.year}/{ym}-monthly.md"
+        self.assertIn(rel, buf.getvalue())
+        n = brain.Note(self.vault, self.vault / rel)
+        self.assertEqual(n.type, "journal")
+        self.assertEqual(n.meta["journal_kind"], "monthly")
+        self.assertEqual(n.meta["title"], f"{ym} 월간 회고")
+        for h in ("## 이번 달", "## 큰 흐름", "## 되돌아볼 질문", "## 다음 달", "## 숫자"):
+            self.assertIn(h, n.body)
+        self.assertEqual(n.body.count("- [ ] "), 4)  # 질문 3 + 다음 달 1
+        # 같은 달 중복은 --force 없이 에러
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertNotEqual(brain.main(["retro", "--monthly"]), 0)
+            self.assertEqual(brain.main(["retro", "--monthly", "--force"]), 0)
+        self.assertEqual(len([x for x in brain.load_notes(self.vault) if x.type == "journal" and x.stem.endswith("-monthly")]), 1)
+
+    def test_questions_surface_without_weekly(self):
+        """주간 회고가 없어도 월간 회고의 질문이 retro_questions/week_plan에 뜬다."""
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(brain.main(["retro", "--monthly"]), 0)
+        notes = brain.load_notes(self.vault)
+        qs = brain.retro_questions(notes, self.today)
+        self.assertEqual(len(qs), 3)
+        self.assertTrue(qs[0]["text"].startswith("이 방향을"))
+        self.assertTrue(qs[0]["path"].endswith("-monthly.md"))
+        wp = brain.week_plan(notes, self.today)
+        self.assertEqual(len(wp), 1)
+        self.assertEqual(wp[0]["text"], "되돌아볼 결정 1건 재검토")
+        self.assertTrue(wp[0]["path"].endswith("-monthly.md"))
+
+    def test_agent_spec_monthly(self):
+        spec = brain.AGENT_SPECS["retro-monthly"]
+        self.assertEqual(spec["calendar"], {"Day": 1, "Hour": 9, "Minute": 10})
+        self.assertEqual(spec["args"], ["retro", "--monthly", "--kakao"])

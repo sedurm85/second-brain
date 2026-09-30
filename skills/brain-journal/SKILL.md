@@ -1,7 +1,7 @@
 ---
 name: brain-journal
-description: 오늘 하루를 Claude가 5줄 일지로 써서 journal/YYYY/YYYY-MM-DD.md에 남기고, 지난 한 주를 주간 회고(journal/YYYY/YYYY-MM-DD-weekly.md)로 되돌아보며 코칭 질문에 답한 내용을 노트로 남긴다.
-when_to_use: 사용자가 "오늘 일지 써줘", "오늘 뭐 했지", "일지 읽어줘", "이번 주 회고", "주간 회고 써줘", "회고 질문", "지난주 어땠어"라고 할 때 또는 /second-brain:brain-journal 호출 시.
+description: 오늘 하루를 Claude가 5줄 일지로 써서 journal/YYYY/YYYY-MM-DD.md에 남기고, 지난 한 주를 주간 회고(journal/YYYY/YYYY-MM-DD-weekly.md)로, 지난 한 달을 그 달의 주간 회고들을 모아 월간 회고(journal/YYYY/YYYY-MM-monthly.md)로 되돌아보며 코칭 질문에 답한 내용을 노트로 남긴다.
+when_to_use: 사용자가 "오늘 일지 써줘", "오늘 뭐 했지", "일지 읽어줘", "이번 주 회고", "주간 회고 써줘", "회고 질문", "지난주 어땠어", "이번 달 회고", "월간 회고", "월간 회고 써줘"라고 할 때 또는 /second-brain:brain-journal 호출 시.
 argument-hint: "[읽기|회고]"
 allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py *) Bash(python3 ~/.local/k-skill-cron/notify_kakao.py *) Bash(date *) Bash(test *) Read
 ---
@@ -36,9 +36,19 @@ allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py *) Bash(pytho
 4. 질문 3개를 다 처리한 뒤에만 `kakao` 한 줄을 "카톡: ..." 형식으로 보여준다.
 5. `test -f ~/.local/k-skill-cron/notify_kakao.py`가 성공하면 "카톡으로도 보낼까요?"라고 한 번만 묻는다. 승인해야만 처음부터 `retro --kakao`(재작성이 필요하면 `--force --kakao`)로 다시 실행해 발송한다.
 
+## 월간 회고
+
+1. `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py retro --monthly --json`을 실행한다(매월 1일 9:10 에이전트가 자동으로도 실행).
+   - 오류가 "이번 달 회고가 이미 있어요: ... (--force로 다시)"이면 그대로 전하고 "다시 쓸까요?"라고 물은 뒤, 승인해야만 `--force`를 붙여 다시 실행한다.
+   - 기록이 없어 쓰지 않았다는 응답은 그대로 전한다.
+2. 성공하면 결과 문구의 `month`(이번 달 요약)를 불릿으로 보여준 뒤, `questions`(되돌아볼 질문, 정확히 3개: 방향·습관·중단할 것)를 한 번에 나열하지 말고 하나씩 순서대로 묻는다.
+3. 사용자가 질문에 답하면 주간 회고와 같은 방식으로 노트를 만들어 연결한다(질문 원문 + 답 원문, `link`로 월간 회고 노트와 연결). 체크박스는 CLI로 토글할 수 없다는 것도 동일하게 안내한다.
+4. 질문 3개를 다 처리한 뒤에만 `kakao` 한 줄을 "카톡: ..." 형식으로 보여준다.
+5. `test -f ~/.local/k-skill-cron/notify_kakao.py`가 성공하면 "카톡으로도 보낼까요?"라고 한 번만 묻는다. 승인해야만 처음부터 `retro --monthly --kakao`(재작성이 필요하면 `--force --kakao` 추가)로 다시 실행해 발송한다.
+
 ## 공통 규칙
 
 - 사용자의 답변·재료 문장은 절대 의역하지 않는다. 있는 그대로 옮긴다.
 - 모든 응답은 해요체.
-- 카톡은 위 두 승인 지점을 제외하면 절대 자동으로 보내지 않는다.
+- 카톡은 위 승인 지점을 제외하면 절대 자동으로 보내지 않는다.
 - 재료·결과에 없는 사실을 만들지 않는다. `journal`/`retro`가 내는 숫자·문장만 쓴다.

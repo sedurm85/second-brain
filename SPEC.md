@@ -551,3 +551,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 최상위 `--help`에 36개 서브커맨드를 4단 그룹(자주 쓰는 것/비서/자동화/관리)으로 묶은 epilog 추가(`RawDescriptionHelpFormatter`로 줄바꿈 보존, 개별 서브커맨드 `-h`는 그대로)
 - skills/*/SKILL.md 12개 전수 대조: 참조하는 서브커맨드·플래그가 `build_parser()`와 전부 일치, 드리프트 없음
 - 테스트 `tests/test_onboarding.py` 7건(도움말 그룹핑, 볼트 없는 today, fresh doctor, 전체 온보딩 시퀀스 무크래시, 모든 --json 유효성, agents status 비모순, reminders 기본꺼짐 가드). 전체 스위트 563 통과(기존 556 + 신규 7). 상세 친절도 표는 `docs/onboarding-qa-2026-09-30.md`
+## v0.31 월간 회고
+
+- `brain.py retro --monthly`: 지난 ~31일의 주간 회고들(각 「이번 주」·「눈에 띄는 것」 불릿)을 재료로 `retro_material_monthly`가 그 달의 결정·30일 내 되돌아볼 결정·타입/프로젝트별 노트 수·자동화 KPI(30일)·일지 스트릭까지 묶고, `retro_prompt_monthly`가 방향·습관·중단할 것 질문 정확히 3개를 요구해 `journal/YYYY/YYYY-MM-monthly.md`(제목 "YYYY-MM 월간 회고", `journal_kind: monthly`)에 이번 달/큰 흐름/되돌아볼 질문/다음 달/숫자 섹션으로 남긴다. `target_path`가 제목이 "월간 회고"로 끝나면 이 경로로 매핑한다
+- `retro_questions`/`week_plan`은 여전히 최근 주간 회고를 우선하되, 가장 최근 회고가 월간(또는 주간이 아예 없음)이면 월간의 질문/「다음 달」도 이어 붙인다(기존 limit로 그대로 자름) — 주간이 없어도 월간만으로 보드·코어에 노출됨
+- `AGENT_SPECS["retro-monthly"]`(매월 1일 9:10, `StartCalendarInterval`의 `Day` 필드로 launchd가 이미 지원)를 추가, `agents install`(이름 없이 실행 시 기본 대상)에 `retro`처럼 자동 포함되고 위젯 정상 패턴에 "월간 회고"를 추가
+- 신규 테스트 `tests/test_retro.py::MonthlyRetroTest` 4건(재료 period=monthly, CLI가 월간 노트 생성 + 중복·`--force`, 주간 회고 없이도 질문/다음 달이 노출, 에이전트 스펙)과 `tests/test_agents.py`의 `retro-monthly` plist `Day=1` 검증 1건. 전체 스위트 586 통과(기존 573 + 신규 13, 기존 테스트 회귀 없음)

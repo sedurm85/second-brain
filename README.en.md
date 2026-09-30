@@ -70,6 +70,7 @@ python3 scripts/brain.py enrich [--dry-run]            # Claude refines titles, 
 python3 scripts/brain.py prepare [--days 7]            # Claude drafts prep lists for upcoming events
 python3 scripts/brain.py journal [--dry-run]           # five-line journal for today
 python3 scripts/brain.py retro [--days 7]              # weekly retrospective note + 3 questions
+python3 scripts/brain.py retro --monthly               # monthly retrospective built from that month's weekly retros + 3 bigger questions (direction/habit/what to stop, agent on the 1st at 9:10)
 python3 scripts/brain.py review --semantic             # content-based link suggestions (apply with `link A B`)
 python3 scripts/brain.py agents install                # launchd: 07:00 brief, 10-min remind, 21:30 evening, 23:00 backup
 python3 scripts/brain.py agents install prepare retro  # optional: 06:40 prep suggestions, Monday 09:00 retro
@@ -135,7 +136,7 @@ Also available: `/second-brain:brain-today` (today's briefing), `/second-brain:b
 ├── inbox.md                    quick-capture inbox = tasks (checkboxes + @due/@someday/@waiting)
 ├── notes/YYYY/MM/<slug>.md     note · idea · source · meeting
 ├── events/YYYY/<date>-<slug>.md event notes: prep checklist · itinerary · memos (attached to calendar events)
-├── journal/YYYY/<date>.md      daily journal (five lines) and <date>-weekly.md retrospectives
+├── journal/YYYY/<date>.md      daily journal (five lines), <date>-weekly.md weekly retros, <YYYY-MM>-monthly.md monthly retros
 ├── decisions/<NNN>-<slug>.md   ADR: situation · options · decision · reasons · review date
 ├── projects/<slug>.md          project hubs (related notes and decisions collected automatically)
 └── people/<slug>.md            people and context

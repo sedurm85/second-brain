@@ -81,6 +81,15 @@ class AgentsTest(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(brain.main(["agents", "install", "nothing"]), brain.EXIT_INPUT)  # main이 BrainError를 종료 코드 2로
 
+    def test_retro_monthly_plist_day(self):
+        data, log = brain.agent_plist("retro-monthly", brain.AGENT_SPECS["retro-monthly"], brain_path="/x/brain.py", python="/usr/bin/python3")
+        d = plistlib.loads(data)
+        self.assertEqual(d["Label"], "com.secondbrain.retro-monthly")
+        self.assertEqual(d["ProgramArguments"], ["/usr/bin/python3", "/x/brain.py", "retro", "--monthly", "--kakao"])
+        self.assertEqual(d["StartCalendarInterval"], {"Day": 1, "Hour": 9, "Minute": 10})
+        self.assertTrue(log.endswith("agents/retro-monthly.log"))
+        self.assertIn("retro-monthly", brain.DEFAULT_AGENT_NAMES)  # retro와 마찬가지로 기본 설치 대상
+
     def test_serve_plist_keepalive(self):
         data, log = brain.agent_plist("serve", brain.AGENT_SPECS["serve"], brain_path="/x/brain.py", python="/usr/bin/python3")
         d = plistlib.loads(data)

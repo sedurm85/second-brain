@@ -597,7 +597,9 @@ def target_path(vault, ntype, title, created, taken=None):
     y, m = created[:4], created[5:7]
     if ntype == "event":
         return vault / "events" / y / f"{created[:10]}-{stem}.md"
-    if ntype == "journal":  # 하루 한 장: 날짜가 파일명(주간 회고는 -weekly)
+    if ntype == "journal":  # 하루 한 장: 날짜가 파일명(주간 회고는 -weekly, 월간 회고는 YYYY-MM-monthly)
+        if slug.endswith("월간-회고"):
+            return vault / "journal" / y / f"{created[:7]}-monthly.md"
         return vault / "journal" / y / f"{created[:10]}{'-weekly' if slug.endswith('주간-회고') else ''}.md"
     return vault / "notes" / y / m / f"{stem}.md"
 
@@ -3304,20 +3306,15 @@ def task_action(vault, body, today=None):
     return {"ok": True}
 
 
-def retro_questions(notes, today, days=14, limit=3):
-    """가장 최근 주간 회고(14일 안)의 「되돌아볼 질문」 중 아직 체크하지 않은 것. 보드·코어에 노출, 체크는 event-note check로."""
-    since = (today - timedelta(days=days)).isoformat()
-    weekly = [n for n in notes if n.type == "journal" and n.stem.endswith("-weekly") and n.created >= since]
-    if not weekly:
-        return []
-    n = max(weekly, key=lambda x: x.created)
-    sec = note_sections(n.body).get("되돌아볼 질문", "")
+def _unchecked_boxes(n, section):
+    """노트 본문의 `## {section}` 절 안에서 아직 체크하지 않은 체크박스 줄을 뽑는다."""
+    sec = note_sections(n.body).get(section, "")
     if not sec:
         return []
     # 절의 줄 번호를 본문 기준으로 맞춘다
     lines = n.body.split("\n")
     try:
-        start = next(i for i, l in enumerate(lines) if l.strip() == "## 되돌아볼 질문")
+        start = next(i for i, l in enumerate(lines) if l.strip() == f"## {section}")
     except StopIteration:
         return []
     out = []
@@ -3327,32 +3324,45 @@ def retro_questions(notes, today, days=14, limit=3):
         m = CHECKBOX_RE.match(lines[j])
         if m and m.group(2).lower() != "x":
             out.append({"text": m.group(4).strip(), "line": j, "path": n.rel, "date": n.created})
+    return out
+
+
+def _latest_weekly_and_monthly_retro(notes, today, days):
+    since = (today - timedelta(days=days)).isoformat()
+    weekly = [n for n in notes if n.type == "journal" and n.stem.endswith("-weekly") and n.created >= since]
+    monthly = [n for n in notes if n.type == "journal" and n.stem.endswith("-monthly") and n.created >= since]
+    wn = max(weekly, key=lambda x: x.created) if weekly else None
+    mn = max(monthly, key=lambda x: x.created) if monthly else None
+    return wn, mn
+
+
+def retro_questions(notes, today, days=14, limit=3):
+    """가장 최근 주간 회고(14일 안)의 「되돌아볼 질문」 중 아직 체크하지 않은 것.
+    가장 최근 회고가 월간(주간보다 최신이거나 주간이 없음)이면 월간의 질문도 주간 뒤에 이어 붙인다(총 limit개로 제한).
+    보드·코어에 노출, 체크는 event-note check로."""
+    wn, mn = _latest_weekly_and_monthly_retro(notes, today, days)
+    if not wn and not mn:
+        return []
+    out = []
+    if wn:
+        out.extend(_unchecked_boxes(wn, "되돌아볼 질문"))
+    if mn and (not wn or mn.created >= wn.created):
+        out.extend(_unchecked_boxes(mn, "되돌아볼 질문"))
     return out[:limit]
 
 
 def week_plan(notes, today, days=14, limit=5):
-    """가장 최근 주간 회고(14일 안)의 「다음 주」 중 아직 체크하지 않은 것. 보드·코어에 노출, 체크는 event-note check로."""
-    since = (today - timedelta(days=days)).isoformat()
-    weekly = [n for n in notes if n.type == "journal" and n.stem.endswith("-weekly") and n.created >= since]
-    if not weekly:
-        return []
-    n = max(weekly, key=lambda x: x.created)
-    sec = note_sections(n.body).get("다음 주", "")
-    if not sec:
-        return []
-    # 절의 줄 번호를 본문 기준으로 맞춘다
-    lines = n.body.split("\n")
-    try:
-        start = next(i for i, l in enumerate(lines) if l.strip() == "## 다음 주")
-    except StopIteration:
+    """가장 최근 주간 회고(14일 안)의 「다음 주」 중 아직 체크하지 않은 것.
+    가장 최근 회고가 월간(주간보다 최신이거나 주간이 없음)이면 월간의 「다음 달」도 주간 뒤에 이어 붙인다(총 limit개로 제한).
+    보드·코어에 노출, 체크는 event-note check로."""
+    wn, mn = _latest_weekly_and_monthly_retro(notes, today, days)
+    if not wn and not mn:
         return []
     out = []
-    for j in range(start + 1, len(lines)):
-        if lines[j].startswith("## "):
-            break
-        m = CHECKBOX_RE.match(lines[j])
-        if m and m.group(2).lower() != "x":
-            out.append({"text": m.group(4).strip(), "line": j, "path": n.rel, "date": n.created})
+    if wn:
+        out.extend(_unchecked_boxes(wn, "다음 주"))
+    if mn and (not wn or mn.created >= wn.created):
+        out.extend(_unchecked_boxes(mn, "다음 달"))
     return out[:limit]
 
 
@@ -6193,6 +6203,7 @@ AGENT_SPECS = {
     "backup": {"label": "com.secondbrain.backup", "args": ["backup"], "calendar": {"Hour": 23, "Minute": 0}, "title": "볼트 백업 (매일 23시)"},
     "prepare": {"label": "com.secondbrain.prepare", "args": ["prepare"], "calendar": {"Hour": 6, "Minute": 40}, "title": "일정 준비 제안 (매일 6:40)"},
     "retro": {"label": "com.secondbrain.retro", "args": ["retro", "--kakao"], "calendar": {"Weekday": 1, "Hour": 9, "Minute": 0}, "title": "주간 회고 (월 9시)"},
+    "retro-monthly": {"label": "com.secondbrain.retro-monthly", "args": ["retro", "--monthly", "--kakao"], "calendar": {"Day": 1, "Hour": 9, "Minute": 10}, "title": "월간 회고 (매월 1일 9:10)"},
     "serve": {"label": "com.secondbrain.serve", "args": ["serve", "--port", "7777"], "keepalive": True, "title": "대시보드 서버 (상주)"},
 }
 
@@ -6201,7 +6212,7 @@ AGENT_SPECS = {
 DEFAULT_AGENT_NAMES = [n for n in AGENT_SPECS if n != "serve"]
 
 # 위젯 자동 등록용 로그 판정 패턴(공용 vs serve 전용). serve의 시작 줄은 cmd_serve가 찍는 `http://127.0.0.1:<port>` 그대로다.
-_AGENT_STATUS_OK = "카톡 발송 완료|알릴 것 없음|발송|백업 완료|준비 제안|제안할 일정이 없어요|주간 회고|회고를 쓰지 않았어요"
+_AGENT_STATUS_OK = "카톡 발송 완료|알릴 것 없음|발송|백업 완료|준비 제안|제안할 일정이 없어요|주간 회고|월간 회고|회고를 쓰지 않았어요"
 _AGENT_STATUS_FAIL = "Traceback|실패"
 _SERVE_STATUS_OK = r"http://127\.0\.0\.1:\d+"
 _SERVE_STATUS_FAIL = "Traceback|Address already in use|실패"
@@ -6297,7 +6308,7 @@ def agents_install(names, dry=False, force=False, port=None):
                 else:
                     title = AGENT_SPECS[rec["name"]]["title"]
                     status = {"ok_pattern": _AGENT_STATUS_OK, "fail_pattern": _AGENT_STATUS_FAIL,
-                              "stale_minutes": {"remind": 40, "retro": 8 * 1440 + 120}.get(rec["name"], 1560)}
+                              "stale_minutes": {"remind": 40, "retro": 8 * 1440 + 120, "retro-monthly": 32 * 1440 + 120}.get(rec["name"], 1560)}
                 cfg.setdefault("widgets", []).insert(0, {"id": wid, "title": title, "kind": "log", "source": rec["log"], "team": "운영팀",
                                                           "status": status, "lines": 3})
                 rec["widget"] = wid
@@ -6677,11 +6688,58 @@ def retro_material(vault, days, today, widgets=None):
         wname, wfails = max(teams_with_fails, key=lambda kv: kv[1])
         worst_team = {"team": wname, "fails": wfails}
     automation_kpi = {"runs": kpi_total["runs"], "fails": kpi_total["fails"], "rate": kpi_total["rate"], "worst_team": worst_team}
-    mat = {"since": since, "until": t, "days": days, "new_notes": new_notes, "decisions": decisions, "revisit_due": revisit, "journals": journals[-7:],
+    mat = {"period": "weekly", "since": since, "until": t, "days": days, "new_notes": new_notes, "decisions": decisions, "revisit_due": revisit, "journals": journals[-7:],
            "projects": sorted(projects.items(), key=lambda kv: -kv[1])[:6], "orphans": orphans, "automation_issues": issues[:6],
            "automation_kpi": automation_kpi,
            "counts": {"notes": len(new_notes), "decisions": len(decisions), "journals": len(journals)}}
     mat["empty"] = not (new_notes or decisions or journals)
+    return mat
+
+
+MONTHLY_RETRO_DAYS = 31
+
+
+def retro_material_monthly(vault, today, widgets=None):
+    """지난 한 달(~31일)의 회고 재료: 그 달의 주간 회고들(이번 주·눈에 띄는 것)을 재료로 더 큰 질문을 준비한다."""
+    days = MONTHLY_RETRO_DAYS
+    since = (today - timedelta(days=days)).isoformat()
+    t = today.isoformat()
+    notes = load_notes(vault)
+    recent = [n for n in notes if n.created >= since and n.type not in ("event",)]
+    weekly = sorted((n for n in notes if n.type == "journal" and n.stem.endswith("-weekly") and n.created >= since), key=lambda n: n.created)
+    weekly_retros = []
+    for n in weekly:
+        sec = note_sections(n.body)
+        bullets = [l[2:].strip() for l in sec.get("이번 주", "").split("\n") if l.startswith("- ")]
+        bullets += [l[2:].strip() for l in sec.get("눈에 띄는 것", "").split("\n") if l.startswith("- ")]
+        if bullets:
+            weekly_retros.append({"date": n.created, "bullets": bullets[:8]})
+    decisions = [{"title": n.title, "status": n.meta.get("status", "open"), "decision": _section(n, "결정"), "why": _section(n, "이유")}
+                 for n in recent if n.type == "decision"][:12]
+    soon = (today + timedelta(days=30)).isoformat()
+    revisit = [{"title": n.title, "decision": _section(n, "결정", 160), "revisit": str(n.meta.get("revisit"))} for n in notes
+               if n.type == "decision" and n.meta.get("status", "open") == "open" and n.meta.get("revisit") and t <= str(n.meta.get("revisit")) <= soon][:8]
+    by_type, by_project = {}, {}
+    for n in recent:
+        by_type[n.type] = by_type.get(n.type, 0) + 1
+        if n.project:
+            by_project[n.project] = by_project.get(n.project, 0) + 1
+    kpi = office_kpis(widgets or [], today=today, days=days)
+    kpi_total = kpi["total"]
+    worst_team = None
+    teams_with_fails = [(name, tm["fails"]) for name, tm in kpi["teams"].items() if tm.get("fails")]
+    if teams_with_fails:
+        wname, wfails = max(teams_with_fails, key=lambda kv: kv[1])
+        worst_team = {"team": wname, "fails": wfails}
+    automation_kpi = {"runs": kpi_total["runs"], "fails": kpi_total["fails"], "rate": kpi_total["rate"], "worst_team": worst_team}
+    streak = _journal_streak(notes, today)
+    mat = {"period": "monthly", "since": since, "until": t, "days": days,
+           "weekly_retros": weekly_retros, "decisions": decisions, "revisit_due": revisit,
+           "counts_by_type": sorted(by_type.items(), key=lambda kv: -kv[1]),
+           "counts_by_project": sorted(by_project.items(), key=lambda kv: -kv[1])[:8],
+           "automation_kpi": automation_kpi, "journal_streak": streak,
+           "counts": {"weekly_retros": len(weekly_retros), "decisions": len(decisions), "notes": len(recent)}}
+    mat["empty"] = not (weekly_retros or decisions or recent)
     return mat
 
 
@@ -6694,6 +6752,19 @@ def retro_prompt(mat):
             '"kakao": "카톡용 한 줄 80자 이내"}\n'
             "규칙: 재료에 없는 사실을 만들지 마라. 칭찬·감탄사·이모지 없이 담담하게. "
             "automation_kpi.fails가 0보다 크면 patterns에 자동화 안정성(실패 건수·worst_team)을 한 문장 언급하고, 0이면 automation_kpi를 언급하지 마라.\n\n[재료]\n"
+            + json.dumps(mat, ensure_ascii=False))
+
+
+def retro_prompt_monthly(mat):
+    return ("너는 사용자의 한 달을 함께 되돌아보는 코치형 비서다. weekly_retros(그 달의 주간 회고들)를 이어서 더 큰 그림을 본다. "
+            "아래 [재료]만 근거로 JSON 객체 하나로 답한다(설명·마크다운 금지). 형식:\n"
+            '{"month": ["이번 달" 4~6문장, 각 80자 이내, 1인칭 과거형, weekly_retros의 흐름을 종합], '
+            '"themes": ["큰 흐름" 2~3개, weekly_retros·decisions에 근거], '
+            '"questions": ["되돌아볼 질문" 정확히 3개, 각 60자 이내. 방향(계속 이 방향이 맞는가)·습관(반복되는 패턴을 유지할 것인가)·중단할 것(그만둘 것은 무엇인가) 각 1개씩. 예/아니오로 끝나지 않는 열린 질문], '
+            '"next_month": ["다음 달 우선순위" 1~3개, 각 40자 이내, 재료의 미결·revisit_due에서], '
+            '"kakao": "카톡용 한 줄 80자 이내"}\n'
+            "규칙: 재료에 없는 사실을 만들지 마라. 칭찬·감탄사·이모지 없이 담담하게. "
+            "automation_kpi.fails가 0보다 크면 themes에 자동화 안정성(실패 건수·worst_team)을 한 문장 언급하고, 0이면 automation_kpi를 언급하지 마라.\n\n[재료]\n"
             + json.dumps(mat, ensure_ascii=False))
 
 
@@ -6728,30 +6799,78 @@ def write_retro(vault, today, raw, mat, force=False):
     return path, True, qs, kakao
 
 
+def write_retro_monthly(vault, today, raw, mat, force=False):
+    ym = today.isoformat()[:7]
+    month = [" ".join(str(x).split()) for x in (raw.get("month") or []) if str(x).strip()][:6]
+    if not month:
+        raise BrainError("월간 회고 본문이 비었어요")
+    themes = [" ".join(str(x).split()) for x in (raw.get("themes") or []) if str(x).strip()][:3]
+    qs = [" ".join(str(x).split()) for x in (raw.get("questions") or []) if str(x).strip()][:3]
+    nxt = [" ".join(str(x).split()) for x in (raw.get("next_month") or []) if str(x).strip()][:3]
+    kakao = " ".join(str(raw.get("kakao") or "").split())[:100] or month[0][:80]
+    title = f"{ym} 월간 회고"
+    c = mat["counts"]
+    numbers = [f"{mat['since']} ~ {mat['until']} · 주간 회고 {c['weekly_retros']}편 · 결정 {c['decisions']}건 · 노트 {c['notes']}건"]
+    if mat.get("counts_by_type"):
+        numbers.append("타입별: " + ", ".join(f"{ty} {n}" for ty, n in mat["counts_by_type"]))
+    if mat.get("counts_by_project"):
+        numbers.append("프로젝트별: " + ", ".join(f"{p} {n}" for p, n in mat["counts_by_project"]))
+    kpi = mat.get("automation_kpi") or {}
+    if kpi.get("runs"):
+        numbers.append(f"자동화 {kpi['runs']}회 실행 · 실패 {kpi['fails']}회 · 성공률 {kpi['rate']}%")
+    streak = mat.get("journal_streak") or {}
+    if streak.get("best"):
+        numbers.append(f"일지 연속 {streak.get('current', 0)}일(최장 {streak.get('best', 0)}일)")
+    body = (f"# {title}\n\n{mat['since']} ~ {mat['until']}\n\n"
+            "## 이번 달\n" + "".join(f"- {l}\n" for l in month) +
+            ("\n## 큰 흐름\n" + "".join(f"- {l}\n" for l in themes) if themes else "") +
+            "\n## 되돌아볼 질문\n" + "".join(f"- [ ] {q}\n" for q in qs) +
+            ("\n## 다음 달\n" + "".join(f"- [ ] {l}\n" for l in nxt) if nxt else "") +
+            "\n## 숫자\n" + "".join(f"- {l}\n" for l in numbers))
+    existing = [n for n in load_notes(vault) if n.type == "journal" and n.stem == f"{ym}-monthly"]
+    if existing:
+        if not force:
+            raise BrainError(f"이번 달 회고가 이미 있어요: {existing[0].rel} (--force로 다시)")
+        n = existing[0]
+        write_note(n.path, dict(n.meta, summary=kakao), body)
+        git_commit(vault, f"brain: retro monthly {ym} (rewrite)")
+        return n.path, False, qs, kakao
+    path = create_note(vault, "journal", title, tags=["회고"], body=body, created=today.isoformat(),
+                        extra={"journal_kind": "monthly", "journal_date": ym, "since": mat["since"], "summary": kakao})
+    git_commit(vault, f"brain: retro monthly {ym}")
+    return path, True, qs, kakao
+
+
 def cmd_retro(args):
     v = require_vault()
     today = date.today()
     widgets = collect_widgets()
-    mat = retro_material(v, args.days, today, widgets)
+    monthly = bool(getattr(args, "monthly", False))
+    mat = retro_material_monthly(v, today, widgets) if monthly else retro_material(v, args.days, today, widgets)
     if args.dry_run:
         emit(args, mat, "회고 재료 (dry-run)\n" + json.dumps(mat, ensure_ascii=False, indent=1))
         return EXIT_OK
     if mat["empty"]:
-        emit(args, {"empty": True}, f"지난 {args.days}일에 기록이 없어 회고를 쓰지 않았어요")
+        emit(args, {"empty": True}, f"지난 {mat['days']}일에 기록이 없어 회고를 쓰지 않았어요")
         return EXIT_OK
-    raw = _run_claude_json(retro_prompt(mat))
+    raw = _run_claude_json(retro_prompt_monthly(mat) if monthly else retro_prompt(mat))
     if isinstance(raw, list):
         raw = raw[0] if raw and isinstance(raw[0], dict) else {}
     if not isinstance(raw, dict):
         raise BrainError("회고 응답이 객체가 아니에요")
-    path, created, qs, kakao = write_retro(v, today, raw, mat, force=args.force)
+    if monthly:
+        path, created, qs, kakao = write_retro_monthly(v, today, raw, mat, force=args.force)
+        label, body_key = "월간 회고", "month"
+    else:
+        path, created, qs, kakao = write_retro(v, today, raw, mat, force=args.force)
+        label, body_key = "주간 회고", "week"
     rel = str(path.relative_to(Path(v)))
     sent = None
     if args.kakao and kakao:
-        res = notify(f"[주간 회고] {kakao}" + (" / 질문: " + qs[0] if qs else ""))
+        res = notify(f"[{label}] {kakao}" + (" / 질문: " + qs[0] if qs else ""))
         sent = res["sent"]
     emit(args, {"path": rel, "created": created, "questions": qs, "kakao": kakao, "sent": sent},
-         f"주간 회고 {'작성' if created else '갱신'}: {rel}\n" + "\n".join(f"- {l}" for l in (raw.get("week") or [])) + "\n\n되돌아볼 질문\n" + "\n".join(f"- {q}" for q in qs) + (f"\n\n카톡: {kakao}" if kakao else "") + ("\n알림 발송 완료" if sent else ""))
+         f"{label} {'작성' if created else '갱신'}: {rel}\n" + "\n".join(f"- {l}" for l in (raw.get(body_key) or [])) + "\n\n되돌아볼 질문\n" + "\n".join(f"- {q}" for q in qs) + (f"\n\n카톡: {kakao}" if kakao else "") + ("\n알림 발송 완료" if sent else ""))
     return EXIT_OK
 
 
@@ -7945,8 +8064,10 @@ def build_parser():
     s.add_argument("--semantic", action="store_true", help="Claude가 내용상 관련 노트 쌍을 추가로 제안(태그·프로젝트 겹침 외)")
     s.add_argument("--limit", type=int, default=25, help="--semantic 후보 노트 수(고아·최근 우선, 기본 25)")
 
-    s = add("retro", "주간 회고: Claude가 지난 N일을 되돌아본 노트(journal/YYYY/날짜-weekly.md) + 코칭 질문 3개", cmd_retro)
-    s.add_argument("--days", type=int, default=7, help="기간(일, 기본 7)")
+    s = add("retro", "주간 회고: Claude가 지난 N일을 되돌아본 노트(journal/YYYY/날짜-weekly.md) + 코칭 질문 3개. "
+            "--monthly면 매달 1일 지난 한 달(~31일)의 주간 회고들을 재료로 월간 회고(journal/YYYY/YYYY-MM-monthly.md) + 큰 질문 3개", cmd_retro)
+    s.add_argument("--days", type=int, default=7, help="기간(일, 기본 7, --monthly는 무시하고 31일 고정)")
+    s.add_argument("--monthly", action="store_true", help="주간 대신 월간 회고(그 달의 주간 회고 종합 + 방향·습관·중단할 것 질문 3개)")
     s.add_argument("--force", action="store_true", help="같은 날 회고가 있어도 다시")
     s.add_argument("--kakao", "--notify", dest="kakao", action="store_true", help="알림 보내기(카톡 헬퍼 → 없으면 macOS 알림 센터)")
     s.add_argument("--dry-run", action="store_true", help="재료만 보여주고 호출하지 않음")
