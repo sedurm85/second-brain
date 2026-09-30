@@ -110,7 +110,7 @@ button { cursor: pointer; }
   /* ───────── 상태 ───────── */
   var S = { state: "idle", level: 0, target: 0, today: null, agenda: null, token: null, name: "브레인",
             muted: localStorage.getItem("brain.muted") === "1", speaking: false, listening: false, thinking: false, lastLine: "",
-            activated: false, seenFails: null, spoken: {} };
+            activated: false, seenFails: null, spoken: {}, pendingAction: null };
   var COLORS = {
     idle: ["#4fd1ff", "#3fe0a8", "#0b3a5c"], talk: ["#b48cf0", "#ff9ecf", "#2a1547"],
     think: ["#ffb84d", "#ffd166", "#3a2a0a"], alert: ["#ff5d6c", "#ff8a5b", "#3a0f18"]
@@ -281,6 +281,14 @@ button { cursor: pointer; }
     var t = S.today || {}, ag = S.agenda || t.agenda || {};
     q = q.trim(); if (!q) return;
     caption("“" + q + "”", false);
+    if (S.pendingAction) {
+      // 파괴적인 동작(전체 채택/전체 무시)의 확인 대기: 20초 안에 응/그래/네/좋아면 실행, 아니/취소면 취소
+      var pa = S.pendingAction; S.pendingAction = null;
+      if (Date.now() - pa.at <= 20000) {
+        if (/^(응|그래|네|좋아)/.test(q)) return pa.run();
+        if (/^(아니|취소)/.test(q)) return speak(["취소했어요."]);
+      }
+    }
     if (/회사|사무실|직원들|자동화 현황|KPI|성공률/.test(q)) {
       return officeData().then(function (o) {
         var tot = ((o || {}).kpis || {}).total || {};
@@ -319,6 +327,11 @@ button { cursor: pointer; }
         .then(function () { S.name = nm[1]; $("name").textContent = S.name; document.title = S.name + " · 세컨드브레인"; speak(["네, 이제부터 " + S.name + "이에요."]); })
         .catch(function (err) { speak(["이름을 바꾸지 못했어요. " + (err.message || "")]); });
     }
+    if (/제안/.test(q) && /채택|받아|수락|적용|무시|버려|거절|취소/.test(q)) return handleSuggestion(q);
+    var chkRes = checkChecklistItem(q);
+    if (chkRes) return chkRes;
+    var doneRes = checkTaskDone(q);
+    if (doneRes) return doneRes;
     if (/(남은|오늘)\s*할\s*일.*(내일|옮겨|넘겨)|내일로\s*(옮겨|넘겨)/.test(q)) {
       return fetch("/api/task", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify({ action: "carry" }) })
         .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
@@ -329,8 +342,11 @@ button { cursor: pointer; }
     if (/준비|미팅|회의|면접/.test(q) && !/추가|등록|넣어/.test(q)) {
       // 질문에 든 낱말과 제목이 겹치는 일정을 우선(없으면 준비 대상 첫 일정). "뭘/무엇/어떻게/왜"가 든 진짜 질문은 Claude에게 넘긴다
       var all = ((t.agenda && t.agenda.today) || []).concat((t.agenda && t.agenda.upcoming) || []);
+      // "내일/오늘"이 들었으면 그 날짜의 일정을 먼저(제목에 낱말이 안 겹쳐도)
+      var dayEvs = /내일/.test(q) ? all.filter(function (e) { return e.days_left === 1; })
+                 : /오늘/.test(q) ? all.filter(function (e) { return e.days_left === 0; }) : [];
       var words = q.replace(/[?？!.,]/g, " ").split(/\s+/).filter(function (w) { return w.length >= 2 && !/준비|미팅|회의|면접|일정|뭐|무엇|어떻게|어떤|뭘|해야|있어|알려|줘/.test(w); });
-      var hit = all.filter(function (e) { return words.some(function (w) { return e.title.indexOf(w.replace(/(은|는|이|가|을|를|에|의|로|도)$/, "")) >= 0; }); });
+      var hit = dayEvs.length ? dayEvs : all.filter(function (e) { return words.some(function (w) { return e.title.indexOf(w.replace(/(은|는|이|가|을|를|에|의|로|도)$/, "")) >= 0; }); });
       var isQuestion = /뭘|무엇|어떻게|어떤|왜|해야|필요/.test(q);
       var evs = hit.length ? hit : (isQuestion ? [] : all.filter(function (e) { return e.prep; }));
       if (evs.length) {
@@ -405,6 +421,110 @@ button { cursor: pointer; }
   }
   function dLeftKo(n) { return n === 0 ? "오늘" : n === 1 ? "내일" : n == null ? "" : n + "일 뒤"; }
   function nextLine(ag) { var nx = ag && ag.next; return nx ? ["다음 일정은 " + hm(nx.start) + " " + nx.title + (nx.location ? ", " + nx.location : "") + "이에요."] : []; }
+
+  /* ───────── 준비 제안 채택/무시(음성) ───────── */
+  function suggestionApi(key, action) {
+    return fetch("/api/suggestion", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify({ action: action, key: key }) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); });
+  }
+  function suggestionTitle(key) { return String(key).split("|").slice(1).join("|"); }
+  function suggestionTargets(q, keys) {
+    // "다/전부/모두"면 전부, 아니면 준비 규칙과 같은 방식으로 제목 낱말이 겹치는 것만
+    var tokens = q.split(/\s+/), isAll = tokens.indexOf("다") >= 0 || /전부|모두/.test(q);
+    if (isAll) return { keys: keys, all: true };
+    var words = q.replace(/[?？!.,]/g, " ").split(/\s+/).filter(function (w) { return w.length >= 2 && !/제안|채택|받아|수락|적용|무시|버려|거절|취소|전부|모두/.test(w); });
+    var hit = keys.filter(function (k) { var title = suggestionTitle(k); return words.some(function (w) { return title.indexOf(w.replace(/(은|는|이|가|을|를|에|의|로|도)$/, "")) >= 0; }); });
+    return { keys: hit.length ? hit : (keys.length === 1 ? keys : []), all: false };
+  }
+  function runSuggestionOne(key, action) {
+    var title = suggestionTitle(key);
+    return suggestionApi(key, action).then(function (j) {
+      load();
+      speak([action === "accept" ? title + " 준비 항목 " + (j.count || 0) + "개를 노트에 적었어요." : "무시했어요."]);
+    }).catch(function (err) { speak(["처리하지 못했어요. " + (err.message || "")]); });
+  }
+  function runSuggestionBatch(keys, action) {
+    return Promise.all(keys.map(function (k) { return suggestionApi(k, action).catch(function () { return null; }); })).then(function (results) {
+      load();
+      if (action === "accept") {
+        var total = results.reduce(function (s, j) { return s + ((j && j.count) || 0); }, 0);
+        speak(["제안 " + keys.length + "건, 준비 항목 " + total + "개를 노트에 적었어요."]);
+      } else {
+        speak(["제안 " + keys.length + "건을 모두 무시했어요."]);
+      }
+    });
+  }
+  function handleSuggestion(q) {
+    var t = S.today || {}, by = (t.suggestions && t.suggestions.by_key) || {}, keys = Object.keys(by);
+    if (!keys.length) return speak(["지금은 채택할 준비 제안이 없어요."]);
+    var isDismiss = /무시|버려|거절|취소/.test(q), tg = suggestionTargets(q, keys);
+    if (!tg.keys.length) return speak(["어느 일정 제안인지 못 찾았어요."]);
+    var action = isDismiss ? "dismiss" : "accept";
+    if (tg.all) {
+      // 전체 채택/전체 무시는 되돌리기 어려워서 먼저 확인
+      var verb = isDismiss ? "무시" : "채택", targets = tg.keys;
+      S.pendingAction = { at: Date.now(), run: function () { return runSuggestionBatch(targets, action); } };
+      return speak(["제안 " + targets.length + "건을 모두 " + verb + "할까요?"]);
+    }
+    return runSuggestionOne(tg.keys[0], action);
+  }
+
+  /* ───────── 준비 항목 체크(음성): "여권 체크" · "체크: 모바일 탑승권" · "여권 챙겼어" ───────── */
+  function parseCheckPhrase(q) {
+    var m;
+    if ((m = /^체크\s*[:：]?\s*(.+?)\s*[.!]?$/.exec(q)) && m[1].trim()) return m[1].trim();
+    if ((m = /^(.+?)\s*체크(?:해줘|해요|해|했어)?\s*[.!]?$/.exec(q)) && m[1].trim()) return m[1].trim();
+    if ((m = /^(.+?)\s*(?:챙겼|챔겼)(?:어|어요|다|음|네)?\s*[.!]?$/.exec(q)) && m[1].trim()) return m[1].trim();
+    if ((m = /^(.+?)\s*했어\s*[.!]?$/.exec(q)) && m[1].trim()) return m[1].trim();
+    return null;
+  }
+  function checklistCandidates(phrase) {
+    var t = S.today || {}, ag = t.agenda || {};
+    var events = (ag.today || []).concat((ag.upcoming || []).filter(function (e) { return e.days_left == null || e.days_left <= 7; }));
+    var out = [];
+    events.forEach(function (e) {
+      ((e.note && e.note.checklist) || []).forEach(function (c) { if (!c.done && c.text.indexOf(phrase) >= 0) out.push({ e: e, c: c }); });
+    });
+    out.sort(function (a, b) { return (a.e.days_left == null ? 99 : a.e.days_left) - (b.e.days_left == null ? 99 : b.e.days_left); });
+    return out;
+  }
+  function checkChecklistItem(q) {
+    // 실제로 들어맞는 준비 항목이 있을 때만 처리(아니면 null → 다른 규칙으로 넘어감)
+    var phrase = parseCheckPhrase(q);
+    if (!phrase) return null;
+    var hits = checklistCandidates(phrase);
+    if (!hits.length) return null;
+    var h = hits[0], multi = hits.some(function (x) { return x.e.key !== h.e.key; });
+    return fetch("/api/event-note", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify({ action: "check", path: h.e.note.path, line: h.c.line, done: true }) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
+      .then(function (j) {
+        load();
+        var n = (j && j.note) || {}, remain = Math.max(0, (n.total || 0) - (n.done || 0));
+        var lines = ["「" + h.c.text + "」 체크했어요. 남은 준비 " + remain + "개."];
+        if (multi) lines.push(h.e.title + " 일정으로 처리했어요.");
+        return speak(lines);
+      }).catch(function (err) { speak(["체크하지 못했어요. " + (err.message || "")]); });
+  }
+
+  /* ───────── 할 일 완료 체크(음성): "할 일 완료: 보고서" · "보고서 했어" ───────── */
+  function parseTaskDonePhrase(q) {
+    var m;
+    if ((m = /^할\s*일\s*완료\s*[:：]?\s*(.+?)\s*[.!]?$/.exec(q)) && m[1].trim()) return m[1].trim();
+    if ((m = /^(.+?)\s*(?:완료(?:했어|해줘|로\s*표시(?:해줘)?)?|했어)\s*[.!]?$/.exec(q)) && m[1].trim()) return m[1].trim();
+    return null;
+  }
+  function checkTaskDone(q) {
+    var phrase = parseTaskDonePhrase(q);
+    if (!phrase) return null;
+    var t = S.today || {}, td = (t.tasks && t.tasks.today) || [];
+    var hits = td.filter(function (x) { return x.kind === "task" && !x.done && x.text.indexOf(phrase) >= 0; });
+    if (!hits.length) return null;
+    var h = hits[0];
+    return fetch("/api/task", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify({ action: "check", line: h.line, done: true }) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
+      .then(function () { load(); speak(["「" + h.text + "」 완료로 표시했어요."]); })
+      .catch(function (err) { speak(["완료 처리하지 못했어요. " + (err.message || "")]); });
+  }
 
   /* ───────── 듣기(STT): 있으면 마이크, 없으면 입력창 ───────── */
   var Rec = window.SpeechRecognition || window.webkitSpeechRecognition, rec = null;

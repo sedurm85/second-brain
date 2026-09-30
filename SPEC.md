@@ -467,3 +467,8 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 위젯도 자동 등록되지만(`brain-serve`, "대시보드 서버", 운영팀) 다른 에이전트처럼 "발송 완료" 류 패턴이 아니라 `cmd_serve`가 찍는 시작 줄(`http://127.0.0.1:<port>`)을 `ok_pattern`으로 판정하고, 로그가 tick마다 갱신되지 않으므로 `stale_minutes`는 생략(경과 판정 비활성)
 - `agents_status()`가 serve 항목엔 `urllib.request.urlopen("http://127.0.0.1:<port>/api/session")`으로 실제 응답 여부를 찔러 `reachable`/`port`를 더 붙임(포트는 설치된 plist에서 읽거나 기본값). `doctor_report`에도 "대시보드" 항목으로 같은 프로브를 추가(불통이면 `agents install serve` 또는 `brain.py serve` 안내)
 - `skills/brain-view/SKILL.md`: 서버를 새로 띄우기 전에 먼저 `agents status --json`으로 상주 서버가 있는지/응답하는지 확인 — 있으면 URL만 안내, 없으면(macOS) 상주 등록을 한 번 제안하고, 그것도 아니면 기존 임시 `serve --open` + 백그라운드 실행 흐름으로 폴백
+## v0.29 코어 음성 액션
+
+- `web/core.html`의 `answer(q)`에 백엔드 무변경으로 4가지 손대지 않는 음성 동작 추가: 준비 제안 채택/무시("제주도 제안 채택해"·"제안 다 받아"·"수잔 제안 무시해", `POST /api/suggestion`), 준비 항목 체크("여권 체크"·"체크: 모바일 탑승권"·"여권 챙겼어", `POST /api/event-note` check), 준비 남은 항목 안내("내일/제주도 준비 뭐 남았어" — 기존 준비 규칙에 내일/오늘 날짜 우선 매칭만 보강), 할 일 완료("할 일 완료: 보고서"·"보고서 했어", `POST /api/task` check). 이벤트 대상은 기존 준비 규칙과 같은 낱말-겹침 매칭을 재사용, 변경 후 `load()`로 `S.today` 새로 고침
+- 안전장치: 전체 채택/전체 무시("다·전부·모두")만 `S.pendingAction`(20초 만료)에 담아 먼저 "N건을 모두 채택할까요?"로 확인받고 "응/그래/네/좋아"로 실행, "아니/취소"로 취소. 단일 일정 채택·체크박스 하나는 바로 실행
+- 검증: `node`로 `<script>` 블록 `new Function` 문법 확인, `python3 -m unittest tests.test_core -q` 통과(백엔드 무변경). Playwright로 데모 서버(7798)에서 "팀 주간회의 제안 채택해"(자막에 "적었어요", `/api/today` 제안 2→1) → "제안 다 무시해"(확인 질문) → "응"(1→0) 실측 확인
