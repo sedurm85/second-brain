@@ -286,3 +286,8 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 코어: `/api/ask` 문답을 `~/.cache/second-brain/core_log.jsonl`에 남기고, 오늘 최근 4턴을 「[최근 대화]」로 다음 질문에 붙여 이어 말하기가 된다. 답 아래 「이 대화 기억해」 버튼 또는 "기억해/저장해" 명령 → `POST /api/remember {question, answer, title?}` → `notes/…` 노트(태그 코어·대화, 「## 질문 / ## 답 / 맥락」). 오늘 일지 재료에 `core_chat`(최대 6턴) 포함
 - 사무실: 책상 상세에 「이번 주 한 줄」 버튼 → `POST /api/widget {action: brief, id, force?}` → `staff_brief`: 로그 끝 80줄 + 7일 실행/실패 수를 Claude에게 → `{did, issue, mood}`. `staff_briefs.json`에 하루 1회 캐시(「다시」로 force). 사무실도 세션 토큰을 미리 받는다
 - 테스트 172
+
+## v0.24.1 영문 README·직원 한 줄 집계 보정 (2026-09-30)
+
+- `README.en.md` 추가(한국어 README와 상호 링크). UI·프롬프트는 한국어 우선이라고 명시
+- staff brief: 로그 줄에 날짜가 없어 `widget_history`가 0을 내면 runs_7d/fails_7d를 비워서 보낸다(Claude가 "집계 불일치"를 문제로 짚던 오탐 제거). README의 「Claude가 대신 쓰는 것」 항목 정리

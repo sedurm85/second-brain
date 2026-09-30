@@ -3601,6 +3601,8 @@ def staff_brief(w, today=None, force=False):
     if not lines:
         lines = [str(w.get("summary") or "")]
     hist = widget_history(w, days=7, today=today) if w.get("kind") == "log" else {}
+    if not hist.get("total_runs"):  # 로그 줄에 날짜가 없으면 날짜별 집계가 안 되니 숫자를 주지 않는다(0으로 오해 방지)
+        hist = {}
     ctx = {"title": w.get("title"), "status": w.get("status"), "state": w.get("state"), "runs_7d": hist.get("total_runs"), "fails_7d": hist.get("total_fails"),
            "since": (today - timedelta(days=6)).isoformat(), "until": today.isoformat(), "log_tail": lines[-STAFF_BRIEF_LINES:]}
     prompt = ("너는 자동화 직원(크론·launchd 작업)의 팀장이다. 아래 [기록]은 이 직원의 최근 로그다. JSON 객체 하나로만 답한다(설명·마크다운 금지). 형식:\n"
