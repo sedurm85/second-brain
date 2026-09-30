@@ -2881,7 +2881,11 @@ def event_note_action(vault, body):
                 if lines[j].startswith("### ") or lines[j].startswith("## "):
                     ei = j
                     break
+            while ei - 1 > si and not lines[ei - 1].strip():  # 소제목 블록 끝의 빈 줄 앞에 넣는다
+                ei -= 1
             lines.insert(ei, f"- {text}")
+            if ei + 1 < len(lines) and lines[ei + 1].startswith("## "):
+                lines.insert(ei + 1, "")
             new_body = "\n".join(lines) + "\n"
         else:
             new_body = _append_section(new_body, header, f"- {text}")
