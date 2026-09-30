@@ -2227,6 +2227,8 @@ def kakao_brief(t):
         parts.append("자동화 " + ", ".join(f"{_short(w['title'])} {'실패' if w['status'] == 'fail' else '오래됨'}" for w in bad[:3]))
     elif sum(t["widgets_summary"].values()):
         parts.append(f"자동화 정상 {t['widgets_summary']['ok']}")
+    if (t.get("suggestions") or {}).get("count"):
+        parts.append(f"준비 제안 {t['suggestions']['count']}건(보드에서 채택)")
     tk = (t.get("tasks") or {}).get("counts") or {}
     own_today = [x for x in (t.get("tasks") or {}).get("today", []) if x.get("kind") == "task"]
     if own_today:
@@ -2354,6 +2356,8 @@ def dash_today(vault, today=None, now=None, widgets=None, agenda=None):
     # 표시용 inbox: 오늘 묶음(직접 적은 것 우선). 예전 계약(문자열 목록) 유지
     own = lambda b: [x["text"] for x in tb[b] if x.get("kind") == "task"]
     t["inbox"] = own("today") or (own("week") + own("someday"))[:6] or t["inbox"]
+    pend = pending_suggestions(today=today)
+    t["suggestions"] = {"count": len(pend), "by_key": {k: {"items": s["items"], "created": s.get("created")} for k, s in pend.items()}}
     t["kakao"] = kakao_brief(t)
     return t
 
@@ -2455,6 +2459,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             body = self._read_json()
             if route == "/api/event-note":
                 res = event_note_action(vault, body)
+                self.server.agenda_cache.invalidate()
+                return self._json(200, res)
+            if route == "/api/suggestion":
+                res = suggestion_action(vault, body, self.server.today)
                 self.server.agenda_cache.invalidate()
                 return self._json(200, res)
             if route == "/api/widget":
@@ -2570,6 +2578,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 widgets = collect_widgets(self.server.widget_cache)
                 return self._json(200, dash_today(vault, self.server.today, widgets=widgets,
                                                   agenda=self.server.agenda_cache.get()))
+            if route == "/api/suggestions":
+                return self._json(200, {"pending": list(pending_suggestions(today=self.server.today).values())})
             if route == "/api/agenda":
                 ag = dict(self.server.agenda_cache.get(_int_param(qs, "days", 7, hi=60)))
                 attach_event_notes(vault, ag)
@@ -3700,6 +3710,7 @@ AGENT_SPECS = {
     "remind": {"label": "com.secondbrain.remind", "args": ["remind", "--kakao"], "interval": 600, "title": "출발·시작 알림 (10분마다)"},
     "evening": {"label": "com.secondbrain.evening", "args": ["brief", "--evening", "--kakao"], "calendar": {"Hour": 21, "Minute": 30}, "title": "저녁 마감 카톡 (매일 21:30)"},
     "backup": {"label": "com.secondbrain.backup", "args": ["backup"], "calendar": {"Hour": 23, "Minute": 0}, "title": "볼트 백업 (매일 23시)"},
+    "prepare": {"label": "com.secondbrain.prepare", "args": ["prepare"], "calendar": {"Hour": 6, "Minute": 40}, "title": "일정 준비 제안 (매일 6:40)"},
 }
 
 
@@ -3777,7 +3788,7 @@ def agents_install(names, dry=False, force=False):
                 if wid in ids or rec["action"].startswith("skip"):
                     continue
                 cfg.setdefault("widgets", []).insert(0, {"id": wid, "title": AGENT_SPECS[rec["name"]]["title"], "kind": "log", "source": rec["log"], "team": "운영팀",
-                                                          "status": {"ok_pattern": "카톡 발송 완료|알릴 것 없음|발송|백업 완료", "fail_pattern": "Traceback|실패", "stale_minutes": 1560 if rec["name"] != "remind" else 40}, "lines": 3})
+                                                          "status": {"ok_pattern": "카톡 발송 완료|알릴 것 없음|발송|백업 완료|준비 제안|제안할 일정이 없어요", "fail_pattern": "Traceback|실패", "stale_minutes": 1560 if rec["name"] != "remind" else 40}, "lines": 3})
                 rec["widget"] = wid
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -3864,6 +3875,170 @@ def _run_claude_json(prompt, timeout=240):
         except ValueError:
             continue
     raise BrainError(f"Claude 응답이 JSON이 아니에요: {out[:160]}")
+
+
+SUGGEST_DAYS = 7
+SUGGEST_MAX_ITEMS = 8
+
+
+def suggestions_path():
+    return agenda_mod.cache_dir() / "suggestions.json"
+
+
+def load_suggestions():
+    p = suggestions_path()
+    if not p.exists():
+        return {}
+    try:
+        d = json.loads(p.read_text(encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_suggestions(d):
+    p = suggestions_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(p)
+
+
+def pending_suggestions(sugg=None, today=None):
+    """지난 일정 것은 걸러낸 대기 중 제안 {key: sug}."""
+    sugg = load_suggestions() if sugg is None else sugg
+    today = (today or date.today()).isoformat()
+    return {k: s for k, s in sugg.items() if s.get("status") == "pending" and str(s.get("date") or "")[:10] >= today}
+
+
+def prepare_prompt(e, note, related):
+    have = [c["text"] for c in ((note or {}).get("checklist") or [])]
+    steps = [f"{s['time']} {s['text']}" for s in ((note or {}).get("steps") or [])]
+    when = e["start"][:10] + (" 종일" if e.get("all_day") else " " + e["start"][11:16] + "–" + str(e.get("end") or "")[11:16])
+    ctx = {"title": e["title"], "when": when, "location": e.get("location") or "", "description": (e.get("description") or "")[:600],
+           "attendees": (e.get("attendees") or [])[:5], "already_prep": have, "already_steps": steps,
+           "related_notes": [{"title": r["title"], "snippet": (r.get("snippet") or "")[:200]} for r in (related or [])[:3]]}
+    return ("너는 꼼꼼한 개인 비서다. 아래 일정 하나를 보고 JSON 객체 하나로만 답한다(설명·마크다운 금지). 형식:\n"
+            '{"prep": ["준비 항목" 3~6개, 각 20자 이내 명사구, already_prep와 겹치지 않게], '
+            '"steps": ["HH:MM 내용" 0~4개, 그 날의 이동·출발 동선. 시각을 합리적으로 추정할 수 없으면 빈 배열], '
+            '"memo": "한 줄 조언 60자 이내(없으면 빈 문자열)"}\n'
+            "규칙: 일정·설명·관련 노트에 없는 고유 사실(예약번호·전화번호 등)을 만들지 마라. 항공·기차·병원·면접·회의 같은 일반 상식 준비물은 허용. "
+            "공항은 출발 2시간 전 도착 기준으로 동선을 잡는다. 이미 있는 항목(already_*)은 다시 내지 마라.\n\n[일정]\n" + json.dumps(ctx, ensure_ascii=False))
+
+
+def _norm_suggestion(raw, e):
+    items = []
+    for t in (raw.get("prep") or [])[:6]:
+        t = " ".join(str(t).split())
+        if t:
+            items.append({"kind": "prep", "text": t[:80]})
+    for t in (raw.get("steps") or [])[:4]:
+        t = " ".join(str(t).split())
+        if re.match(r"^\d{1,2}:\d{2}\s+\S", t):
+            items.append({"kind": "step", "text": t[:120]})
+    memo = " ".join(str(raw.get("memo") or "").split())
+    if memo:
+        items.append({"kind": "memo", "text": memo[:160]})
+    return items[:SUGGEST_MAX_ITEMS]
+
+
+def suggest_targets(ag, sugg, days, force=False):
+    """제안할 일정: days일 안, 준비 항목 3개 미만, 아직 제안한 적 없는 것(--force면 무시)."""
+    out = []
+    for e in (ag.get("today") or []) + (ag.get("upcoming") or []):
+        if (e.get("days_left") or 0) > days:
+            continue
+        n = e.get("note")
+        if n and (n.get("total") or 0) >= 3 and (n.get("steps") or []):
+            continue
+        if e.get("key") in sugg and not force:
+            continue
+        out.append(e)
+    return out
+
+
+def cmd_prepare(args):
+    """다가오는 일정에 Claude가 준비 체크리스트·동선 초안을 제안해 보류함에 넣는다(노트에는 쓰지 않음)."""
+    try:
+        v = vault_path()
+        if not vault_exists(v):
+            v = None
+    except BrainError:
+        v = None
+    ag = dict(collect_agenda_safe(args.days))
+    if v:
+        attach_event_notes(v, ag)
+    sugg = load_suggestions()
+    targets = suggest_targets(ag, sugg, args.days, force=args.force)
+    if args.key:
+        targets = [e for e in targets if e.get("key") == args.key] or [e for e in (ag.get("today") or []) + (ag.get("upcoming") or []) if e.get("key") == args.key]
+    if not targets:
+        emit(args, {"done": 0, "pending": len(pending_suggestions(sugg))}, f"제안할 일정이 없어요 (대기 중 {len(pending_suggestions(sugg))}건)")
+        return EXIT_OK
+    done, failed = [], []
+    for e in targets:
+        if args.dry_run:
+            done.append({"key": e["key"], "items": []})
+            continue
+        try:
+            raw = _run_claude_json(prepare_prompt(e, e.get("note"), e.get("related")))
+            if isinstance(raw, list):
+                raw = raw[0] if raw and isinstance(raw[0], dict) else {}
+            items = _norm_suggestion(raw if isinstance(raw, dict) else {}, e)
+        except BrainError as err:
+            log(f"경고: {e['title']} 제안 실패: {err}")
+            failed.append(e["key"])
+            continue
+        if not items:
+            failed.append(e["key"])
+            continue
+        sugg[e["key"]] = {"key": e["key"], "title": e["title"], "date": e["start"][:10], "end": (e.get("end") or "")[:10] if e.get("all_day") else "",
+                          "location": e.get("location") or "", "items": items, "status": "pending", "created": datetime.now().isoformat(timespec="minutes")}
+        done.append({"key": e["key"], "items": items})
+    if not args.dry_run:
+        save_suggestions(sugg)
+    lines = []
+    for d in done:
+        lines.append(f"- {d['key'].split('|', 1)[1]} ({d['key'][:10]}): " + (", ".join(i['text'] for i in d['items'][:4]) if d['items'] else "(dry)"))
+    if failed:
+        lines.append("실패 " + ", ".join(k.split('|', 1)[1] for k in failed[:4]))
+    emit(args, {"done": len(done), "failed": failed, "suggestions": done},
+         f"준비 제안 {len(done)}건" + (" (dry-run)" if args.dry_run else " — 보드의 일정 카드에서 채택/무시") + "\n" + "\n".join(lines))
+    return EXIT_OK if not failed else EXIT_INPUT
+
+
+def suggestion_action(vault, body, today=None):
+    """{action: accept|dismiss, key, indexes?: [i…]} — accept는 고른 항목만 일정 노트에 쓴다."""
+    action = body.get("action")
+    key = str(body.get("key") or "")
+    sugg = load_suggestions()
+    s = sugg.get(key)
+    if not s:
+        raise BrainError("그 일정의 제안이 없어요(이미 처리됐을 수 있어요)")
+    if action == "dismiss":
+        s["status"] = "dismissed"
+        s["decided"] = datetime.now().isoformat(timespec="minutes")
+        save_suggestions(sugg)
+        return {"ok": True, "status": "dismissed", "key": key}
+    if action != "accept":
+        raise BrainError("action은 accept 또는 dismiss")
+    if not vault:
+        raise BrainError("볼트가 없어요")
+    idx = body.get("indexes")
+    items = s["items"] if idx is None else [s["items"][i] for i in idx if isinstance(i, int) and 0 <= i < len(s["items"])]
+    if not items:
+        raise BrainError("채택할 항목을 하나 이상 골라 주세요")
+    note = None
+    for it in items:
+        act = {"prep": "todo", "step": "step", "memo": "memo"}[it["kind"]]
+        res = event_note_action(vault, {"action": act, "key": key, "title": s.get("title"), "date": s.get("date"),
+                                        "end": s.get("end") or None, "location": s.get("location") or None, "text": it["text"]})
+        note = res.get("note")
+    s["status"] = "accepted"
+    s["accepted"] = [it["text"] for it in items]
+    s["decided"] = datetime.now().isoformat(timespec="minutes")
+    save_suggestions(sugg)
+    return {"ok": True, "status": "accepted", "key": key, "count": len(items), "note": note}
 
 
 def enrich_prompt(notes, catalog):
@@ -4209,6 +4384,12 @@ def build_parser():
     s.add_argument("--password-file", help="앱 비밀번호가 한 줄 든 파일(기본 ~/.config/second-brain/mail.pass)")
     s.add_argument("--host", help="IMAP 호스트(gmail/naver는 자동)")
     s.add_argument("--sent-folder", help="보낸편지함 폴더 이름")
+
+    s = add("prepare", "다가오는 일정에 Claude가 준비 체크리스트·동선 초안 제안(보류함에 저장, 보드에서 채택)", cmd_prepare)
+    s.add_argument("--days", type=int, default=SUGGEST_DAYS, help="며칠 앞까지(기본 7)")
+    s.add_argument("--key", help="특정 일정 키 'YYYY-MM-DD|제목'만")
+    s.add_argument("--force", action="store_true", help="이미 제안한 일정도 다시")
+    s.add_argument("--dry-run", action="store_true", help="대상만 보여주고 호출하지 않음")
 
     s = add("enrich", "Claude로 노트 정제: 제목·요약·태그·관련 링크 (기본: 가져온 노트 중 요약 없는 것)", cmd_enrich)
     s.add_argument("paths", nargs="*", help="특정 노트 경로/stem만")

@@ -228,6 +228,16 @@ h1, h2, h3 { text-wrap: balance; }
 .ev-rel li:first-child { border-top: 0; }
 .ev-rel .lnk { background: none; border: 0; padding: 0; color: var(--ink); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .ev-rel small { display: block; color: var(--muted); font-size: 12.5px; }
+.ev-sug { margin: 14px 0 6px; padding: 12px 14px; border: 1px dashed var(--accent); border-radius: var(--r); background: var(--accent-soft); }
+.ev-sug .ev-h { margin-top: 0; }
+.sug-list { list-style: none; margin: 0 0 10px; padding: 0; }
+.sug-list li { padding: 4px 0; font-size: 14px; }
+.sug-list label { display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
+.sug-list .k { flex: none; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--panel); color: var(--muted); border: 1px solid var(--rule); }
+.sug-list .k-step { color: var(--t-event); }
+.ev-sug .row { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+.ev-sug .row .ev-status { margin-right: auto; }
+.badge.sug { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); }
 .ev-steps { list-style: none; margin: 0 0 6px; padding: 0; }
 .ev-steps li { display: flex; gap: 8px; font-size: 14px; padding: 4px 0; border-top: 1px solid var(--rule); }
 .ev-steps li:first-child { border-top: 0; }
@@ -1423,6 +1433,12 @@ h1, h2, h3 { text-wrap: balance; }
       (e.attendees && e.attendees.length ? "<tr><th>참석</th><td>" + esc(e.attendees.join(", ")) + "</td></tr>" : "") +
       (e.url ? '<tr><th>링크</th><td><a href="' + esc(e.url) + '" target="_blank" rel="noopener">' + esc(e.url.replace(/^https?:\/\//, "").slice(0, 60)) + "</a></td></tr>" : "");
     var desc = e.description ? '<h3 class="ev-h">설명</h3><div class="md ev-desc">' + esc(e.description).replace(/\n/g, "<br>") + "</div>" : "";
+    var sg = S.suggestions && S.suggestions[e.key];
+    var KIND = { prep: "준비", step: "동선", memo: "메모" };
+    var sugHtml = sg && sg.items && sg.items.length ? '<section class="ev-sug" aria-label="브레인 제안"><h3 class="ev-h">' + esc(S.assistantName || "브레인") + '의 제안 <span class="count">' + sg.items.length + '</span></h3>' +
+      '<ul class="sug-list">' + sg.items.map(function (it, i) {
+        return '<li><label><input type="checkbox" data-i="' + i + '" checked> <span class="k k-' + it.kind + '">' + KIND[it.kind] + "</span> <span>" + esc(it.text) + "</span></label></li>";
+      }).join("") + '</ul><div class="row"><span class="ev-status sug-status" aria-live="polite">고른 것만 일정 노트에 적어요</span><button type="button" class="text-btn" data-sug="dismiss">무시</button><button type="button" class="text-btn primary" data-sug="accept">채택</button></div></section>' : "";
     var todo = '<h3 class="ev-h">준비 ' + (n && n.total ? '<span class="count">' + n.done + "/" + n.total + "</span>" : "") + "</h3>" +
       (n && n.checklist.length ? '<ul class="ev-todo">' + n.checklist.map(function (c) {
         return '<li><label><input type="checkbox" data-line="' + c.line + '"' + (c.done ? " checked" : "") + '> <span' + (c.done ? ' class="done"' : "") + ">" + esc(c.text) + "</span></label></li>";
@@ -1437,7 +1453,7 @@ h1, h2, h3 { text-wrap: balance; }
     var memo = stepsHtml + '<h3 class="ev-h">메모</h3>' + (n && n.memo ? '<div class="md ev-memo">' + renderMd(n.memo) + "</div>" : '<p class="t-empty">아직 메모가 없어요.</p>') +
       '<form class="ev-form col" data-act="memo"><textarea name="text" rows="3" maxlength="4000" placeholder="이 일정에 남길 메모 (동선, 준비물, 통화 내용…)"></textarea><div class="row"><span class="ev-status" aria-live="polite"></span><button type="submit" class="text-btn primary">메모 남기기</button></div></form>' +
       (n ? '<p class="ev-note-link"><button type="button" class="wikilink" data-path="' + esc(n.path) + '">일정 노트 열기</button></p>' : "");
-    $("panelBody").innerHTML = '<table class="fm"><caption class="sr-only">일정 정보</caption>' + rows + "</table>" + desc + todo + memo;
+    $("panelBody").innerHTML = '<table class="fm"><caption class="sr-only">일정 정보</caption>' + rows + "</table>" + desc + sugHtml + todo + memo;
     $("panelBody").scrollTop = 0;
     var body = $("panelBody");
     body.querySelectorAll(".ev-form").forEach(function (f) {
@@ -1448,6 +1464,17 @@ h1, h2, h3 { text-wrap: balance; }
         post("event-note", { action: f.getAttribute("data-act"), key: e.key, title: e.title, date: e.start.slice(0, 10), location: e.location || "", text: text })
           .then(function (r) { e.note = r.note; S.events[e.id] = e; renderEventBody(e); refreshLive(true); })
           .catch(function (err) { var s2 = body.querySelector(".ev-status"); if (s2) s2.textContent = "저장 실패: " + (err.message || err); });
+      });
+    });
+    body.querySelectorAll("[data-sug]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var act = btn.getAttribute("data-sug"), st = body.querySelector(".sug-status");
+        var idx = Array.prototype.map.call(body.querySelectorAll(".sug-list input:checked"), function (cb) { return +cb.getAttribute("data-i"); });
+        if (act === "accept" && !idx.length) { if (st) st.textContent = "하나 이상 골라 주세요"; return; }
+        if (st) st.textContent = act === "accept" ? "노트에 적는 중" : "정리 중";
+        post("suggestion", { action: act, key: e.key, indexes: act === "accept" ? idx : undefined })
+          .then(function (r) { delete S.suggestions[e.key]; if (r.note) { e.note = r.note; S.events[e.id] = e; } renderEventBody(e); refreshLive(true); })
+          .catch(function (err) { if (st) st.textContent = "실패: " + (err.message || err); });
       });
     });
     body.querySelectorAll(".ev-todo input").forEach(function (cb) {
@@ -1628,9 +1655,10 @@ h1, h2, h3 { text-wrap: balance; }
     renderDaybar(t.agenda || {}, t.now);
     var up = (t.agenda && t.agenda.upcoming) || [];
     up.forEach(function (e) { S.events[e.id] = e; });
-    var prepEv = ((t.agenda && t.agenda.today) || []).concat(up).filter(function (e) { return e.prep && (e.related && e.related.length); }).slice(0, 2);
+    S.suggestions = (t.suggestions && t.suggestions.by_key) || {};
+    var prepEv = ((t.agenda && t.agenda.today) || []).concat(up).filter(function (e) { return S.suggestions[e.key] || (e.prep && (e.related && e.related.length)); }).slice(0, 3);
     var prepHtml = prepEv.length ? '<h3 style="margin-top:12px">준비할 일정</h3><ul class="prep-list">' + prepEv.map(function (e) {
-      return '<li><button type="button" class="ev" data-eid="' + esc(e.id) + '"><span class="d">' + esc(dLeft(e.days_left)) + '</span><span class="n">' + esc(e.title) + '</span></button><ul class="rel">' + e.related.slice(0, 3).map(function (r) {
+      return '<li><button type="button" class="ev" data-eid="' + esc(e.id) + '"><span class="d">' + esc(dLeft(e.days_left)) + '</span><span class="n">' + esc(e.title) + (S.suggestions[e.key] ? ' <span class="badge sug">제안 ' + S.suggestions[e.key].items.length + "</span>" : "") + '</span></button><ul class="rel">' + (e.related || []).slice(0, 3).map(function (r) {
         return '<li><button type="button" data-path="' + esc(r.path) + '">' + esc(r.title) + "</button></li>";
       }).join("") + "</ul></li>";
     }).join("") + "</ul>" : "";
@@ -2005,7 +2033,7 @@ h1, h2, h3 { text-wrap: balance; }
     // 첫 로드 등장 시퀀스: 탭이 보이고 모션 축소가 아닐 때만, 1.6초 뒤 해제(멈춘 프레임 방지)
     if (!document.hidden && !reduceMotion) { document.documentElement.classList.add("entering"); setTimeout(function () { document.documentElement.classList.remove("entering"); }, 1600); }
     initTheme(); renderHeader(); initGraphEvents(); initSearch(); initLive(); initGlobal(); initTasks();
-    if (!MOCK) api("session").then(function (s) { S.token = s.token; S.writable = !!s.writable; }).catch(function () { S.token = null; });
+    if (!MOCK) api("session").then(function (s) { S.token = s.token; S.writable = !!s.writable; S.assistantName = s.assistant_name || "브레인"; }).catch(function () { S.token = null; });
     api("summary").then(function (s) {
       if (!s.counts || !s.counts.total) { renderEmpty(); return; }
       renderSummary(s);

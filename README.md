@@ -54,6 +54,7 @@ python3 scripts/brain.py event step "2026-10-03|제주도" "14:00 집 출발 (�
 python3 scripts/brain.py config set assistant_name 자비스
 python3 scripts/brain.py backup                        # 볼트 zip 백업(14개 보관)
 python3 scripts/brain.py enrich [--dry-run]            # Claude가 노트 제목·요약·태그·관련 링크 정제(가져온 노트 우선)
+python3 scripts/brain.py prepare [--days 7]           # 다가오는 일정에 준비 체크리스트·동선 초안 제안(보드에서 채택)
 python3 scripts/brain.py agents install                # 07:00 브리핑·10분 알림·21:30 마감·23:00 백업 launchd 설치
 python3 scripts/brain.py config init-widgets           # 예시 widgets.json
 ```
