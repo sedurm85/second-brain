@@ -162,6 +162,7 @@ tags:
 | `widgets[].status.ok_pattern` | log | 마지막 N줄에서 매치되면 `ok` (정규식) |
 | `widgets[].status.fail_pattern` | log | 마지막 N줄에서 매치되면 `fail` (ok보다 우선) |
 | `widgets[].status.stale_minutes` | 파일 kind | mtime이 이 분을 넘으면 `stale` (패턴 판정보다 우선) |
+| `widgets[].state` | 모두 | `active`(기본) 또는 `paused`. paused면 status가 항상 `paused`로 고정되고 경고·요약에서 빠짐. 끝난 크론을 지우지 않고 기록만 남길 때 |
 | `widgets[].lines` | log · markdown | log는 마지막 N줄(기본 5), markdown은 첫 N줄(기본 10) |
 | `widgets[].fields` | json | 추출할 키 목록, 점 경로 `a.b`·배열 인덱스 `a.0` 지원. 없는 키는 `null` + `warn` |
 | `widgets[].x`, `widgets[].y` | csv | x/y 열 이름(헤더 행 필수). y 숫자 변환 실패 행은 건너뜀(쉼표 `1,234` 허용) |

@@ -88,6 +88,7 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - kind: `log`(마지막 N줄, 상태 패턴·stale 판정) · `json`(fields 추출) · `csv`(x/y 열, 마지막 N행 → 스파크라인) · `markdown`(첫 N줄) · `command`(`allow_commands: true`일 때만, timeout, stdout ≤ 4KB)
 - 경로는 `~` 허용, 홈 밖 금지. 존재하지 않으면 status `missing`
 - status: `ok | warn | fail | stale | missing | unknown`. stale = mtime이 `stale_minutes` 초과
+- state(v0.3.1): `active`(기본) | `paused`. paused = 끝났거나 세운 자동화. 내용은 그대로 읽되 status는 항상 `paused`, 「오늘」 요약·카톡 경고·top_widgets에서 제외, 목록 뒤로 정렬. 대시보드는 「진행 중 / 멈춤(접힘)」 두 묶음으로 표시
 
 ### API 추가 (`brain.py serve`)
 - `GET /api/widgets` → `[{id,title,kind,status,updated_at(mtime ISO),age_minutes,summary(≤200자),data}]` — data: log `{lines:[…]}` / json `{fields:{…}}` / csv `{columns,rows:[[x,y]…]}` / markdown `{text}` / command `{stdout,exit_code}`. 서버 내 60초 캐시

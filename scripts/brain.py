@@ -1514,8 +1514,9 @@ def build_demo_vault(vault=None, today=None):
 
 WIDGET_KINDS = ("log", "json", "csv", "markdown", "command")
 WIDGET_STATUSES = ("ok", "warn", "fail", "stale", "missing", "unknown")
-SUMMARY_STATUSES = ("ok", "warn", "fail", "stale", "missing")  # /api/today pill 5개
-STATUS_PRIORITY = {"fail": 0, "stale": 1, "missing": 2, "warn": 3, "unknown": 4, "ok": 5}
+SUMMARY_STATUSES = ("ok", "warn", "fail", "stale", "missing", "paused")  # /api/today pill 6개
+STATUS_PRIORITY = {"fail": 0, "stale": 1, "missing": 2, "warn": 3, "unknown": 4, "ok": 5, "paused": 6}
+WIDGET_STATES = ("active", "paused")  # paused = 멈춘 자동화. 평가는 하되 status는 항상 paused, 요약·카톡 경고에서 제외
 WIDGET_CACHE_SEC = 60
 COMMAND_STDOUT_MAX = 4096
 SUMMARY_MAX = 200
@@ -1772,7 +1773,9 @@ _EMPTY_DATA = {"log": {"lines": []}, "json": {"fields": {}}, "csv": {"columns": 
 def _widget_base(w, idx):
     wid = str(w.get("id") or f"widget-{idx + 1}")
     kind = str(w.get("kind") or "")
+    state = str(w.get("state") or "active").lower()
     return {"id": wid, "title": str(w.get("title") or wid), "kind": kind, "status": "unknown",
+            "state": state if state in WIDGET_STATES else "active",
             "updated_at": None, "age_minutes": None, "summary": "",
             "data": dict(_EMPTY_DATA.get(kind, {}))}
 
@@ -1789,7 +1792,17 @@ def _widget_mtime(w):
 
 
 def evaluate_widget(w, idx=0, allow_commands=False, now=None):
-    """위젯 1개 평가 → {id,title,kind,status,updated_at,age_minutes,summary,data[,error]}."""
+    """위젯 1개 평가 → {id,title,kind,state,status,updated_at,age_minutes,summary,data[,error]}.
+
+    state=paused(멈춘 자동화)면 내용은 그대로 읽되 status는 paused로 고정 — 실패·지연 경고를 내지 않는다."""
+    res = _evaluate_active(w, idx, allow_commands, now)
+    if res["state"] == "paused":
+        res["status"] = "paused"
+        res["summary"] = _clip("멈춤 · " + (res["summary"] or "마지막 기록 보존"))
+    return res
+
+
+def _evaluate_active(w, idx=0, allow_commands=False, now=None):
     now = now or datetime.now().astimezone()
     res = _widget_base(w, idx)
     kind = res["kind"]
@@ -1856,7 +1869,8 @@ def collect_widgets(cache=None):
     for i, w in enumerate(cfg["widgets"]):
         out.append(cache.get(w, i, cfg["allow_commands"]) if cache
                    else evaluate_widget(w, i, cfg["allow_commands"]))
-    return out
+    # 진행 중(active) 먼저, 멈춘 것(paused)은 뒤로 — 설정 순서는 각 그룹 안에서 유지
+    return sorted(out, key=lambda r: r.get("state") == "paused")
 
 
 def greeting_for(hour):
@@ -1929,7 +1943,8 @@ def dash_today(vault, today=None, now=None, widgets=None):
     for w in widgets:
         if w["status"] in counts:
             counts[w["status"]] += 1
-    top = sorted(widgets, key=lambda w: STATUS_PRIORITY.get(w["status"], 9))[:5]
+    active = [w for w in widgets if w.get("state") != "paused"]  # 멈춘 자동화는 경고 후보에서 제외
+    top = sorted(active, key=lambda w: STATUS_PRIORITY.get(w["status"], 9))[:5]
     t = {
         "date": today.isoformat(),
         "greeting": greeting_for(now.hour),
@@ -1956,7 +1971,9 @@ def today_human(t):
     if t["widgets_total"]:
         bad = [w["title"] for w in t["top_widgets"] if w["status"] in ("fail", "stale")]
         out.append(f"자동화: 정상 {s['ok']} · 실패 {s['fail']} · 지연 {s['stale']} · "
-                   f"없음 {s['missing']} · 주의 {s['warn']}" + (f" — {', '.join(bad)}" if bad else ""))
+                   f"없음 {s['missing']} · 주의 {s['warn']}"
+                   + (f" · 멈춤 {s['paused']}" if s.get("paused") else "")
+                   + (f" — {', '.join(bad)}" if bad else ""))
     else:
         out.append("자동화: 위젯 없음 — `brain.py config init-widgets`로 예시를 만들어 보세요")
     if t["inbox"]:

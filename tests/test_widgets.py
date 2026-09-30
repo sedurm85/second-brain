@@ -128,7 +128,7 @@ class LogTest(HomeCase):
         self.assertEqual(r["data"]["lines"], ["a", "b", "sent len: 120"])
         self.assertEqual(r["summary"], "sent len: 120")
         self.assertIsNotNone(r["updated_at"])
-        self.assertEqual(set(r), {"id", "title", "kind", "status", "updated_at", "age_minutes",
+        self.assertEqual(set(r), {"id", "title", "kind", "state", "status", "updated_at", "age_minutes",
                                   "summary", "data"})
 
     def test_fail_beats_ok(self):
@@ -294,7 +294,7 @@ class TodayTest(HomeCase):
         self.assertEqual([d["days_left"] for d in t["revisit"]], [-1, 3])
         self.assertEqual(t["inbox"], ["항공권 확인", "세금 신고"])
         self.assertEqual(t["this_week"], {"new_notes": 1, "new_decisions": 1})
-        self.assertEqual(t["widgets_summary"], {"ok": 1, "warn": 0, "fail": 1, "stale": 0, "missing": 1})
+        self.assertEqual(t["widgets_summary"], {"ok": 1, "warn": 0, "fail": 1, "stale": 0, "missing": 1, "paused": 0})
         self.assertEqual(t["top_widgets"][0]["id"], "bad")
         self.assertLessEqual(len(t["kakao"]), 200)
 
@@ -348,6 +348,38 @@ class TodayTest(HomeCase):
         finally:
             srv.shutdown()
             srv.server_close()
+
+
+class PausedTest(HomeCase):
+    """state: paused — 멈춘 자동화는 내용은 읽되 status=paused, 경고·top에서 제외, 목록 뒤로."""
+
+    def test_paused_widget(self):
+        self.put("dead.log", "Traceback: boom\n")
+        self.put("live.log", "len: 3\n")
+        self.write_config([
+            {"id": "dead", "kind": "log", "source": self.src("dead.log"), "state": "paused",
+             "status": {"fail_pattern": "Traceback"}},
+            {"id": "live", "kind": "log", "source": self.src("live.log"),
+             "status": {"ok_pattern": "len:"}},
+        ])
+        ws = brain.collect_widgets()
+        self.assertEqual([w["id"] for w in ws], ["live", "dead"])  # active 먼저
+        dead = ws[1]
+        self.assertEqual((dead["state"], dead["status"]), ("paused", "paused"))
+        self.assertTrue(dead["summary"].startswith("멈춤 · "))
+        self.assertEqual(dead["data"]["lines"], ["Traceback: boom"])  # 기록은 보존
+        t = brain.dash_today(None, widgets=ws)
+        self.assertEqual(t["widgets_summary"]["paused"], 1)
+        self.assertEqual(t["widgets_summary"]["fail"], 0)
+        self.assertNotIn("dead", [w["id"] for w in t["top_widgets"]])
+        self.assertNotIn("fail", t["kakao"])
+        self.assertIn("멈춤 1", brain.today_human(t))
+
+    def test_unknown_state_is_active(self):
+        self.put("a.log", "len: 1\n")
+        r = self.ev({"id": "a", "kind": "log", "source": self.src("a.log"), "state": "weird",
+                     "status": {"ok_pattern": "len:"}})
+        self.assertEqual((r["state"], r["status"]), ("active", "ok"))
 
 
 if __name__ == "__main__":
