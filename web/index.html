@@ -181,6 +181,14 @@ h1, h2, h3 { text-wrap: balance; }
 .db-ev.past { opacity: .45; }
 .db-ev.now { box-shadow: 0 0 12px var(--accent-soft); border-color: var(--accent); }
 .db-ev.conflict { border-color: var(--st-warn); }
+.db-step { position: absolute; top: 41px; height: 3px; border-radius: 2px; background: var(--t-event); opacity: .9; }
+.db-step.past { opacity: .35; } .db-step.now { box-shadow: 0 0 8px var(--t-event); }
+.db-steps { list-style: none; margin: 8px 0 0; padding: 8px 0 0; border-top: 1px dashed var(--rule); display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 2px 24px; }
+.db-steps li { display: flex; gap: 10px; font-size: 13px; padding: 2px 0; min-width: 0; }
+.db-steps .t { color: var(--t-event); font-weight: 600; flex: none; width: 44px; }
+.db-steps .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+.db-steps .n small { color: var(--muted); margin-left: 6px; }
+.db-steps li.past { opacity: .5; } .db-steps li.now .n { color: var(--ink); }
 .db-now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--st-crit); box-shadow: 0 0 8px var(--st-crit); }
 .db-now::after { content: ""; position: absolute; top: -1px; left: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--st-crit); }
 .db-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 2px 24px; }
@@ -209,6 +217,12 @@ h1, h2, h3 { text-wrap: balance; }
 .ev-todo label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
 .ev-todo input { margin-top: 4px; accent-color: var(--accent); }
 .ev-todo .done { color: var(--muted); text-decoration: line-through; }
+.ev-steps { list-style: none; margin: 0 0 6px; padding: 0; }
+.ev-steps li { display: flex; gap: 8px; font-size: 14px; padding: 4px 0; border-top: 1px solid var(--rule); }
+.ev-steps li:first-child { border-top: 0; }
+.ev-steps .d { color: var(--muted); flex: none; font-size: 12.5px; }
+.ev-steps .t { color: var(--t-event); font-weight: 600; flex: none; width: 48px; }
+.ev-steps .n { min-width: 0; overflow-wrap: anywhere; }
 .ev-form { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
 .ev-form.col { flex-direction: column; align-items: stretch; }
 .ev-form .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -1363,7 +1377,10 @@ h1, h2, h3 { text-wrap: balance; }
         return '<li><label><input type="checkbox" data-line="' + c.line + '"' + (c.done ? " checked" : "") + '> <span' + (c.done ? ' class="done"' : "") + ">" + esc(c.text) + "</span></label></li>";
       }).join("") + "</ul>" : '<p class="t-empty">준비할 것을 적어 두면 당일 아침 브리핑에 함께 나와요.</p>') +
       '<form class="ev-form" data-act="todo"><input type="text" name="text" maxlength="200" placeholder="준비 항목 추가" autocomplete="off"><button type="submit" class="text-btn">추가</button></form>';
-    var memo = '<h3 class="ev-h">메모</h3>' + (n && n.memo ? '<div class="md ev-memo">' + renderMd(n.memo) + "</div>" : '<p class="t-empty">아직 메모가 없어요.</p>') +
+    var stepsHtml = '<h3 class="ev-h">동선 ' + (n && n.steps && n.steps.length ? '<span class="count">' + n.steps.length + "단계</span>" : "") + "</h3>" +
+      (n && n.steps && n.steps.length ? '<ul class="ev-steps">' + n.steps.map(function (s) { return "<li><span class=\"d\">" + (s.day !== e.start.slice(0, 10) ? esc(s.day.slice(5)) + " " : "") + '</span><span class="t">' + esc(s.time) + '</span><span class="n">' + esc(s.text) + "</span></li>"; }).join("") + "</ul>" : '<p class="t-empty">출발 시각과 이동을 적어 두면 그날 시간표에 겹쳐 보이고, 시각 10분 전에 카톡으로 알려요.</p>') +
+      '<form class="ev-form" data-act="step"><input type="text" name="text" maxlength="200" placeholder="14:00 집 출발 (자가용 50분)" autocomplete="off"><button type="submit" class="text-btn">추가</button></form>';
+    var memo = stepsHtml + '<h3 class="ev-h">메모</h3>' + (n && n.memo ? '<div class="md ev-memo">' + renderMd(n.memo) + "</div>" : '<p class="t-empty">아직 메모가 없어요.</p>') +
       '<form class="ev-form col" data-act="memo"><textarea name="text" rows="3" maxlength="4000" placeholder="이 일정에 남길 메모 (동선, 준비물, 통화 내용…)"></textarea><div class="row"><span class="ev-status" aria-live="polite"></span><button type="submit" class="text-btn primary">메모 남기기</button></div></form>' +
       (n ? '<p class="ev-note-link"><button type="button" class="wikilink" data-path="' + esc(n.path) + '">일정 노트 열기</button></p>' : "");
     $("panelBody").innerHTML = '<table class="fm"><caption class="sr-only">일정 정보</caption>' + rows + "</table>" + desc + todo + memo;
@@ -1573,6 +1590,11 @@ h1, h2, h3 { text-wrap: balance; }
       var a = minsOf(e.start), b = Math.max(a + 20, minsOf(e.end)), cls = "db-ev" + (b <= nowM ? " past" : a <= nowM && nowM < b ? " now" : "") + (conf[e.id] ? " conflict" : "");
       return '<div class="' + cls + '" style="left:' + pct(a) + "%;width:" + Math.max(1.5, pct(b) - pct(a)) + '%" title="' + esc(hm(e.start) + "-" + hm(e.end) + " " + e.title) + '">' + esc(e.title) + "</div>";
     }).join("");
+    var steps = ag.steps_today || [];
+    var stepMarks = steps.map(function (s) {
+      var a = minsOf("2000-01-01T" + s.time + ":00"), b = a + (s.minutes || 30);
+      return '<div class="db-step' + (b <= nowM ? " past" : a <= nowM && nowM < b ? " now" : "") + '" style="left:' + pct(a) + "%;width:" + Math.max(1, pct(b) - pct(a)) + '%" title="' + esc(s.time + " " + s.text) + '"></div>';
+    }).join("");
     var nowMark = (nowM >= H0 * 60 && nowM <= H1 * 60) ? '<div class="db-now" style="left:' + pct(nowM) + '%" aria-label="지금"></div>' : "";
     today.forEach(function (e) { S.events[e.id] = e; });
     var list = today.length ? '<ul class="db-list">' + today.map(function (e) {
@@ -1583,7 +1605,11 @@ h1, h2, h3 { text-wrap: balance; }
       (bad[0].hint ? "<br>" + esc(bad[0].hint).replace(/`([^`]+)`/g, "<code>$1</code>") : (bad[0].error ? "<br>" + esc(bad[0].error) : "")) + "</p>" : "";
     var head = '<div class="db-head"><b>오늘 시간표</b><span>' + (today.length ? today.length + "개" : "") + (allday.length ? " · 종일 " + allday.length : "") + (ag.next ? '</span><span>다음: ' + esc(hm(ag.next.start) + " " + ag.next.title) : "") +
       '</span><span class="src">' + esc(srcs.filter(function (s) { return s.status === "ok"; }).map(function (s) { return s.name; }).join(", ")) + "</span></div>";
-    el.innerHTML = head + '<div class="db-track">' + hours + blocks + nowMark + "</div>" + list + srcNote;
+    var stepList = steps.length ? '<ul class="db-steps" aria-label="오늘 동선">' + steps.map(function (s) {
+      var a = minsOf("2000-01-01T" + s.time + ":00");
+      return '<li class="' + (a + (s.minutes || 30) <= nowM ? "past" : a <= nowM ? "now" : "") + '"><span class="t">' + esc(s.time) + '</span><span class="n">' + esc(s.text) + (s.event_title ? "<small>" + esc(s.event_title) + "</small>" : "") + "</span></li>";
+    }).join("") + "</ul>" : "";
+    el.innerHTML = head + '<div class="db-track">' + hours + blocks + stepMarks + nowMark + "</div>" + list + stepList + srcNote;
   }
   function noteMark(e) {
     var n = e.note; if (!n) return "";

@@ -2192,7 +2192,7 @@ def dash_today(vault, today=None, now=None, widgets=None, agenda=None):
     ag = dict(agenda if agenda is not None else collect_agenda_safe(7, now=now))
     if vault:
         attach_event_notes(vault, ag)
-    t["agenda"] = {k: ag.get(k) for k in ("today", "next", "current", "conflicts", "sources", "total")}
+    t["agenda"] = {k: ag.get(k) for k in ("today", "next", "current", "conflicts", "sources", "total", "steps_today", "steps_upcoming")}
     t["agenda"]["upcoming"] = (ag.get("upcoming") or [])[:6]
     t["agenda"]["upcoming_count"] = len(ag.get("upcoming") or [])
     t["agenda"]["sentence"] = agenda_mod.agenda_sentence(ag)
@@ -2688,12 +2688,54 @@ def _checklist(body):
     return items
 
 
+STEP_RE = re.compile(r"^\s*[-*]\s+(\d{1,2}):(\d{2})\s+(.*?)\s*$")
+DAY_HEAD_RE = re.compile(r"^#{2,4}\s*(?:(\d{4})-)?(\d{1,2})[-/.](\d{1,2})\b")
+DUR_RE = re.compile(r"\((?:[^()]*?,\s*)?(\d{1,3})\s*분\)")
+
+
+def parse_steps(body, default_day, year_hint=None):
+    """`## 동선` 절의 `- HH:MM 내용 (…NN분)` 줄. `### MM-DD` 소제목이 날짜를 바꾼다. 반환 [{day, time, text, minutes, line}]."""
+    steps, in_route, day = [], False, default_day
+    yh = int(str(year_hint or default_day or date.today().isoformat())[:4])
+    for i, ln in enumerate(body.split("\n")):
+        if ln.startswith("## "):
+            in_route = ln.strip() in ("## 동선", "## 일정", "## 계획")
+            if not in_route:
+                continue
+            day = default_day
+            continue
+        if not in_route:
+            continue
+        dh = DAY_HEAD_RE.match(ln)
+        if dh:
+            y = int(dh.group(1) or yh)
+            try:
+                day = date(y, int(dh.group(2)), int(dh.group(3))).isoformat()
+            except ValueError:
+                pass
+            continue
+        m = STEP_RE.match(ln)
+        if not m:
+            continue
+        hh, mm = int(m.group(1)), int(m.group(2))
+        if not (0 <= hh < 24 and 0 <= mm < 60):
+            continue
+        text = m.group(3)
+        dm = DUR_RE.search(text)
+        steps.append({"day": day, "time": f"{hh:02d}:{mm:02d}", "text": text, "minutes": int(dm.group(1)) if dm else 30, "line": i})
+    return steps
+
+
 def _event_note_payload(n):
     items = _checklist(n.body)
     memo = n.body.split("## 메모", 1)[1].strip() if "## 메모" in n.body else ""
+    if "## 동선" in memo or "## 준비" in memo:
+        memo = re.split(r"\n## ", memo)[0]
+    day = str(n.meta.get("event_date") or n.created)[:10]
     return {"path": n.rel, "title": n.title, "checklist": items,
             "done": sum(1 for x in items if x["done"]), "total": len(items),
-            "memo": memo[:1200], "location": n.meta.get("location") or ""}
+            "memo": memo[:1200], "location": n.meta.get("location") or "",
+            "steps": parse_steps(n.body, day)}
 
 
 def event_notes_index(vault):
@@ -2729,6 +2771,20 @@ def attach_event_notes(vault, ag):
     if ag.get("next"):
         k = ag["next"].get("key")
         ag["next"]["note"] = _event_note_payload(exact[k]) if k in exact else None
+    # 동선: 오늘과 다가오는 날의 단계들(같은 노트가 여러 일정에 붙어도 한 번만)
+    today_iso = str(ag.get("now") or datetime.now().isoformat())[:10]
+    seen, steps = set(), []
+    for e in (ag.get("today") or []) + (ag.get("upcoming") or []):
+        n = e.get("note")
+        if not n or n["path"] in seen:
+            continue
+        seen.add(n["path"])
+        for st in n.get("steps") or []:
+            steps.append(dict(st, event_title=e["title"], event_key=e.get("key"), note_path=n["path"],
+                              start=f"{st['day']}T{st['time']}", is_today=st["day"] == today_iso))
+    steps.sort(key=lambda s: s["start"])
+    ag["steps_today"] = [s for s in steps if s["is_today"]]
+    ag["steps_upcoming"] = [s for s in steps if s["day"] > today_iso][:20]
     return ag
 
 
@@ -2792,6 +2848,35 @@ def event_note_action(vault, body):
         git_commit(vault, f"brain: event {action} {n.rel}")
         n = Note(vault, n.path)
         return {"ok": True, "created": created, "note": _event_note_payload(n)}
+    if action == "step":
+        text = " ".join(str(body.get("text") or "").split())
+        m = re.match(r"^(\d{1,2}):(\d{2})\s+(.+)$", text)
+        if not m:
+            raise BrainError("동선은 'HH:MM 내용' 형식이에요 (예: 14:00 집 출발 (자가용 50분))")
+        n, created = find_or_create_event_note(vault, key, body.get("title"), body.get("date"), body.get("end"), body.get("location"))
+        day = str(body.get("day") or "")[:10]
+        header = "## 동선"
+        new_body = n.body
+        if day and day != str(n.meta.get("event_date") or "")[:10]:
+            parse_date(day, "동선 날짜")
+            sub = f"### {day[5:]}"
+            if sub not in new_body:
+                new_body = _append_section(new_body, header, sub)
+            # 소제목 아래에 붙이기: 소제목부터 다음 소제목/절 전까지의 블록 끝에 삽입
+            lines = new_body.rstrip("\n").split("\n")
+            si = next(i for i, l in enumerate(lines) if l.strip() == sub)
+            ei = len(lines)
+            for j in range(si + 1, len(lines)):
+                if lines[j].startswith("### ") or lines[j].startswith("## "):
+                    ei = j
+                    break
+            lines.insert(ei, f"- {text}")
+            new_body = "\n".join(lines) + "\n"
+        else:
+            new_body = _append_section(new_body, header, f"- {text}")
+        write_note(n.path, n.meta, new_body)
+        git_commit(vault, f"brain: event step {n.rel}")
+        return {"ok": True, "created": created, "note": _event_note_payload(Note(vault, n.path))}
     if action == "check":
         rel = str(body.get("path") or "")
         vault = Path(vault).resolve()  # 임시 폴더 심볼릭 링크(/var→/private/var)에서도 같은 기준으로 비교
@@ -2809,7 +2894,7 @@ def event_note_action(vault, body):
         write_note(n.path, n.meta, "\n".join(lines))
         git_commit(vault, f"brain: event check {n.rel}")
         return {"ok": True, "note": _event_note_payload(Note(vault, n.path))}
-    raise BrainError("action은 memo · todo · check 중 하나")
+    raise BrainError("action은 memo · todo · step · check 중 하나")
 
 
 # ───────────────────────── 사무실(/office): 직원=자동화, 팀=방, Claude 배경 작업 ─────────────────────────
@@ -3064,6 +3149,75 @@ def cmd_task(args):
     return EXIT_OK
 
 
+REMIND_STATE = "reminded.json"
+
+
+def _remind_state_path():
+    return agenda_mod.cache_dir() / REMIND_STATE
+
+
+def due_reminders(ag, now, steps_before=10, events_before=30):
+    """지금부터 N분 안에 시작하는 동선 단계·시간 일정. 반환 [{id, when, text}]."""
+    out = []
+    tz = now.tzinfo
+    for st in ag.get("steps_today") or []:
+        t = datetime.fromisoformat(st["start"]).replace(tzinfo=tz)
+        lead = (t - now).total_seconds() / 60
+        if -2 <= lead <= steps_before:
+            out.append({"id": f"step|{st['start']}|{st['text']}", "when": st["time"], "text": f"{st['time']} {st['text']}" + (f" ({st['event_title']})" if st.get("event_title") else "")})
+    for e in ag.get("today") or []:
+        if e.get("all_day"):
+            continue
+        t = datetime.fromisoformat(e["start"])
+        lead = (t - now).total_seconds() / 60
+        if -2 <= lead <= events_before:
+            out.append({"id": f"event|{e['start']}|{e['title']}", "when": e["start"][11:16], "text": f"{e['start'][11:16]} {e['title']}" + (f" @ {e['location']}" if e.get("location") else "") + f" ({int(max(0, lead))}분 뒤)"})
+    return out
+
+
+def cmd_remind(args):
+    """출발·시작 알림. launchd로 10분마다 돌리고, 같은 알림은 한 번만 보낸다."""
+    try:
+        v = vault_path()
+        if not vault_exists(v):
+            v = None
+    except BrainError:
+        v = None
+    now = datetime.now().astimezone()
+    ag = collect_agenda_safe(2, now=now)
+    if v:
+        attach_event_notes(v, ag)
+    due = due_reminders(ag, now, args.steps_before, args.events_before)
+    sp = _remind_state_path()
+    try:
+        state = json.loads(sp.read_text(encoding="utf-8")) if sp.is_file() else {}
+    except (OSError, ValueError):
+        state = {}
+    today = now.date().isoformat()
+    state = {k: v2 for k, v2 in state.items() if str(v2)[:10] == today}  # 어제 것은 잊는다
+    fresh = [d for d in due if d["id"] not in state]
+    sent = 0
+    if fresh and args.kakao:
+        helper = kakao_helper_path()
+        if not helper:
+            log("카톡 헬퍼가 없어요.")
+        else:
+            msg = "⏰ " + " / ".join(d["text"] for d in fresh)[:190]
+            r = subprocess.run([sys.executable, str(helper), msg], capture_output=True, text=True, timeout=60)
+            if r.returncode == 0:
+                sent = len(fresh)
+            else:
+                log(f"카톡 발송 실패: {(r.stderr or r.stdout).strip()[:160]}")
+    if fresh and (sent or not args.kakao):
+        for d in fresh:
+            state[d["id"]] = now.isoformat(timespec="minutes")
+        sp.parent.mkdir(parents=True, exist_ok=True)
+        sp.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    emit(args, {"due": due, "fresh": fresh, "sent": sent},
+         ("알림 " + str(len(fresh)) + "건" + (" 발송" if sent else "") + ": " + " / ".join(d["text"] for d in fresh)) if fresh else "지금 알릴 것 없음")
+    return EXIT_OK
+
+
 def cmd_event(args):
     v = require_vault()
     if args.action == "show":
@@ -3077,10 +3231,12 @@ def cmd_event(args):
     text = args.text
     if args.body_file:
         text = sys.stdin.read() if args.body_file == "-" else Path(os.path.expanduser(args.body_file)).read_text(encoding="utf-8")
-    res = event_note_action(v, {"action": args.action, "key": args.key, "text": text, "end": args.end, "location": args.location})
+    res = event_note_action(v, {"action": args.action, "key": args.key, "text": text, "end": args.end, "location": args.location, "day": args.day})
     note = res["note"]
-    emit(args, res, f"{'새 일정 노트 생성 후 ' if res['created'] else ''}{'메모 추가' if args.action == 'memo' else '준비 항목 추가'}: {note['path']}"
-                    + (f" (준비 {note['done']}/{note['total']})" if note["total"] else ""))
+    what = {"memo": "메모 추가", "todo": "준비 항목 추가", "step": "동선 추가"}[args.action]
+    emit(args, res, f"{'새 일정 노트 생성 후 ' if res['created'] else ''}{what}: {note['path']}"
+                    + (f" (준비 {note['done']}/{note['total']})" if note["total"] else "")
+                    + (f" (동선 {len(note['steps'])}단계)" if note.get("steps") else ""))
     return EXIT_OK
 
 
@@ -3311,6 +3467,11 @@ def build_parser():
     s = add("agenda", "일정: 오늘·다가오는 N일(설정된 캘린더 소스에서)", cmd_agenda)
     s.add_argument("--days", type=int, default=7, help="며칠치(기본 7)")
 
+    s = add("remind", "출발·시작 알림: 곧 시작하는 동선 단계(기본 10분 전)·시간 일정(30분 전). 같은 알림은 하루 한 번", cmd_remind)
+    s.add_argument("--kakao", action="store_true", help="카톡으로 발송")
+    s.add_argument("--steps-before", type=int, default=10, help="동선 단계 몇 분 전(기본 10)")
+    s.add_argument("--events-before", type=int, default=30, help="시간 일정 몇 분 전(기본 30)")
+
     s = add("brief", "아침 브리핑(today와 같음). --kakao면 카톡으로 200자 발송", cmd_brief)
     s.add_argument("--kakao", action="store_true", help="카톡 나에게 보내기(헬퍼 필요)")
 
@@ -3325,9 +3486,10 @@ def build_parser():
     s.add_argument("--project", help="프로젝트")
 
     s = add("event", "일정 노트: memo <키> <내용> · todo <키> <항목> · show <키>  (키: 'YYYY-MM-DD|제목')", cmd_event)
-    s.add_argument("action", choices=("memo", "todo", "show"))
+    s.add_argument("action", choices=("memo", "todo", "step", "show"))
     s.add_argument("key", help="일정 키 'YYYY-MM-DD|제목' (agenda --json의 key)")
-    s.add_argument("text", nargs="?", help="메모 내용 또는 준비 항목")
+    s.add_argument("text", nargs="?", help="메모 내용 · 준비 항목 · 동선 'HH:MM 내용 (NN분)'")
+    s.add_argument("--day", help="step: 여러 날 계획에서 이 단계의 날짜 YYYY-MM-DD")
     s.add_argument("--body-file", help="내용 파일('-'면 stdin)")
     s.add_argument("--end", help="여러 날 일정이면 종료일 YYYY-MM-DD(같은 이름의 날짜들에 함께 붙음)")
     s.add_argument("--location", help="장소 메모")

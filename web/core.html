@@ -253,6 +253,7 @@ button { cursor: pointer; }
   function briefLines(t) {
     var out = [t.greeting ? t.greeting + "." : "안녕하세요."], ws = t.widgets_summary || {}, ag = t.agenda || {};
     if (ag.sentence) out.push(ag.sentence);
+    if (ag.steps_today && ag.steps_today.length) out.push("오늘 동선은 " + ag.steps_today.slice(0, 3).map(function (s) { return s.time + " " + s.text.replace(/\s*\(.*\)\s*$/, ""); }).join(", ") + (ag.steps_today.length > 3 ? " 등" : "") + "이에요.");
     var bad = (t.top_widgets || []).filter(function (w) { return w.status === "fail" || w.status === "stale"; });
     if (bad.length) out.push(shortTitle(bad[0].title) + (bad.length > 1 ? " 외 " + (bad.length - 1) + "개" : "") + "가 " + (bad[0].status === "fail" ? "실패" : "오래된") + " 상태예요.");
     else if (ws.ok) out.push("자동화 " + ws.ok + "개는 모두 정상이에요.");

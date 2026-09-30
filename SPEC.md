@@ -182,3 +182,12 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 쓰기 `POST /api/task`(토큰): add(text, due|someday|waiting|project) · check(line, done) · move(line, to today|tomorrow|week|someday|clear|날짜; 다른 태그 유지) · remove(line). CLI `task add|list|done|undo|move|remove`
 - 보드: 새 섹션 「할 일」(추가 폼 + 4열 유리 패널, 체크·호버 시 오늘/내일/언젠가/삭제, 파생 항목은 종류 배지와 원본 링크), 히어로 할 일 카드는 오늘 묶음 요약. 코어: "~ 할 일 추가"/"할 일 추가: ~" 음성 등록(끝에 오늘/내일이면 마감), "할 일" 질문은 오늘 묶음으로 답
 - 테스트 +4, 총 130
+
+## v0.11 동선과 출발 알림 (2026-09-30)
+
+- 일정 노트 `## 동선` 절: `- HH:MM 내용 (…NN분)` 단계, 여러 날 계획은 `### MM-DD`(또는 YYYY-MM-DD) 소제목으로 날짜 전환. `parse_steps` → `note.steps[{day,time,text,minutes,line}]`
+- `attach_event_notes`가 `agenda.steps_today`(오늘)·`steps_upcoming`(20개)을 붙임(같은 노트 중복 제외). `/api/today`·`/api/agenda`에 포함
+- 쓰기: `POST /api/event-note {action: step, key, text: "HH:MM …", day?}`, CLI `event step <키> "<HH:MM 내용>" [--day]`
+- 보드: 시간표 트랙 아래 동선 마커(가는 막대), 목록 아래 「오늘 동선」 줄, 상세 패널에 「동선」 절(날짜 접두어)과 추가 폼. 코어 브리핑에 "오늘 동선은 …" 문장
+- `brain.py remind [--kakao] [--steps-before 10] [--events-before 30]`: 오늘 동선 단계(기본 10분 전)와 시간 일정(30분 전)을 카톡으로. 같은 알림은 `~/.cache/second-brain/reminded.json`으로 하루 한 번. launchd `com.secondbrain.remind`(600초 주기). 위젯 brain-remind(운영팀)
+- 테스트 +3, 총 133

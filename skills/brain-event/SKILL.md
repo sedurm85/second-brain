@@ -11,6 +11,7 @@ allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py *)
 2. 메모: `brain.py event memo "<key>" "<사용자가 말한 원문>"` (여러 줄이면 임시 파일 + `--body-file`). 요약하지 말고 원문 그대로.
 3. 준비 항목: `brain.py event todo "<key>" "<항목>"` 을 항목마다 한 번씩.
 4. 여러 날 일정(여행 등)은 첫 호출에 `--end YYYY-MM-DD`를 붙이면 같은 이름의 날짜들에 한 노트가 함께 붙는다. 장소는 `--location`.
+4-1. 동선: `brain.py event step "<key>" "14:00 집 출발 (자가용 50분)"` — 시각·내용·괄호 안 소요분. 여러 날 계획은 `--day YYYY-MM-DD`로 날짜를 지정. 동선은 그날 보드 시간표에 겹쳐 보이고 `brain.py remind --kakao`(10분마다 launchd)가 시각 10분 전에 카톡으로 알린다. 사용자가 "여행 일정 넣어줘"라며 여러 줄을 말하면 한 줄씩 step으로, 준비물은 todo로 나눈다.
 5. 보여주기: `brain.py event show "<key>"`.
 6. 출력은 두 줄: 저장된 노트 경로 + "대시보드에서 그 일정을 누르면 같은 메모가 보여요" 또는 준비 진행(n/m).
 
