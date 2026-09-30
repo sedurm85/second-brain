@@ -1453,6 +1453,46 @@ def dash_decisions(vault, today=None):
     return out
 
 
+def _journal_questions(n):
+    """일지 본문 「## 되돌아볼 질문」 체크박스 전부(상태 포함). 보드 체크는 event-note check로."""
+    lines = n.body.split("\n")
+    try:
+        start = next(i for i, l in enumerate(lines) if l.strip() == "## 되돌아볼 질문")
+    except StopIteration:
+        return []
+    out = []
+    for j in range(start + 1, len(lines)):
+        if lines[j].startswith("## "):
+            break
+        m = CHECKBOX_RE.match(lines[j])
+        if m:
+            out.append({"text": m.group(4).strip(), "line": j, "done": m.group(2).lower() == "x"})
+    return out
+
+
+def dash_journals(vault, limit=14):
+    """최근 일지: 하루(「오늘」 절 불릿)와 주간 회고(「이번 주」 절 불릿 + 되돌아볼 질문)를 최신순으로 나눠 반환."""
+    limit = max(1, min(int(limit or 14), 60))
+    daily, weekly = [], []
+    for n in load_notes(vault):
+        if n.type != "journal":
+            continue
+        is_weekly = n.stem.endswith("-weekly") or n.meta.get("journal_kind") == "weekly"
+        d = str(n.meta.get("journal_date") or n.created)[:10]
+        sections = note_sections(n.body)
+        item = {"path": n.rel, "title": n.title, "date": d, "summary": str(n.meta.get("summary") or "")}
+        if is_weekly:
+            item["lines"] = [l[2:].strip() for l in sections.get("이번 주", "").split("\n") if l.startswith("- ")][:5]
+            item["questions"] = _journal_questions(n)
+            weekly.append(item)
+        else:
+            item["lines"] = [l[2:].strip() for l in sections.get("오늘", "").split("\n") if l.startswith("- ")][:5]
+            daily.append(item)
+    daily.sort(key=lambda x: (x["date"], x["path"]), reverse=True)
+    weekly.sort(key=lambda x: (x["date"], x["path"]), reverse=True)
+    return {"daily": daily[:limit], "weekly": weekly[:limit]}
+
+
 def dash_projects(vault):
     notes = load_notes(vault)
     hubs = _project_hubs(notes)
@@ -1642,6 +1682,26 @@ def build_demo_assistant(vault, today):
         {"id": "scrape", "title": "채용 공고 수집 (월·목)", "kind": "log", "source": str(demo / "scrape.log"), "team": "커리어팀", "status": {"ok_pattern": "len:", "fail_pattern": "Traceback|Error"}, "lines": 4},
         {"id": "growth", "title": "카페 회원 추이", "kind": "csv", "source": str(demo / "growth.csv"), "team": "콘텐츠팀", "x": "date", "y": "members", "last": 14},
     ]}, ensure_ascii=False, indent=2), encoding="utf-8")
+    # 일지 데모: 하루 일지(어제, 4줄) · 주간 회고(오늘, 질문 3개 미체크). 데모 캐시는 격리되지 않아 제안은 넣지 않음
+    j_day = d(-1).isoformat()
+    j_title = f"{j_day} 일지"
+    j_lines = ["세컨드브레인 그래프 화면 초안을 붙였다", "카페 게시판 구조 회의에서 5개로 정리했다",
+               "크론 실패 로그를 확인하고 재시도 로직을 추가했다", "저녁에 항공권 최저가 확인 후 저녁 약속에 다녀왔다"]
+    j_summary = "그래프 초안, 게시판 정리, 크론 재시도 추가"
+    j_body = (f"# {j_title}\n\n## 오늘\n" + "".join(f"- {l}\n" for l in j_lines)
+              + "\n## 잘한 것\n- 크론 실패를 미루지 않고 바로 고쳤다\n\n## 내일 첫 일\n- 항공권 알림 임계값 다시 점검\n")
+    create_note(vault, "journal", j_title, tags=["일지"], body=j_body, created=j_day,
+                extra={"journal_date": j_day, "summary": j_summary})
+    r_day = today.isoformat()
+    r_title = f"{r_day} 주간 회고"
+    r_week = ["세컨드브레인 그래프 화면을 붙였다", "카페 게시판을 5개로 줄이기로 정했다", "크론 실패가 한 번 있었고 바로 고쳤다"]
+    r_questions = ["대시보드를 로컬 서버로 계속 둘지 다시 볼까", "게시판 5개 제한이 아직 맞는지", "크론 재시도 로직을 다른 위젯에도 넓힐지"]
+    r_summary = "그래프 반영, 게시판 5개 확정, 크론 재시도 점검"
+    r_body = (f"# {r_title}\n\n{d(-7).isoformat()} ~ {r_day} · 노트 12 · 결정 2 · 일지 5\n\n"
+              "## 이번 주\n" + "".join(f"- {l}\n" for l in r_week)
+              + "\n## 되돌아볼 질문\n" + "".join(f"- [ ] {q}\n" for q in r_questions))
+    create_note(vault, "journal", r_title, tags=["회고"], body=r_body, created=r_day,
+                extra={"journal_kind": "weekly", "journal_date": r_day, "since": d(-7).isoformat(), "summary": r_summary})
 
 
 def demo_overrides(vault):
@@ -2664,6 +2724,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._json(200, dash_note(vault, (qs.get("path") or [""])[0]))
             if route == "/api/timeline":
                 return self._json(200, dash_timeline(vault, _int_param(qs, "days", 30, hi=3650), today))
+            if route == "/api/journals":
+                return self._json(200, dash_journals(vault, _int_param(qs, "limit", 14, hi=60)))
             if route == "/api/decisions":
                 return self._json(200, dash_decisions(vault, today))
             if route == "/api/projects":

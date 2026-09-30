@@ -327,3 +327,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `brain-journal` 스킬 추가: 기존 `journal`/`retro` CLI를 대화로 노출. 오늘 일지 작성·조회, 주간 회고 작성 후 되돌아볼 질문 3개를 하나씩 물어 답을 `new --type note`로 원문 그대로 저장하고 회고 노트와 `link`. 체크박스 토글은 CLI가 없어 보드 안내만 한다.
 - `brain-doctor` 스킬 추가: 기존 `doctor` CLI를 대화로 노출. ✗ 항목마다 fix가 `brain.py` 명령이면 승인 후 대신 실행(`enrich`는 별도로 한 번 더 확인), 외부 설정은 안내만.
 - README.md·README.en.md의 "그 밖에" 문장에 두 스킬 추가.
+## v0.27 보드 「일지」 섹션 (2026-09-30)
+
+- `dash_journals(vault, limit=14)` + `GET /api/journals?limit=N`(기본 14, 최대 60): 하루 일지(`## 오늘`)와 주간 회고(`## 이번 주` + `## 되돌아볼 질문` 체크박스 전부)를 최신순으로 나눠 `{daily, weekly}`로 반환. `journal_kind: weekly` 또는 `-weekly` stem으로 구분
+- 보드: 내비 「일지」 + `#journals` 섹션, 두 열(하루 일지 / 주간 회고). 하루 일지는 요약 한 줄 + 펼치기로 불릿, 회고는 요약·불릿·질문 체크박스(기존 `event-note check`로 토글 후 재조회). 제목을 누르면 기존 노트 패널이 열림. 빈 상태는 「아직 일지가 없어요. 21:30 저녁 마감이 첫 일지를 써요.」
+- 데모(`serve --demo`): 어제 하루 일지(4줄)·오늘 주간 회고(미체크 질문 3개)를 볼트에 추가. 데모 제안(suggestions)은 캐시 디렉터리가 볼트별로 격리되지 않아(`agenda.cache_dir()`가 실제 `~/.cache`를 씀) 생략
+- 테스트 184

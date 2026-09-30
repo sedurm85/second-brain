@@ -288,8 +288,8 @@ class DemoVaultTest(unittest.TestCase):
         self.assertEqual(v, Path(os.path.realpath(self.tmp)) / ".cache" / "second-brain" / "demo")
         self.assertTrue(brain.vault_exists(v))
         s = brain.dash_summary(v, TODAY)
-        self.assertEqual(s["counts"], {"notes": 20, "decisions": 6, "projects": 3, "people": 2,
-                                       "total": 31})
+        self.assertEqual(s["counts"], {"notes": 22, "decisions": 6, "projects": 3, "people": 2,
+                                       "total": 33})
         d = brain.dash_decisions(v, TODAY)
         self.assertEqual({k: len(x) for k, x in d.items()},
                          {"open": 2, "decided": 3, "superseded": 1})
@@ -303,7 +303,7 @@ class DemoVaultTest(unittest.TestCase):
     def test_demo_rebuild_is_idempotent(self):
         brain.build_demo_vault(today=TODAY)
         v = brain.build_demo_vault(today=TODAY)
-        self.assertEqual(brain.dash_summary(v, TODAY)["counts"]["total"], 31)
+        self.assertEqual(brain.dash_summary(v, TODAY)["counts"]["total"], 33)
 
 
 if __name__ == "__main__":

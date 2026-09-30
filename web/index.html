@@ -525,6 +525,19 @@ h1, h2, h3 { text-wrap: balance; }
 .tl-chip:hover { background: var(--surface-2); }
 .tl-chip svg { width: 9px; height: 9px; flex: none; }
 
+/* ───────── 일지: 하루 일지 · 주간 회고 두 열 ───────── */
+.journals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.jitem { padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.jitem:last-child { border-bottom: 0; }
+.j-title { display: block; width: 100%; text-align: left; padding: 0; margin: 0; border: 0; background: none; color: var(--ink); font-weight: 600; font-size: 14px; line-height: 1.45; cursor: pointer; }
+.j-title:hover { text-decoration: underline; text-underline-offset: 3px; }
+.j-date { font-size: 12.5px; color: var(--muted); margin-top: 2px; display: block; }
+.j-summary { font-size: 13px; color: var(--ink-2); margin: 6px 0 0; }
+.j-toggle { margin-top: 6px; }
+.j-lines { list-style: none; margin: 6px 0 0; padding: 0; font-size: 13px; color: var(--ink-2); }
+.j-lines li { padding: 3px 0 3px 14px; position: relative; line-height: 1.5; }
+.j-lines li::before { content: "–"; position: absolute; left: 0; color: var(--t-journal); }
+
 /* ───────── 프로젝트: 두 열 행 ───────── */
 .projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
 .pcard { padding: 16px 20px; min-width: 0; }
@@ -591,6 +604,7 @@ h1, h2, h3 { text-wrap: balance; }
   .hero-text { grid-template-columns: minmax(0, 1fr); }
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .board { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .journals { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .wgrid, .wgrid.attention { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 860px) {
@@ -653,6 +667,7 @@ h1, h2, h3 { text-wrap: balance; }
       <li><a href="#overview"><span class="dot"></span>개요</a></li>
       <li><a href="#decisions"><span class="dot"></span>결정</a></li>
       <li><a href="#timeline"><span class="dot"></span>타임라인</a></li>
+      <li><a href="#journals"><span class="dot"></span>일지</a></li>
       <li><a href="#projects"><span class="dot"></span>프로젝트</a></li>
     </ul>
     </nav>
@@ -743,6 +758,11 @@ h1, h2, h3 { text-wrap: balance; }
       <section class="section" id="timeline" aria-labelledby="tl-h">
         <div class="section-head"><h2 id="tl-h">타임라인</h2><p>최근 30일, 최신순.</p></div>
         <div id="tl"><div class="loading">타임라인 불러오는 중…</div></div>
+      </section>
+
+      <section class="section" id="journals" aria-labelledby="jr-h">
+        <div class="section-head"><h2 id="jr-h">일지</h2><p>21:30 저녁 마감 일지와 주간 회고예요. 최근 14개.</p></div>
+        <div id="jr"><div class="loading">일지 불러오는 중…</div></div>
       </section>
 
       <section class="section" id="projects" aria-labelledby="pj-h">
@@ -1313,6 +1333,53 @@ h1, h2, h3 { text-wrap: balance; }
             shapeSvg(it.type) + "<span>" + esc(it.title) + "</span></button>";
         }).join("") + "</div></div>";
     }).join("") + "</div>";
+  }
+
+  /* ───────── 일지 ───────── */
+  function jitem(it, kind) {
+    var html = '<div class="jitem">' +
+      '<button type="button" class="j-title" data-path="' + esc(it.path) + '">' + esc(it.title) + "</button>" +
+      '<span class="j-date">' + esc(fmtDate(it.date)) + " · " + esc(relDays(it.date)) + "</span>" +
+      (it.summary ? '<p class="j-summary">' + esc(it.summary) + "</p>" : "");
+    if (kind === "daily") {
+      html += (it.lines && it.lines.length ? '<button type="button" class="text-btn j-toggle" aria-expanded="false">' + it.lines.length + "줄 보기</button>" +
+        '<ul class="j-lines" hidden>' + it.lines.map(function (l) { return "<li>" + esc(l) + "</li>"; }).join("") + "</ul>" : "");
+    } else {
+      html += (it.lines && it.lines.length ? '<ul class="j-lines">' + it.lines.map(function (l) { return "<li>" + esc(l) + "</li>"; }).join("") + "</ul>" : "");
+      if (it.questions && it.questions.length) {
+        html += '<ul class="rq">' + it.questions.map(function (q) {
+          return '<li class="' + (q.done ? "done" : "") + '"><label><input type="checkbox" data-jq-path="' + esc(it.path) + '" data-jq-line="' + q.line + '"' + (q.done ? " checked" : "") + '> <span>' + esc(q.text) + "</span></label></li>";
+        }).join("") + "</ul>";
+      }
+    }
+    return html + "</div>";
+  }
+  var JOURNAL_EMPTY = "아직 일지가 없어요. 21:30 저녁 마감이 첫 일지를 써요.";
+  function renderJournals(j) {
+    var daily = (j && j.daily) || [], weekly = (j && j.weekly) || [];
+    $("jr").innerHTML = '<div class="journals">' +
+      '<div class="col glass"><div class="col-head">하루 일지 <span class="count">' + daily.length + "</span></div>" +
+      (daily.length ? daily.map(function (it) { return jitem(it, "daily"); }).join("") : '<p class="col-empty">' + esc(JOURNAL_EMPTY) + "</p>") + "</div>" +
+      '<div class="col glass"><div class="col-head">주간 회고 <span class="count">' + weekly.length + "</span></div>" +
+      (weekly.length ? weekly.map(function (it) { return jitem(it, "weekly"); }).join("") : '<p class="col-empty">' + esc(JOURNAL_EMPTY) + "</p>") + "</div>" +
+      "</div>";
+    $("jr").querySelectorAll(".j-toggle").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var ul = btn.nextElementSibling, open = btn.getAttribute("aria-expanded") === "true";
+        btn.setAttribute("aria-expanded", open ? "false" : "true");
+        ul.hidden = open;
+      });
+    });
+    $("jr").querySelectorAll("[data-jq-path]").forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        post("event-note", { action: "check", path: cb.getAttribute("data-jq-path"), line: +cb.getAttribute("data-jq-line"), done: cb.checked })
+          .then(function () { loadJournals(); })
+          .catch(function (err) { cb.checked = !cb.checked; alert("저장 실패: " + (err.message || err)); });
+      });
+    });
+  }
+  function loadJournals() {
+    return api("journals", { limit: 14 }).then(renderJournals).catch(function (err) { fail($("jr"), "일지", err); });
   }
 
   /* ───────── 프로젝트 ───────── */
@@ -2042,7 +2109,7 @@ h1, h2, h3 { text-wrap: balance; }
           links.forEach(function (a) { a.classList.toggle("active", a.getAttribute("href") === "#" + id); });
         });
       }, { rootMargin: "-40% 0px -55% 0px" });
-      ["today-section", "tasks", "week", "graph-section", "automation", "overview", "decisions", "timeline", "projects"].forEach(function (id) { io.observe($(id)); });
+      ["today-section", "tasks", "week", "graph-section", "automation", "overview", "decisions", "timeline", "journals", "projects"].forEach(function (id) { io.observe($(id)); });
     }
   }
 
@@ -2064,6 +2131,7 @@ h1, h2, h3 { text-wrap: balance; }
     }).catch(function (err) { fail($("graphWrap"), "그래프", err); $("graphStats").textContent = "오류"; });
     api("decisions").then(renderDecisions).catch(function (err) { fail($("board"), "결정", err); });
     api("timeline", { days: 30 }).then(renderTimeline).catch(function (err) { fail($("tl"), "타임라인", err); });
+    loadJournals();
     var pj = api("projects").then(renderProjects).catch(function (err) { fail($("pj"), "프로젝트", err); });
     // 딥링크(#decisions 등): 내용이 다 그려진 뒤에 그 위치로 (비동기 로딩이라 브라우저 기본 앵커 이동은 빈 자리로 감)
     if (location.hash) {
