@@ -155,6 +155,7 @@ h1, h2, h3 { text-wrap: balance; }
 .search-results li[aria-selected="true"], .search-results li:hover { background: var(--surface-2); }
 .search-results .r-title { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
 .search-results .r-snip { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-results .r-summary { font-size: 12.5px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-results mark { background: none; color: var(--ink); font-weight: 600; text-decoration: underline; text-decoration-color: var(--ink); }
 .search-results .r-empty { color: var(--muted); cursor: default; }
 .icon-btn { height: 36px; width: 36px; flex: none; border-radius: var(--r); border: 1px solid var(--rule); background: var(--surface); display: grid; place-items: center; }
@@ -1578,6 +1579,7 @@ h1, h2, h3 { text-wrap: balance; }
       SR.items = items; SR.sel = -1;
       box.innerHTML = items.length ? items.map(function (r, i) {
         return '<li role="option" id="opt' + i + '" aria-selected="false" data-path="' + esc(r.path) + '"><div class="r-title">' + shapeSvg(r.type) + mark(r.title, q) + "</div>" +
+          (r.summary ? '<div class="r-summary muted">' + esc(r.summary) + "</div>" : "") +
           (r.snippets && r.snippets[0] ? '<div class="r-snip">' + mark(r.snippets[0], q) + "</div>" : "") + "</li>";
       }).join("") : '<li class="r-empty" role="option" aria-disabled="true">「' + esc(q) + "」에 대한 기록이 없어요</li>";
       box.hidden = false; input.setAttribute("aria-expanded", "true");
@@ -1686,6 +1688,7 @@ h1, h2, h3 { text-wrap: balance; }
     if (t.suggestions && t.suggestions.count) chores.push("채택을 기다리는 준비 제안 " + t.suggestions.count + "건");
     if (rv.length) chores.push("되돌아볼 결정 " + rv.length + "건");
     if (t.retro_questions && t.retro_questions.length) chores.push("회고 질문 " + t.retro_questions.length + "개");
+    if (t.week_plan && t.week_plan.length) chores.push("이번 주 계획 " + t.week_plan.length + "개");
     if (inbox.length) chores.push("할 일 " + inbox.length + "건");
     out.push(chores.length ? chores.join(", ") + "이 있어요." : "오늘 챙길 결정이나 할 일은 없어요.");
     var wk = t.this_week || {};
@@ -1731,6 +1734,10 @@ h1, h2, h3 { text-wrap: balance; }
     }).join("") + "</ul>" + (tk.today.length > 5 ? '<p class="t-empty">외 ' + (tk.today.length - 5) + '개, <a href="#tasks">할 일</a>에서 전체</p>' : "") :
       '<p class="t-empty">오늘 할 일이 없어요.' + ((tkc.week || 0) + (tkc.someday || 0) ? " 이번 주 " + (tkc.week || 0) + " · 언젠가 " + (tkc.someday || 0) + (tkc.waiting ? " · 기다림 " + tkc.waiting : "") : ' 아래 <a href="#tasks">할 일</a>에서 추가해요.') + "</p>";
     var inboxCount = tkc.today != null ? tkc.today : inbox.length;
+    var wp = t.week_plan || [];
+    var wpHtml = wp.length ? '<h4 class="rq-h">이번 주 계획 <small>' + esc(wp[0].date || "") + "</small></h4><ul class=\"rq\">" + wp.map(function (q) {
+      return '<li><label><input type="checkbox" data-rq-path="' + esc(q.path) + '" data-rq-line="' + q.line + '"> <span>' + esc(q.text) + "</span></label></li>";
+    }).join("") + "</ul>" : "";
     renderDaybar(t.agenda || {}, t.now);
     setTimeout(function () {
       document.querySelectorAll("[data-rq-path]").forEach(function (cb) {
@@ -1756,7 +1763,7 @@ h1, h2, h3 { text-wrap: balance; }
     $("todayGrid").innerHTML =
       '<div class="tcard wide"><h3>지금 볼 것</h3>' + auHtml + prepHtml + (upHtml ? '<h3 style="margin-top:12px">다가오는 일정 <span class="count">' + up.length + "</span></h3>" + upHtml : "") + "</div>" +
       '<div class="tcard"><h3>되돌아볼 결정 <span class="count">' + (rv.length + (t.retro_questions || []).length) + "</span></h3>" + rvHtml + "</div>" +
-      '<div class="tcard"><h3>할 일 <span class="count">' + inboxCount + "</span></h3>" + ibHtml + "</div>";
+      '<div class="tcard"><h3>할 일 <span class="count">' + inboxCount + "</span></h3>" + ibHtml + wpHtml + "</div>";
   }
 
   /* ───────── 일정: 오늘 시간표 스트립 · 이번 주 ───────── */

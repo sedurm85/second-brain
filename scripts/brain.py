@@ -1396,8 +1396,15 @@ def dash_graph(vault):
 
 def dash_search(vault, q, limit=20, today=None):
     res = search(vault, q, limit=limit, today=today)
+    notes_by_path = None
     for r in res:
         r["snippets"] = r.get("snippet", [])  # 대시보드 계약 키. CLI 호환 위해 snippet도 유지
+        if "summary" not in r:
+            if notes_by_path is None:
+                notes_by_path = {n.rel: n for n in load_notes(vault)}
+            n = notes_by_path.get(r["path"])
+            summary = str((n.meta.get("summary") if n else "") or "")
+            r["summary"] = summary[:160]
     return res
 
 
@@ -2416,6 +2423,32 @@ def retro_questions(notes, today, days=14, limit=3):
     return out[:limit]
 
 
+def week_plan(notes, today, days=14, limit=5):
+    """가장 최근 주간 회고(14일 안)의 「다음 주」 중 아직 체크하지 않은 것. 보드·코어에 노출, 체크는 event-note check로."""
+    since = (today - timedelta(days=days)).isoformat()
+    weekly = [n for n in notes if n.type == "journal" and n.stem.endswith("-weekly") and n.created >= since]
+    if not weekly:
+        return []
+    n = max(weekly, key=lambda x: x.created)
+    sec = note_sections(n.body).get("다음 주", "")
+    if not sec:
+        return []
+    # 절의 줄 번호를 본문 기준으로 맞춘다
+    lines = n.body.split("\n")
+    try:
+        start = next(i for i, l in enumerate(lines) if l.strip() == "## 다음 주")
+    except StopIteration:
+        return []
+    out = []
+    for j in range(start + 1, len(lines)):
+        if lines[j].startswith("## "):
+            break
+        m = CHECKBOX_RE.match(lines[j])
+        if m and m.group(2).lower() != "x":
+            out.append({"text": m.group(4).strip(), "line": j, "path": n.rel, "date": n.created})
+    return out[:limit]
+
+
 def _revisit_soon(notes, today, days=7):
     limit = (today + timedelta(days=days)).isoformat()
     out = []
@@ -2567,6 +2600,7 @@ def dash_today(vault, today=None, now=None, widgets=None, agenda=None):
         "weekday": WEEKDAYS_KO[today.weekday()],
         "revisit": _revisit_soon(notes, today),
         "retro_questions": retro_questions(notes, today) if vault else [],
+        "week_plan": week_plan(notes, today) if vault else [],
         "inbox": parse_inbox(vault),
         "this_week": {"new_notes": sum(1 for n in week if n.type != "decision"),
                       "new_decisions": sum(1 for n in week if n.type == "decision")},

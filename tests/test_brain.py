@@ -256,6 +256,19 @@ class SearchTest(BrainTestCase):
         self.assertEqual(code, 0)
         self.assertIn("기록 없음", out)
 
+    def test_dash_search_summary(self):
+        long_summary = "레디스 캐시 전략을 정리한 요약이다. " * 10
+        self.new("note", "레디스 캐시 노트", body="레디스 이야기", extra={"summary": long_summary})
+        hits = brain.dash_search(self.vault, "레디스", 20, today=TODAY)
+        self.assertEqual(hits[0]["summary"], long_summary[:160])
+        self.assertLessEqual(len(hits[0]["summary"]), 160)
+
+    def test_dash_search_no_summary(self):
+        self.new("note", "레디스 무요약 노트", body="레디스 이야기 둘")
+        hits = brain.dash_search(self.vault, "레디스", 20, today=TODAY)
+        self.assertIn("summary", hits[0])
+        self.assertEqual(hits[0]["summary"], "")
+
 
 # --- 인덱스 · 리뷰 · 링크 · 결정 ----------------------------------------------
 

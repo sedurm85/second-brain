@@ -327,7 +327,12 @@ button { cursor: pointer; }
         .then(function () { load(); speak(["할 일에 넣었어요. " + body.text + (body.due === "tomorrow" ? ", 내일." : body.due === "today" ? ", 오늘." : ".")]); })
         .catch(function (err) { speak(["할 일 추가에 실패했어요. " + (err.message || "")]); });
     }
-    if (/할\s*일|인박스|투두/.test(q)) { var tk = t.tasks || {}, td = tk.today || []; return speak([td.length ? "오늘 할 일 " + td.length + "건. " + td.map(function (x) { return x.text; }).slice(0, 4).join(", ") + "." + ((tk.counts || {}).waiting ? " 기다리는 답이 " + tk.counts.waiting + "건 있어요." : "") : "오늘 할 일은 없어요." + ((tk.counts || {}).someday ? " 언젠가 할 것이 " + tk.counts.someday + "건 있어요." : "")]); }
+    if (/할\s*일|인박스|투두/.test(q)) {
+      var tk = t.tasks || {}, td = tk.today || [], wp = t.week_plan || [];
+      var out = [td.length ? "오늘 할 일 " + td.length + "건. " + td.map(function (x) { return x.text; }).slice(0, 4).join(", ") + "." + ((tk.counts || {}).waiting ? " 기다리는 답이 " + tk.counts.waiting + "건 있어요." : "") : "오늘 할 일은 없어요." + ((tk.counts || {}).someday ? " 언젠가 할 것이 " + tk.counts.someday + "건 있어요." : "")];
+      if (wp.length) out.push("이번 주 계획은 " + wp.slice(0, 2).map(function (x) { return x.text; }).join(", ") + "이에요.");
+      return speak(out);
+    }
     if (/결정|되돌아|회고/.test(q)) { var rq = t.retro_questions || []; return speak([(t.revisit || []).length ? "되돌아볼 결정 " + t.revisit.length + "건. " + t.revisit.map(function (d) { return d.title; }).slice(0, 3).join(", ") + "." : "이번 주에 되돌아볼 결정은 없어요.", rq.length ? "회고에서 남긴 질문이 " + rq.length + "개 있어요. 첫 번째, " + rq[0].text : ""]); }
     if (/메일|편지|인박스\s*메일/.test(q)) { var ml = t.mail || {}; return speak([ml.configured ? (ml.sentence || "메일 상태를 아직 못 읽었어요.") + ((ml.reply || []).length ? " " + ml.reply.slice(0, 2).map(function (x) { return x.from_name + "의 " + x.subject; }).join(", ") + "." : "") : "메일은 아직 연결되지 않았어요. 설정에서 IMAP 계정을 붙일 수 있어요."]); }
     if (/^(이거\s*)?기억해|기억해\s*줘|저장해\s*줘?$/.test(q)) return remember();
