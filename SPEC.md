@@ -503,3 +503,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `doctor_report`에 "볼트 점검" 항목 한 줄 추가(`lint_vault` 크래시가 doctor 전체를 죽이지 않도록 try/except로 감쌈), fix 안내는 `` `brain.py lint --fix` ``
 - `skills/brain-doctor/SKILL.md`에 "볼트 점검 ✗ → lint --json으로 코드 보여주고, fixable만 승인 후 --fix" 단계 추가
 - 신규 테스트 `tests/test_lint.py` 8건(코드별 검출·개수, report-only 항목은 fixable=False, --fix가 고칠 것만 고치고 재점검하면 이슈가 줄어듦, 파일 미삭제, CLI 종료 코드·`--json`, 깨끗한 볼트는 이슈 0, doctor 연동). 전체 스위트 441 통과(기존 433 + 신규 8)
+## v0.30 빠른 캡처
+
+- `capture_note(vault, body)`(`POST /api/capture`, `brain.py capture "<텍스트>"`) 추가: `remember_chat` 옆에 위치, `{text(1~4000자), type?(note|idea|source, 기본 note), title?, tags?(최대 5개), project?}`를 받아 `create_note`로 노트 한 장을 만들고 `build_index`·`git_commit`까지 처리. 텍스트가 http(s) URL로 시작하면 타입 지정이 없을 때 자동으로 `source`가 되고 제목은 host+path 꼬리에서, `source` 프론트매터에는 URL 그대로 들어간다. v0.29에서 "적합한 캡처용 API가 없어" 보류했던 팔레트의 「메모」 명령이 이걸로 채워진다
+- 보드(`web/index.html`) 명령 팔레트: `>` 입력 후 타이핑한 텍스트마다 기존 "할 일 추가: <텍스트>" 옆에 "메모: <텍스트>"·"아이디어: <텍스트>"·"링크: <텍스트>" 세 후보가 함께 뜨고, 고르면 `POST /api/capture`(각각 note/idea/source)로 저장 후 토스트("기록했어요: 「제목」")와 함께 `openNote`로 새 노트를 바로 연다. topbar에 「+ 기록」 버튼을 추가해 `openCommandPalette("메모: ")`로 검색창에 `>메모: `를 채워 포커스한다
+- 코어(`web/core.html`) `answer(q)`에 정규식 `/^(메모|기록)(해|해줘)?\s*[:：]?\s*(.+)/` 규칙 한 줄과 `quickCapture(text)` 헬퍼를 추가: "메모해: 텍스트"·"기록: 텍스트" 형태를 잡아 `/api/capture`로 보내고 "「제목」으로 기록했어요."라고 말한다
+- 테스트 `tests/test_capture.py` 10건(제목 규칙, idea, URL→source 제목/프론트매터, 명시 제목 유지, 태그·프로젝트, 빈 값/과다 길이/잘못된 타입 검증, HTTP 토큰 게이트, CLI 경로 출력). 전체 스위트 465 통과(기존 455 + 신규 10)

@@ -754,6 +754,7 @@ h1, h2, h3 { text-wrap: balance; }
           <ul class="search-results" id="results" role="listbox" aria-label="검색 결과" hidden></ul>
           <p class="search-hint" id="searchHint" hidden>type: · tag: · project: · since:7d · has:summary · status: · is:orphan · -단어 · "정확히"</p>
         </div>
+        <button class="icon-btn" id="captureBtn" type="button" style="width:auto;padding:0 12px;gap:6px;font-weight:600;font-size:13px" aria-label="빠른 기록 (명령 팔레트에 메모: 입력)">+ 기록</button>
         <button class="icon-btn" id="themeBtn" type="button" aria-label="테마 전환">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"/></svg>
         </button>
@@ -1950,6 +1951,15 @@ h1, h2, h3 { text-wrap: balance; }
           taskPost({ action: "add", text: text }).then(function () { toast("할 일 추가됨"); })
             .catch(function (err) { alert("추가 실패: " + (err.message || err)); });
         }
+      }, {
+        label: "메모: " + text,
+        run: function () { captureRun(text, "note"); }
+      }, {
+        label: "아이디어: " + text,
+        run: function () { captureRun(text, "idea"); }
+      }, {
+        label: "링크: " + text,
+        run: function () { captureRun(text, "source"); }
       }] : [];
       SR.cmds = matches.concat(dynamic); SR.sel = -1;
       box.innerHTML = SR.cmds.length ? SR.cmds.map(function (c, i) {
@@ -2232,6 +2242,13 @@ h1, h2, h3 { text-wrap: balance; }
     $("tasksSub").textContent = "오늘 " + (c.today || 0) + " · 이번 주 " + (c.week || 0) + " · 언젠가 " + (c.someday || 0) + " · 기다림 " + (c.waiting || 0) + ". 체크하면 inbox.md에 바로 표시돼요.";
   }
   function taskPost(body) { return post("task", body).then(function () { return api("tasks").then(renderTasks); }).then(function () { return refreshLive(true); }); }
+  /* 빠른 캡처(v0.30): 팔레트 메모:/아이디어:/링크: 명령과 topbar 「+ 기록」 버튼이 공용으로 씀 */
+  function captureRun(text, type) {
+    post("capture", { text: text, type: type }).then(function (r) {
+      toast("기록했어요: " + r.title);
+      openNote(r.path);
+    }).catch(function (err) { alert("기록 실패: " + (err.message || err)); });
+  }
   function initTasks() {
     $("taskAdd").addEventListener("submit", function (ev) {
       ev.preventDefault();
@@ -2539,9 +2556,9 @@ h1, h2, h3 { text-wrap: balance; }
   function focusTaskInput() {
     var el = document.querySelector("#taskAdd [name=text]"); if (el) el.focus();
   }
-  function openCommandPalette() {
+  function openCommandPalette(prefix) {
     var el = $("q"); if (!el) return;
-    el.value = ">"; el.focus();
+    el.value = ">" + (prefix || ""); el.focus();
     try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) { /* 무시 */ }
     el.dispatchEvent(new Event("input", { bubbles: true }));
   }
@@ -2604,6 +2621,7 @@ h1, h2, h3 { text-wrap: balance; }
     });
     $("scClose").addEventListener("click", closeShortcutsSheet);
     $("shortcutsBtn").addEventListener("click", openShortcutsSheet);
+    $("captureBtn").addEventListener("click", function () { openCommandPalette("메모: "); });
     var bd = $("scBackdrop"); if (bd) bd.addEventListener("click", closeShortcutsSheet);
   }
 

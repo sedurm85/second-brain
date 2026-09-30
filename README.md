@@ -55,6 +55,7 @@ python3 scripts/brain.py remind --kakao                # 곧 시작하는 동선
 python3 scripts/brain.py task add "보고서 초안" --due 2026-10-02
 python3 scripts/brain.py task list                     # 오늘 / 이번 주 / 언젠가 / 기다림
 python3 scripts/brain.py task carry                    # 오늘 남은 것 전부 내일로
+python3 scripts/brain.py capture "메모: 오늘 배운 것"    # 빠른 캡처(보드 팔레트·코어와 동일), URL이면 자동 source
 python3 scripts/brain.py event todo "2026-10-03|제주도" "렌터카 예약 확인"
 python3 scripts/brain.py event step "2026-10-03|제주도" "14:00 집 출발 (자가용 50분)"
 python3 scripts/brain.py config set assistant_name 자비스

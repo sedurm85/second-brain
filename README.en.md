@@ -57,6 +57,7 @@ python3 scripts/brain.py remind --kakao                # upcoming itinerary step
 python3 scripts/brain.py task add "Report draft" --due 2026-10-02
 python3 scripts/brain.py task list                     # today / this week / someday / waiting
 python3 scripts/brain.py task carry                    # move everything left today to tomorrow
+python3 scripts/brain.py capture "note: what I learned today"  # quick capture (same as board palette/core), URL auto-becomes source
 python3 scripts/brain.py event todo "2026-10-03|Jeju" "Confirm rental car"
 python3 scripts/brain.py event step "2026-10-03|Jeju" "14:00 leave home (car, 50 min)"
 python3 scripts/brain.py config set assistant_name Jarvis

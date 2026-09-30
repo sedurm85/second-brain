@@ -3387,6 +3387,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._json(200, res)
             if route == "/api/remember":
                 return self._json(200, remember_chat(vault, body))
+            if route == "/api/capture":
+                return self._json(200, capture_note(vault, body))
             if route == "/api/suggestion":
                 res = suggestion_action(vault, body, self.server.today)
                 self.server.agenda_cache.invalidate()
@@ -3669,6 +3671,14 @@ def _format_facets_line(facets):
     if not tags:
         return types_part
     return types_part + " | 태그: " + ", ".join(f"{t} {c}" for t, c in tags.items())
+
+
+def cmd_capture(args):
+    v = require_vault()
+    res = capture_note(v, {"text": args.text, "type": args.type, "tags": split_csv(args.tags),
+                           "project": args.project})
+    emit(args, res, res["path"])
+    return EXIT_OK
 
 
 def cmd_search(args):
@@ -5319,6 +5329,49 @@ def remember_chat(vault, body):
     return {"ok": True, "path": path.relative_to(Path(vault)).as_posix(), "title": title}
 
 
+_CAPTURE_URL_RE = re.compile(r"^https?://\S+", re.IGNORECASE)
+_CAPTURE_TYPES = ("note", "idea", "source")
+
+
+def capture_note(vault, body):
+    """빠른 캡처: 보드 커맨드 팔레트(메모:/아이디어:/링크:)·코어("메모해: ...")에서 텍스트 한 줄 → 노트 한 장.
+
+    body: {text (1~4000자), type? (note|idea|source, 기본 note; http(s) URL로 시작하면 기본이 source),
+          title? (기본: 첫 줄 40자 이내, URL이면 host+path), tags? (최대 5개), project?}
+    """
+    text = str(body.get("text") or "").strip()
+    if not text:
+        raise BrainError("기록할 내용이 비어 있어요")
+    if len(text) > 4000:
+        raise BrainError("내용이 너무 길어요(4000자 이내)")
+    ntype = str(body.get("type") or "").strip()
+    url_m = _CAPTURE_URL_RE.match(text)
+    if ntype:
+        if ntype not in _CAPTURE_TYPES:
+            raise BrainError(f"알 수 없는 타입: {ntype} (가능: {', '.join(_CAPTURE_TYPES)})")
+    else:
+        ntype = "source" if url_m else "note"
+    title = " ".join(str(body.get("title") or "").split())
+    source = None
+    if ntype == "source" and url_m:
+        source = url_m.group(0)
+        if not title:
+            parts = urllib.parse.urlsplit(source)
+            tail = parts.path.rstrip("/").rsplit("/", 1)[-1]
+            title = (parts.netloc + ("/" + tail if tail else ""))[:40]
+    if not title:
+        first_line = text.splitlines()[0].strip()
+        title = (first_line or text)[:40]
+    tags = [str(t).strip() for t in (body.get("tags") or []) if str(t).strip()][:5]
+    project = str(body.get("project") or "").strip() or None
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    note_body = f"# {title}\n\n{text}\n\n맥락: 보드/코어 빠른 캡처 ({stamp})\n"
+    path = create_note(vault, ntype, title, tags=tags, project=project, source=source, body=note_body)
+    build_index(vault)
+    git_commit(vault, f"brain: capture {path.stem}")
+    return {"ok": True, "path": path.relative_to(Path(vault)).as_posix(), "title": title, "type": ntype}
+
+
 STAFF_BRIEF_LINES = 80
 
 
@@ -6882,6 +6935,12 @@ def build_parser():
     g = s.add_mutually_exclusive_group()
     g.add_argument("--body-file", help="본문 파일('-'이면 stdin)")
     g.add_argument("--body", help="본문 텍스트")
+
+    s = add("capture", "빠른 캡처: 텍스트 한 줄 → 노트 한 장(경로 출력)", cmd_capture)
+    s.add_argument("text", help="캡처할 텍스트(1~4000자)")
+    s.add_argument("--type", choices=("note", "idea", "source"), help="타입(기본 note, URL이면 source)")
+    s.add_argument("--tags", help="쉼표 구분 태그(최대 5개)")
+    s.add_argument("--project", help="프로젝트 이름")
 
     s = add("search", "볼트 검색(BM25-lite + 최근성)", cmd_search)
     s.add_argument("query", help="검색어")

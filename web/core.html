@@ -518,6 +518,8 @@ button { cursor: pointer; }
     if (/결정|되돌아|회고/.test(q)) { var rq = t.retro_questions || []; return speak([(t.revisit || []).length ? "되돌아볼 결정 " + t.revisit.length + "건. " + t.revisit.map(function (d) { return d.title; }).slice(0, 3).join(", ") + "." : "이번 주에 되돌아볼 결정은 없어요.", rq.length ? "회고에서 남긴 질문이 " + rq.length + "개 있어요. 첫 번째, " + rq[0].text : ""]); }
     if (/메일|편지|인박스\s*메일/.test(q)) { var ml = t.mail || {}; return speak([ml.configured ? (ml.sentence || "메일 상태를 아직 못 읽었어요.") + ((ml.reply || []).length ? " " + ml.reply.slice(0, 2).map(function (x) { return x.from_name + "의 " + x.subject; }).join(", ") + "." : "") : "메일은 아직 연결되지 않았어요. 설정에서 IMAP 계정을 붙일 수 있어요."]); }
     if (/^(이거\s*)?기억해|기억해\s*줘|저장해\s*줘?$/.test(q)) return remember();
+    var capm = /^(메모|기록)(해|해줘)?\s*[:：]?\s*(.+)/.exec(q);
+    if (capm && capm[3] && capm[3].trim()) return quickCapture(capm[3].trim());
     if (/브리핑|요약|보고/.test(q)) return speak(briefLines(t));
     // 그 밖: 헤드리스 Claude에게 (생각 중 상태)
     S.thinking = true; setState("think"); S.target = .45; caption("생각하고 있어요…", false);
@@ -539,6 +541,13 @@ button { cursor: pointer; }
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
       .then(function (j) { S.lastQA = null; $("hint").textContent = "기록했어요: " + j.title; speak(["「" + j.title + "」으로 기억해 두었어요."]); })
       .catch(function (err) { $("hint").textContent = "기록 실패: " + (err.message || err); });
+  }
+  function quickCapture(text) {
+    $("hint").textContent = "기록하는 중…";
+    return fetch("/api/capture", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify({ text: text }) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
+      .then(function (j) { $("hint").textContent = "기록했어요: " + j.title; speak(["「" + j.title + "」으로 기록했어요."]); })
+      .catch(function (err) { $("hint").textContent = "기록 실패: " + (err.message || err); speak(["기록하지 못했어요. " + (err.message || "")]); });
   }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function readJournal(dateIso) {
