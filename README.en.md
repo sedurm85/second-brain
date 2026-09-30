@@ -71,6 +71,8 @@ python3 scripts/brain.py agents install                # launchd: 07:00 brief, 1
 python3 scripts/brain.py agents install prepare retro  # optional: 06:40 prep suggestions, Monday 09:00 retro
 python3 scripts/brain.py doctor                        # health check: vault, Claude CLI, calendar, Kakao, widgets, agents
 python3 scripts/brain.py config init-widgets           # example widgets.json
+python3 scripts/brain.py widget add "Hiring Scout" ~/.local/k-skill-cron/scout.log --team hiring --ok "done|OK" --fail "fail|Error"
+python3 scripts/brain.py widget list [--team NAME]     # add · move · rename · remove · pause · resume · run · brief · show too (works without allow_hire/allow_run)
 ```
 
 Writes (memos, checks, tasks, settings) require the session token the dashboard mints on every start and are accepted from 127.0.0.1 only. External data such as calendar events is never copied into the vault; it is cached briefly under `~/.cache/second-brain/`.
@@ -115,7 +117,7 @@ Claude: 6 new notes (3 ideas · 2 sources · 1 meeting)
         BRAIN.md updated
 ```
 
-Also available: `/second-brain:brain-today` (today's briefing), `/second-brain:brain-event` (memos, prep and itinerary on an event), `/second-brain:brain-import <path>` (import an Obsidian vault or Claude Code memory), `/second-brain:brain-setup` (vault location, git auto-commit), `/second-brain:brain-journal` (daily journal, weekly retro), `/second-brain:brain-doctor` (install/connection health check).
+Also available: `/second-brain:brain-today` (today's briefing), `/second-brain:brain-event` (memos, prep and itinerary on an event), `/second-brain:brain-import <path>` (import an Obsidian vault or Claude Code memory), `/second-brain:brain-setup` (vault location, git auto-commit), `/second-brain:brain-journal` (daily journal, weekly retro), `/second-brain:brain-doctor` (install/connection health check), `/second-brain:brain-office` (hire, move, retire or run automation widgets by chat, no dashboard needed).
 
 ## Vault layout
 

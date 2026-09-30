@@ -3286,6 +3286,91 @@ def cmd_widgets(args):
     return EXIT_OK
 
 
+def cmd_widget(args):
+    """CLI로 위젯(자동화 직원) 채용·이동·이름변경·퇴사·정지·재개·실행·요약·조회·목록. 사용자 자신의 터미널이라 allow_run/allow_hire는 건너뛴다(widget_action의 cli=True)."""
+    action = args.action
+    if action == "list":
+        ws = collect_widgets()
+        if args.team:
+            ws = [w for w in ws if (w.get("team") or "") == args.team]
+        if args.json:
+            emit(args, ws, None)
+            return EXIT_OK
+        if not ws:
+            print("위젯 없음")
+            return EXIT_OK
+        print("\n".join(f"{w['id']} · {w['title']} · {w.get('team') or '-'} · {w['status']}" for w in ws))
+        return EXIT_OK
+    if action == "show":
+        wid = args.arg1 or ""
+        if not wid:
+            raise BrainError("widget show <id>가 필요해요")
+        ws = collect_widgets()
+        w = next((x for x in ws if x["id"] == wid), None)
+        if not w:
+            raise BrainError(f"위젯이 없어요: {wid}")
+        cfg = load_widgets_config()
+        raw = next((x for x in cfg["widgets"] if str(x.get("id")) == wid), {})
+        out = dict(w, config=raw)
+        emit(args, out, f"[{w['status'].upper()}] {w['title']} ({w['id']}) · 팀 {w.get('team') or '-'} · {w['summary']}")
+        return EXIT_OK
+    if action == "add":
+        if not args.arg1 or not args.arg2:
+            raise BrainError("widget add <제목> <source>가 필요해요")
+        body = {"action": "add", "title": args.arg1, "source": args.arg2, "kind": args.kind, "team": args.team,
+                "ok_pattern": args.ok_pattern, "fail_pattern": args.fail_pattern, "stale_minutes": args.stale_minutes,
+                "lines": args.lines}
+        res = widget_action(body, [], cli=True)
+        emit(args, res, f"채용 완료: {res['widget']['title']} ({res['id']})")
+        return EXIT_OK
+    if action == "move":
+        if not args.arg1 or not args.arg2:
+            raise BrainError("widget move <id> <팀>이 필요해요")
+        res = widget_action({"action": "move", "id": args.arg1, "team": args.arg2}, [], cli=True)
+        emit(args, res, f"부서 이동: {res['id']} → {res['team']}")
+        return EXIT_OK
+    if action == "rename":
+        if not args.arg1 or not args.arg2:
+            raise BrainError("widget rename <id> <제목>이 필요해요")
+        res = widget_action({"action": "rename", "id": args.arg1, "title": args.arg2}, [], cli=True)
+        emit(args, res, f"이름 변경: {res['id']} → {res['title']}")
+        return EXIT_OK
+    if action == "remove":
+        if not args.arg1:
+            raise BrainError("widget remove <id>가 필요해요")
+        res = widget_action({"action": "remove", "id": args.arg1}, [], cli=True)
+        emit(args, res, f"퇴사 처리: {res['id']}")
+        return EXIT_OK
+    if action == "pause":
+        if not args.arg1:
+            raise BrainError("widget pause <id>가 필요해요")
+        res = widget_action({"action": "pause", "id": args.arg1}, [], cli=True)
+        emit(args, res, f"일시 정지: {res['id']}")
+        return EXIT_OK
+    if action == "resume":
+        if not args.arg1:
+            raise BrainError("widget resume <id>가 필요해요")
+        res = widget_action({"action": "resume", "id": args.arg1}, [], cli=True)
+        emit(args, res, f"다시 켜기: {res['id']}")
+        return EXIT_OK
+    if action == "run":
+        if not args.arg1:
+            raise BrainError("widget run <id>가 필요해요")
+        ws = collect_widgets()
+        res = widget_action({"action": "run", "id": args.arg1, "dry": args.dry}, ws, cli=True)
+        note = " (미리보기, 실행 안 함)" if res.get("dry") else ""
+        emit(args, res, f"실행{note}: {args.arg1}")
+        return EXIT_OK
+    if action == "brief":
+        if not args.arg1:
+            raise BrainError("widget brief <id>가 필요해요")
+        ws = collect_widgets()
+        res = widget_action({"action": "brief", "id": args.arg1, "force": args.force}, ws, cli=True)
+        emit(args, res, f"{res.get('did', '')} · {res.get('issue', '')} · {res.get('mood', '')}")
+        return EXIT_OK
+    raise BrainError("action은 add · move · rename · remove · pause · resume · run · brief · show · list 중 하나")
+
+
 def cmd_today(args):
     try:
         v = vault_path()
@@ -3830,11 +3915,13 @@ def remove_widget(wid):
     return {"ok": True, "id": wid}
 
 
-def widget_action(body, widgets):
+def widget_action(body, widgets, cli=False):
+    """cli=True면 사용자 자신의 터미널에서 부르는 것이라 allow_run/allow_hire 게이트만 건너뛴다.
+    그 밖의 검증(홈 경로 규칙·kind 허용 목록·정규식 검사·brain- 접두 퇴사 거부)은 그대로 유지."""
     action, wid = body.get("action"), str(body.get("id") or "")
     cfg = load_widgets_config()
     if action == "run":
-        if not cfg.get("allow_run"):
+        if not cli and not cfg.get("allow_run"):
             raise BrainError("실행 버튼은 widgets.json에 \"allow_run\": true 를 적어야 켜져요")
         return dict(run_widget(wid, widgets, dry=bool(body.get("dry"))), action="run")
     if action in ("pause", "resume"):
@@ -3845,16 +3932,20 @@ def widget_action(body, widgets):
             raise BrainError(f"위젯이 없어요: {wid}")
         return dict(staff_brief(w, force=bool(body.get("force"))), action="brief")
     if action == "add":
-        _require_hire(cfg)
+        if not cli:
+            _require_hire(cfg)
         return dict(add_widget(body), action="add")
     if action == "move":
-        _require_hire(cfg)
+        if not cli:
+            _require_hire(cfg)
         return dict(move_widget(wid, body.get("team")), action="move")
     if action == "rename":
-        _require_hire(cfg)
+        if not cli:
+            _require_hire(cfg)
         return dict(rename_widget(wid, body.get("title")), action="rename")
     if action == "remove":
-        _require_hire(cfg)
+        if not cli:
+            _require_hire(cfg)
         return dict(remove_widget(wid), action="remove")
     raise BrainError("action은 run · pause · resume · brief · add · move · rename · remove 중 하나")
 
@@ -5925,6 +6016,19 @@ def build_parser():
 
     add("today", "오늘 브리핑: 일정·되돌아볼 결정·자동화 상태·inbox·이번 주 신규(+카톡용 200자)", cmd_today)
     add("widgets", "위젯(~/.config/second-brain/widgets.json) 상태 조회", cmd_widgets)
+
+    s = add("widget", "위젯(자동화 직원) 채용·이동·이름변경·퇴사·정지·재개·실행·요약·조회·목록. 터미널이라 allow_run/allow_hire를 건너뛴다", cmd_widget)
+    s.add_argument("action", choices=("add", "move", "rename", "remove", "pause", "resume", "run", "brief", "show", "list"))
+    s.add_argument("arg1", nargs="?", help="add: 제목 · 그 외: id")
+    s.add_argument("arg2", nargs="?", help="add: source(홈 경로) · move: 팀 · rename: 새 제목")
+    s.add_argument("--kind", choices=WIDGET_HIRE_KINDS, default="log", help="add: log · json · csv · markdown(기본 log)")
+    s.add_argument("--team", help="add: 소속 팀")
+    s.add_argument("--ok", dest="ok_pattern", help="add: 정상 판정 정규식")
+    s.add_argument("--fail", dest="fail_pattern", help="add: 실패 판정 정규식")
+    s.add_argument("--stale", dest="stale_minutes", type=int, help="add: 이 시간(분) 넘게 갱신 없으면 stale")
+    s.add_argument("--lines", type=int, default=5, help="add: log 마지막 N줄(기본 5)")
+    s.add_argument("--dry", action="store_true", help="run: 실제로 돌리지 않고 실행 방법만 보여줌")
+    s.add_argument("--force", action="store_true", help="brief: 오늘 캐시가 있어도 다시 요약(Claude 호출)")
 
     s = add("agenda", "일정: 오늘·다가오는 N일(설정된 캘린더 소스에서)", cmd_agenda)
     s.add_argument("--days", type=int, default=7, help="며칠치(기본 7)")

@@ -68,6 +68,8 @@ python3 scripts/brain.py review --semantic             # 링크 제안에 Claude
 python3 scripts/brain.py agents install                # 07:00 브리핑·10분 알림·21:30 마감·23:00 백업 launchd 설치
 python3 scripts/brain.py doctor                        # 설치·연결 점검표(볼트·Claude CLI·캘린더·카톡·위젯·에이전트)
 python3 scripts/brain.py config init-widgets           # 예시 widgets.json
+python3 scripts/brain.py widget add "채용 스카우트" ~/.local/k-skill-cron/scout.log --team 채용팀 --ok "완료|OK" --fail "실패|Error"
+python3 scripts/brain.py widget list [--team 팀]        # add·move·rename·remove·pause·resume·run·brief·show도 (allow_hire/allow_run 없이도 됨)
 ```
 
 쓰기(메모·체크·할 일·설정)는 대시보드가 서버 시작마다 만드는 세션 토큰이 있어야 하고 127.0.0.1에서만 받습니다. 일정 같은 외부 데이터는 볼트에 복사하지 않고 `~/.cache/second-brain/`에만 잠시 둡니다.
@@ -112,7 +114,7 @@ Claude: 신규 노트 6개(아이디어 3 · 자료 2 · 회의 1)
         BRAIN.md 갱신 완료
 ```
 
-그 밖에 `/second-brain:brain-today`(오늘 브리핑), `/second-brain:brain-event`(일정에 메모·준비·동선), `/second-brain:brain-import <경로>`(Obsidian 볼트·Claude Code 메모리 가져오기), `/second-brain:brain-setup`(볼트 위치·git 자동 커밋), `/second-brain:brain-journal`(오늘 일지·주간 회고), `/second-brain:brain-doctor`(설치·연결 점검)이 있습니다.
+그 밖에 `/second-brain:brain-today`(오늘 브리핑), `/second-brain:brain-event`(일정에 메모·준비·동선), `/second-brain:brain-import <경로>`(Obsidian 볼트·Claude Code 메모리 가져오기), `/second-brain:brain-setup`(볼트 위치·git 자동 커밋), `/second-brain:brain-journal`(오늘 일지·주간 회고), `/second-brain:brain-doctor`(설치·연결 점검), `/second-brain:brain-office`(자동화 위젯 채용·이동·퇴사·실행을 대화로, 대시보드 없이)이 있습니다.
 
 ## 볼트 구조
 

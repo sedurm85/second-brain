@@ -429,3 +429,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `build_demo_assistant`가 이제 캐시까지 채움: 대기 중 제안 2건(회의·제주 출장), 위젯 2개의 직원 요약(`staff_briefs.json`), 오늘자 코어 문답 3줄(`core_log.jsonl`), 「제주 출장」 장소(김포국제공항)의 지오코딩·예보 캐시(날씨 연동이 붙기 전에도 오프라인에서 바로 풀리도록 미리 심어 둠). 위젯 로그 3개(backup/price/scrape)는 최근 7일치 날짜 줄을 갖도록 다시 씀 → 사무실 KPI 띠·이력 막대가 항상 값을 보임
 - `inbox.md`에 연체된 `@due` 항목 1개 추가(오늘 마감 1개와 합쳐 today 묶음 2개), 제주 출장 일정에 `LOCATION:김포국제공항` 추가, 결정→사람·결정→프로젝트 직접 링크 2개를 그래프에 추가
 - `tests/test_demo.py` +3(캐시 시딩, 위젯 이력 7일, `setup_demo_isolated`가 가짜 "실제" 캐시 경로를 건드리지 않음), `test_server_uses_overrides`에 suggestions/office kpis/journals/report 검증 추가. `tests/test_demo.py`의 기존 today 묶음 개수(1→2)도 갱신. 전체 스위트 292 통과
+## v0.29 widget CLI·brain-office 스킬
+
+- `widget_action(body, widgets, cli=False)`에 `cli` 매개변수 추가: `cli=True`면 `run`/`add`/`move`/`rename`/`remove`의 `allow_run`·`allow_hire` 게이트만 건너뛰고, 홈 경로 규칙·kind 허용 목록·정규식 검사·`brain-` 접두 퇴사 거부 등 나머지 검증은 그대로 유지. 웹 API(`/api/widget`)는 `cli` 없이 그대로 호출해 기존 게이트가 유지됨
+- 새 CLI `brain.py widget <action>` (`add · move · rename · remove · pause · resume · run · brief · show · list`): 사용자 자신의 터미널이라 widgets.json의 `allow_hire`/`allow_run` 설정 없이도 바로 채용·이동·퇴사·실행할 수 있다. `show`/`list`는 평가된 상태(`collect_widgets`)와 원본 설정을 함께 보여줌
+- 새 스킬 `skills/brain-office/SKILL.md`: "채용 스카우트 로그를 직원으로 등록해줘" 같은 대화로 로그 경로 확인(`test -f`)·ok/fail 패턴 제안(`Read`로 최근 줄 확인)·등록·조회까지 안내, 퇴사 전 한 줄 확인, 끝난 자동화는 삭제 대신 `pause` 권장
+- `tests/test_widget_cli.py` 10건: CLI 우회 vs API 게이트 유지, add/move/rename/remove/pause/resume/run --dry, brain-* 퇴사 거부, 홈 밖 경로 거부, `--json` 파싱. 전체 스위트 371 통과(기존 361 + 신규 10)
