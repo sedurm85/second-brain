@@ -128,7 +128,7 @@ class LogTest(HomeCase):
         self.assertEqual(r["data"]["lines"], ["a", "b", "sent len: 120"])
         self.assertEqual(r["summary"], "sent len: 120")
         self.assertIsNotNone(r["updated_at"])
-        self.assertEqual(set(r), {"id", "title", "kind", "state", "team", "source", "status", "updated_at", "age_minutes",
+        self.assertEqual(set(r), {"id", "title", "kind", "state", "team", "source", "status_cfg", "status", "updated_at", "age_minutes",
                                   "summary", "data"})
 
     def test_fail_beats_ok(self):

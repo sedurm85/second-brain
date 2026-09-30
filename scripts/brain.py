@@ -1851,6 +1851,7 @@ def _widget_base(w, idx):
     return {"id": wid, "title": str(w.get("title") or wid), "kind": kind, "status": "unknown",
             "state": state if state in WIDGET_STATES else "active", "team": str(w.get("team") or ""),
             "source": str(w.get("source") or "") if kind != "command" else "",
+            "status_cfg": w.get("status") if isinstance(w.get("status"), dict) else {},
             "updated_at": None, "age_minutes": None, "summary": "",
             "data": dict(_EMPTY_DATA.get(kind, {}))}
 
@@ -2514,6 +2515,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._json(200, d)
             if route == "/api/mail":
                 return self._json(200, collect_mail_safe(force=bool(qs.get("force"))))
+            if route == "/api/widget-history":
+                wid = (qs.get("id") or [""])[0]
+                w = next((x for x in collect_widgets(self.server.widget_cache) if x["id"] == wid), None)
+                if not w:
+                    return self._json(404, {"error": f"위젯이 없어요: {wid}"})
+                return self._json(200, widget_history(w, _int_param(qs, "days", 14, hi=90), today))
             if route == "/api/tasks":
                 widgets = collect_widgets(self.server.widget_cache)
                 ag = dict(self.server.agenda_cache.get())
@@ -3250,6 +3257,42 @@ def widget_action(body, widgets):
     if action in ("pause", "resume"):
         return dict(set_widget_state(wid, "paused" if action == "pause" else "active"), action=action)
     raise BrainError("action은 run · pause · resume 중 하나")
+
+
+DATE_IN_LINE_RE = re.compile(r"(20\d{2})-(\d{2})-(\d{2})")
+HISTORY_MAX_BYTES = 2 * 1024 * 1024
+
+
+def widget_history(w, days=14, today=None):
+    """로그 위젯의 날짜별 활동: 날짜가 적힌 줄 수(runs)와 그중 실패 패턴 줄(fails). 최근 days일, 로그 끝 2MB만 읽는다."""
+    today = today or date.today()
+    src = os.path.expanduser(str(w.get("source") or ""))
+    out = {"id": w.get("id"), "days": [{"date": (today - timedelta(days=days - 1 - i)).isoformat(), "runs": 0, "fails": 0} for i in range(days)]}
+    if w.get("kind") != "log" or not src or not os.path.isfile(src):
+        return out
+    idx = {d["date"]: d for d in out["days"]}
+    st = w.get("status_cfg") or {}
+    fail_re = re.compile(st.get("fail_pattern"), re.I) if st.get("fail_pattern") else None
+    try:
+        size = os.path.getsize(src)
+        with open(src, "rb") as f:
+            if size > HISTORY_MAX_BYTES:
+                f.seek(size - HISTORY_MAX_BYTES)
+            text = f.read().decode("utf-8", "replace")
+    except OSError:
+        return out
+    for ln in text.split("\n"):
+        m = DATE_IN_LINE_RE.search(ln)
+        if not m:
+            continue
+        d = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+        if d in idx:
+            idx[d]["runs"] += 1
+            if fail_re and fail_re.search(ln):
+                idx[d]["fails"] += 1
+    out["total_runs"] = sum(d["runs"] for d in out["days"])
+    out["total_fails"] = sum(d["fails"] for d in out["days"])
+    return out
 
 
 def running_widgets(widgets, ps_lines=None, cron_lines=None):

@@ -92,6 +92,12 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 .detail .close { margin-left: auto; background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; }
 .detail pre { font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; background: color-mix(in srgb, var(--bg) 70%, transparent); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; margin: 8px 0 0; color: var(--ink-2); max-height: 30vh; overflow: auto; }
 .detail .meta { font-size: 12.5px; color: var(--muted); }
+.hist { margin-top: 10px; }
+.hist:empty { display: none; }
+.hist-head { font-size: 12.5px; color: var(--ink-2); margin-bottom: 4px; }
+.hist-head b { color: var(--ink); } .hist-head .bad { color: var(--crit); }
+.hist svg { display: block; }
+.hist-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 2px; }
 .empty { color: var(--muted); font-size: 13px; padding: 14px 16px 18px; }
 @media (max-width: 720px) { .bar { height: auto; flex-wrap: wrap; padding: 8px 0; } .bar .stat { margin-left: 0; } .rooms { grid-template-columns: minmax(0, 1fr); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
@@ -114,6 +120,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 <aside class="detail" id="detail" role="dialog" aria-modal="false" aria-labelledby="dTitle">
   <h3><span id="dTitle"></span><button type="button" class="close" id="dClose" aria-label="닫기">×</button></h3>
   <div class="meta" id="dMeta"></div>
+  <div class="hist" id="dHist"></div>
   <pre id="dBody"></pre>
 </aside>
 <script>
@@ -229,7 +236,22 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 
   /* ───────── 상세 ───────── */
   function openDetail(title, meta, body) { $("dTitle").textContent = title; $("dMeta").textContent = meta; $("dBody").textContent = body || "(내용 없음)"; $("detail").classList.add("open"); }
-  $("dClose").addEventListener("click", function () { $("detail").classList.remove("open"); });
+  function renderHistory(h) {
+    var el = $("dHist"); if (!h || !h.days) { el.innerHTML = ""; return; }
+    var max = Math.max(1, Math.max.apply(null, h.days.map(function (d) { return d.runs; })));
+    var W = 14 * 22, H = 40;
+    var bars = h.days.map(function (d, i) {
+      var hh = Math.round((d.runs / max) * (H - 4)), fh = Math.round((d.fails / max) * (H - 4)), x = i * 22 + 2;
+      return '<rect x="' + x + '" y="' + (H - hh) + '" width="16" height="' + hh + '" rx="2" fill="' + (d.runs ? "var(--accent)" : "rgba(160,200,230,.12)") + '" opacity=".8"><title>' + d.date + " 실행 " + d.runs + (d.fails ? " · 실패 " + d.fails : "") + "</title></rect>" +
+        (fh ? '<rect x="' + x + '" y="' + (H - fh) + '" width="16" height="' + fh + '" rx="2" fill="var(--crit)"></rect>' : "") +
+        (d.runs === 0 ? '<rect x="' + x + '" y="' + (H - 3) + '" width="16" height="3" rx="1" fill="rgba(160,200,230,.18)"></rect>' : "");
+    }).join("");
+    var first = h.days[0].date.slice(5), last = h.days[h.days.length - 1].date.slice(5);
+    el.innerHTML = '<div class="hist-head">최근 ' + h.days.length + "일 · 실행 <b>" + (h.total_runs || 0) + "</b>" + (h.total_fails ? ' · <span class="bad">실패 <b>' + h.total_fails + "</b></span>" : "") + "</div>" +
+      '<svg viewBox="0 0 ' + W + " " + H + '" width="100%" height="' + H + '" aria-label="날짜별 실행 수">' + bars + "</svg>" +
+      '<div class="hist-axis"><span>' + first + "</span><span>" + last + "</span></div>";
+  }
+  $("dClose").addEventListener("click", function () { $("detail").classList.remove("open"); $("dHist").innerHTML = ""; });
   document.addEventListener("click", function (ev) {
     var rb = ev.target.closest(".runbtn[data-run]");
     if (rb) {
@@ -247,6 +269,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
       var w = S.widgets[b.getAttribute("data-wid")]; if (!w) return;
       var d = w.data || {}, body = d.lines ? d.lines.join("\n") : d.text || (d.fields ? Object.keys(d.fields).map(function (k) { return k + ": " + d.fields[k]; }).join("\n") : "") || w.summary;
       openDetail(w.title, (ST_KO[w.status] || w.status) + " · " + ago(w.age_minutes) + (w.updated_at ? " · " + String(w.updated_at).replace("T", " ").slice(0, 16) : ""), body);
+      if (w.kind === "log") fetch("/api/widget-history?id=" + encodeURIComponent(w.id)).then(function (r) { return r.json(); }).then(renderHistory).catch(function () {});
     } else if (b.getAttribute("data-job")) {
       var j = (S.data.jobs || []).filter(function (x) { return x.id === b.getAttribute("data-job"); })[0]; if (!j) return;
       openDetail("Claude 작업 " + j.id, (j.state || "") + (j.tempo ? " · " + j.tempo : "") + (j.updated_min != null ? " · " + ago(j.updated_min) : ""), (j.detail || "") + (j.recent && j.recent.length ? "\n\n최근:\n" + j.recent.join("\n") : ""));
