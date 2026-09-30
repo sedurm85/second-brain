@@ -92,3 +92,4 @@
 - 18:37 wt/core-actions 머지(음성으로 제안 채택·체크·할 일 완료, 전체 작업은 확인 후). 워커 추가: wt/vault-lint(볼트 점검·안전 수정), wt/core-settings(코어 음성·속도·자동 브리핑 설정)
 - 가동 중: apple-notes, search-ops, people-section, vault-lint, core-settings
 - 18:50 wt/apple-notes 머지(테스트 452). 관리자: 실제 Apple Notes 14건 가져오기(백업 후) + enrich 정제 실행
+- 18:48 wt/people-section(보드 「사람」)·wt/core-settings(음성·속도·자막·자동 브리핑)·wt/search-ops(검색 연산자·패싯, 38 테스트) 머지 → 테스트 493. 워커 추가: wt/quick-capture(보드·코어 빠른 캡처), wt/export-html(볼트 한 파일 내보내기). 가동 중: vault-lint, quick-capture, export-html
