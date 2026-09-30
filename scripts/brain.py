@@ -3486,14 +3486,75 @@ def _short(title):
     return re.sub(r"\s*\((?:[^()]*)\)\s*$", "", str(title or "")).strip()
 
 
+def assemble_kakao(parts, max_len=KAKAO_MAX, sep=" / "):
+    """우선순위 기반 카톡 200자 예산 배정.
+
+    parts: [(priority, text, shrink_fn|None), ...]. 숫자가 작을수록 중요하다.
+    예산이 부족하면 우선순위가 낮은(숫자가 큰) 파트부터 shrink_fn(text)로 줄여보고,
+    그래도 안 맞으면 그 파트를 통째로 뺀다 — 절대 단어 중간에서 자르지 않는다.
+    다만 header(첫 파트)나 header+그다음 필수 파트조차 예산에 못 들어가는 극단적인
+    경우에는 그 파트 하나만 "…"로 하드클립하고 조립을 멈춘다.
+    최종 문자열의 파트 순서는 우선순위가 아니라 parts에 주어진 원래 순서를 따른다
+    (우선순위는 "누구를 뺄지"만 정한다)."""
+    if not parts:
+        return ""
+    order = sorted(range(len(parts)), key=lambda i: (parts[i][0], i))
+    inc = {}
+
+    def total(text_map):
+        texts = [text_map[i] for i in sorted(text_map)]
+        if not texts:
+            return 0
+        return sum(len(x) for x in texts) + len(sep) * (len(texts) - 1)
+
+    for pos, idx in enumerate(order):
+        _priority, text, shrink_fn = parts[idx]
+        trial = dict(inc)
+        trial[idx] = text
+        if total(trial) <= max_len:
+            inc = trial
+            continue
+        if shrink_fn:
+            shrunk = shrink_fn(text)
+            trial = dict(inc)
+            trial[idx] = shrunk
+            if total(trial) <= max_len:
+                inc = trial
+                continue
+            text = shrunk
+        if pos <= 1 and len(inc) == pos:
+            remaining = max_len - total(inc) - (len(sep) if inc else 0)
+            if remaining > 0:
+                inc = dict(inc)
+                inc[idx] = _clip(text, remaining)
+            break
+        # 우선순위 낮은 파트는 통째로 뺀다(중간에서 자르지 않음)
+    return sep.join(inc[i] for i in sorted(inc))
+
+
+def _fold_people_mention(s):
+    """일정 파트에 접혀 있는 사람 언급(이름·기록건수)을 떼어낸다 — 사람(우선순위4)을
+    별도 파트로 두지 않고 일정 파트의 shrink_fn으로 접어 넣은 것."""
+    return re.sub(r"\s*\([^()]*기록 \d+건\)", "", s, count=1)
+
+
 def kakao_brief(t):
-    """카톡용 요약(≤200자). 읽는 사람 기준으로: 날짜 · 일정(없으면 내일) · 동선 · 메일 · 막힌 자동화 · 할 일 · 되돌아볼 결정 · 이번 주."""
+    """카톡용 요약(≤200자, 우선순위 예산 배정 — assemble_kakao 참고):
+    header(1) · 오늘 일정/내일(1) · 빠듯/이동 경고(2) · 동선(2) · 날씨 우산(2) · 메일(2) ·
+    자동화 실패(2) · 준비 제안(3) · 미리알림(3) · 할 일(3, shrink) · 사람(4, 일정 파트에 접힘) ·
+    되돌아볼 결정(4) · 이번 주 노트(5, shrink). 바쁜 날엔 우선순위 낮은 파트부터 줄거나 빠진다."""
     d = t["date"]
-    parts = [f"[{int(d[5:7])}/{int(d[8:10])} {t['weekday'][0]}] {t['greeting']}"]
+    parts = [(1, f"[{int(d[5:7])}/{int(d[8:10])} {t['weekday'][0]}] {t['greeting']}", None)]
     ag = t.get("agenda") or {}
     ag_bit = agenda_mod.agenda_kakao(ag)
     if ag_bit:
-        parts.append(ag_bit)
+        if " · " in ag_bit:
+            sched_bit, gap_bit = ag_bit.split(" · ", 1)
+        else:
+            sched_bit, gap_bit = ag_bit, None
+        parts.append((1, sched_bit, None))
+        if gap_bit:
+            parts.append((2, gap_bit, None))
     else:
         tomorrow = [e for e in (ag.get("upcoming") or []) if e.get("days_left") == 1]
         bits = []
@@ -3506,40 +3567,46 @@ def kakao_brief(t):
                     mentions = sum(p.get("mentions") or 0 for p in matched)
                     bit += f" ({matched[0]['name']}{extra}, 기록 {mentions}건)"
             bits.append(bit)
-        parts.append("오늘 일정 없음" + (", 내일 " + ", ".join(bits) if tomorrow else ""))
+        sched_text = "오늘 일정 없음" + (", 내일 " + ", ".join(bits) if tomorrow else "")
+        parts.append((1, sched_text, _fold_people_mention if tomorrow else None))
     # 날씨: 내일(없으면 오늘) 일정 중 날씨가 붙은 첫 건이 우산/추위/더위처럼 눈에 띌 때만 한 줄 추가(200자 예산 절약)
     tomorrow_all = [e for e in (ag.get("upcoming") or []) if e.get("days_left") == 1]
     weather_source = [e for e in tomorrow_all if e.get("weather")] or [e for e in (ag.get("today") or []) if e.get("weather")]
     weather_notable = [e["weather"] for e in weather_source if e["weather"].get("umbrella") or e["weather"].get("cold") or e["weather"].get("hot")]
     if weather_notable:
-        parts.append(weather_mod.weather_sentence(weather_notable))
+        parts.append((2, weather_mod.weather_sentence(weather_notable), None))
     if ag.get("steps_today"):
         _strip_paren = lambda x: re.sub(r"\s*\(.*\)\s*$", "", x)  # 3.9~3.11은 f-string 식 안에 백슬래시 불가
-        parts.append("동선 " + ", ".join(f"{s_['time']} {_strip_paren(s_['text'])}" for s_ in ag["steps_today"][:2]))
+        parts.append((2, "동선 " + ", ".join(f"{s_['time']} {_strip_paren(s_['text'])}" for s_ in ag["steps_today"][:2]), None))
     mk = mail_mod.mail_kakao(t.get("mail") or {})
     if mk:
-        parts.append(mk)
+        parts.append((2, mk, None))
     bad = [w for w in t["top_widgets"] if w["status"] in ("fail", "stale")]
     if bad:
-        parts.append("자동화 " + ", ".join(f"{_short(w['title'])} {'실패' if w['status'] == 'fail' else '오래됨'}" for w in bad[:3]))
+        parts.append((2, "자동화 " + ", ".join(f"{_short(w['title'])} {'실패' if w['status'] == 'fail' else '오래됨'}" for w in bad[:3]), None))
     elif sum(t["widgets_summary"].values()):
-        parts.append(f"자동화 정상 {t['widgets_summary']['ok']}")
+        parts.append((2, f"자동화 정상 {t['widgets_summary']['ok']}", None))
     if (t.get("suggestions") or {}).get("count"):
-        parts.append(f"준비 제안 {t['suggestions']['count']}건(보드에서 채택)")
+        parts.append((3, f"준비 제안 {t['suggestions']['count']}건(보드에서 채택)", None))
     tk = (t.get("tasks") or {}).get("counts") or {}
     own_today = [x for x in (t.get("tasks") or {}).get("today", []) if x.get("kind") == "task"]
     if own_today:
-        parts.append(f"할 일 {len(own_today)}: " + ", ".join(x["text"][:14] for x in own_today[:2]) + (" 등" if len(own_today) > 2 else ""))
+        text = f"할 일 {len(own_today)}: " + ", ".join(x["text"][:14] for x in own_today[:2]) + (" 등" if len(own_today) > 2 else "")
+        _n = len(own_today)
+        parts.append((3, text, lambda _s, _n=_n: f"할 일 {_n}"))
     elif tk.get("week") or tk.get("waiting") or tk.get("someday"):
-        parts.append("할 일 오늘 0" + (f"·이번 주 {tk['week']}" if tk.get("week") else "") + (f"·언젠가 {tk['someday']}" if tk.get("someday") else "") + (f"·기다림 {tk['waiting']}" if tk.get("waiting") else ""))
+        text = "할 일 오늘 0" + (f"·이번 주 {tk['week']}" if tk.get("week") else "") + (f"·언젠가 {tk['someday']}" if tk.get("someday") else "") + (f"·기다림 {tk['waiting']}" if tk.get("waiting") else "")
+        _n = tk.get("week") or tk.get("someday") or tk.get("waiting") or 0
+        parts.append((3, text, lambda _s, _n=_n: f"할 일 {_n}"))
     rem_n = sum(1 for x in (t.get("tasks") or {}).get("today", []) + (t.get("tasks") or {}).get("week", []) + (t.get("tasks") or {}).get("someday", []) if x.get("kind") == "reminder")
     if rem_n:
-        parts.append(f"미리알림 {rem_n}")
+        parts.append((3, f"미리알림 {rem_n}", None))
     if t["revisit"]:
-        parts.append("되돌아볼 결정 " + ", ".join(f"{_short(d_['title'])[:16]}({_dleft(d_)})" for d_ in t["revisit"][:2]))
+        parts.append((4, "되돌아볼 결정 " + ", ".join(f"{_short(d_['title'])[:16]}({_dleft(d_)})" for d_ in t["revisit"][:2]), None))
     w = t["this_week"]
-    parts.append(f"이번 주 노트 {w['new_notes']}·결정 {w['new_decisions']}")
-    return _clip(" / ".join(parts), KAKAO_MAX)
+    _new_notes = w["new_notes"]
+    parts.append((5, f"이번 주 노트 {w['new_notes']}·결정 {w['new_decisions']}", lambda _s, _n=_new_notes: f"주간 노트 {_n}"))
+    return assemble_kakao(parts, KAKAO_MAX)
 
 
 class AgendaCache:
@@ -6462,26 +6529,30 @@ def notify(text, title="세컨드브레인", cfg=None):
     return {"sent": any(c["ok"] for c in channels), "channels": channels, "text": text}
 
 
-def evening_brief(t, tomorrow_events):
-    """저녁 마감 문장(≤200자): 오늘 남은 할 일, 내일 첫 일정·동선, 되돌아볼 결정."""
+def evening_brief(t, tomorrow_events, extra_parts=None):
+    """저녁 마감 문장(≤200자, 우선순위 예산 배정 — assemble_kakao 참고):
+    header(1) · 남은 할 일(1) · 내일 첫 일정(1) · 내일 날씨(2). extra_parts로 (priority, text,
+    shrink_fn|None) 튜플을 추가하면(예: cmd_brief의 일지 한 줄, 2) 같은 예산 배정에 합류한다."""
     tk = t.get("tasks") or {}
     left = [x for x in (tk.get("today") or []) if x.get("kind") == "task" and not x.get("done")]
-    parts = [f"[{t['date']} 저녁 마감]"]
+    parts = [(1, f"[{t['date']} 저녁 마감]", None)]
     if left:
-        parts.append(f"남은 할 일 {len(left)}: " + ", ".join(x["text"] for x in left[:3]) + (" 등" if len(left) > 3 else "") + " → 내일로 옮길까요? (코어에 '남은 할 일 내일로')")
+        parts.append((1, f"남은 할 일 {len(left)}: " + ", ".join(x["text"] for x in left[:3]) + (" 등" if len(left) > 3 else "") + " → 내일로 옮길까요? (코어에 '남은 할 일 내일로')", None))
     else:
-        parts.append("오늘 할 일은 다 끝났어요")
+        parts.append((1, "오늘 할 일은 다 끝났어요", None))
     if tomorrow_events:
         e = tomorrow_events[0]
-        parts.append("내일 " + ("종일 " if e["all_day"] else e["start"][11:16] + " ") + e["title"] + (f" 외 {len(tomorrow_events) - 1}" if len(tomorrow_events) > 1 else ""))
+        parts.append((1, "내일 " + ("종일 " if e["all_day"] else e["start"][11:16] + " ") + e["title"] + (f" 외 {len(tomorrow_events) - 1}" if len(tomorrow_events) > 1 else ""), None))
         w = e.get("weather")
         if w and (w.get("umbrella") or w.get("cold") or w.get("hot")):
             # weather_mod.weather_sentence는 우산 문구만 다루고 형식도 달라 재사용하지 않고 직접 구성한다.
             word = "우산" if w.get("umbrella") else ("겉옷" if w.get("cold") else "더위")
-            parts.append(f"내일 {w.get('place')} {w.get('summary')}, {word}")
+            parts.append((2, f"내일 {w.get('place')} {w.get('summary')}, {word}", None))
     else:
-        parts.append("내일 일정 없음")
-    return _clip(" / ".join(parts), KAKAO_MAX)
+        parts.append((1, "내일 일정 없음", None))
+    if extra_parts:
+        parts.extend(extra_parts)
+    return assemble_kakao(parts, KAKAO_MAX)
 
 
 def cmd_ask(args):
@@ -6512,16 +6583,18 @@ def cmd_brief(args):
         if v:
             attach_event_notes(v, ag)  # 날씨(umbrella/cold/hot) 필드가 있어야 evening_brief가 옷차림을 알려줄 수 있다
         tomorrow = [e for e in ag.get("upcoming") or [] if e.get("days_left") == 1]
-        t["kakao"] = evening_brief(t, tomorrow)
-        t["evening"] = True
+        journal_extra = None
         if getattr(args, "journal", False) and v:
             try:
                 j = make_journal(v, date.today(), force=True)
                 if not j["empty"]:
                     t["journal"] = {"path": j["path"], "kakao": j["kakao"]}
-                    t["kakao"] = _clip(t["kakao"] + (" / 일지: " + j["kakao"] if j.get("kakao") else ""), KAKAO_MAX)
+                    if j.get("kakao"):
+                        journal_extra = [(2, "일지: " + j["kakao"], None)]  # 일지 한 줄도 같은 예산 배정에 합류(우선순위 2)
             except BrainError as e:
                 log(f"일지 건너뜀: {e}")
+        t["kakao"] = evening_brief(t, tomorrow, extra_parts=journal_extra)
+        t["evening"] = True
     if args.kakao:
         res = notify(t["kakao"])
         t["sent"] = res["sent"]
