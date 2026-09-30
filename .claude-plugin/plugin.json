@@ -1,7 +1,7 @@
 {
   "name": "second-brain",
   "displayName": "세컨드브레인",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "대화 중 '기억해둬'로 쌓고 '그때 왜 그렇게 정했지?'로 의사결정 맥락까지 찾는 개인 지식 창고. Obsidian 호환 마크다운 볼트, 외부 키·서버 없음 + 로컬 대시보드·비서 모드(오늘·자동화 위젯·브리핑)",
   "author": {
     "name": "sedurm85",
