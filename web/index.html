@@ -218,6 +218,38 @@ h1, h2, h3 { text-wrap: balance; }
 .ev-status { font-size: 12.5px; color: var(--muted); }
 .ev-memo { font-size: 14px; }
 .ev-note-link { margin: 10px 0 0; font-size: 13px; }
+/* 할 일: 4열 */
+.tasks-section { margin-top: 20px; }
+.task-add { display: flex; gap: 8px; padding: 10px 12px; margin-bottom: 12px; align-items: center; }
+.task-add input { flex: 1; min-width: 0; height: 36px; padding: 0 12px; border-radius: var(--r); background: color-mix(in srgb, var(--bg) 60%, transparent); border: 1px solid var(--rule-strong); color: var(--ink); }
+.task-add input:focus { border-color: var(--accent); outline: none; }
+.task-add select { height: 36px; border-radius: var(--r); background: color-mix(in srgb, var(--bg) 60%, transparent); border: 1px solid var(--rule-strong); color: var(--ink); padding: 0 8px; }
+.tasks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.tcol { padding: 14px 16px 10px; min-width: 0; }
+.tcol h3 { margin: 0 0 8px; font-size: 13.5px; font-weight: 600; color: var(--ink-2); display: flex; gap: 8px; align-items: baseline; }
+.tcol h3 .count { color: var(--muted); font-weight: 500; }
+.tcol.today h3 { color: var(--accent); }
+.tcol ul { list-style: none; margin: 0; padding: 0; }
+.task { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--rule); font-size: 13.5px; position: relative; }
+.task:first-child { border-top: 0; }
+.task input[type="checkbox"] { margin-top: 3px; accent-color: var(--accent); flex: none; }
+.task .tx { min-width: 0; overflow-wrap: anywhere; flex: 1; }
+.task .tx small { display: block; color: var(--muted); font-size: 12px; }
+.task .tx .ov { color: var(--st-crit); }
+.task .kind { flex: none; font-size: 11px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--rule-strong); color: var(--ink-2); align-self: flex-start; margin-top: 2px; }
+.task .kind.decision { border-color: var(--t-decision); color: var(--t-decision); }
+.task .kind.automation { border-color: var(--st-crit); color: var(--st-crit); }
+.task .kind.prep { border-color: var(--t-event); color: var(--t-event); }
+.task .mv { display: none; gap: 4px; flex: none; }
+.task:hover .mv, .task:focus-within .mv { display: inline-flex; }
+.task .mv button { background: none; border: 1px solid var(--rule); border-radius: 4px; color: var(--muted); font-size: 11px; padding: 1px 6px; }
+.task .mv button:hover { color: var(--ink); border-color: var(--rule-strong); }
+.task.done .tx { color: var(--muted); text-decoration: line-through; }
+.task .lnk { background: none; border: 0; padding: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+.task .lnk:hover { text-decoration: underline; text-underline-offset: 3px; }
+.tcol .t-empty { font-size: 13px; color: var(--muted); margin: 4px 0 6px; }
+@media (max-width: 1000px) { .tasks { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .tasks { grid-template-columns: minmax(0, 1fr); } .task-add { flex-wrap: wrap; } }
 /* 이번 주: 7열 */
 .week-section { margin-top: 20px; }
 .week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0; padding: 6px 0; }
@@ -549,6 +581,7 @@ h1, h2, h3 { text-wrap: balance; }
       <li><a href="/core" class="core-link" title="코어 화면 (존재·음성)"><span class="dot"></span>코어</a></li>
       <li><a href="/office" class="core-link" title="사무실 (직원 캐릭터로 보는 자동화·Claude 작업)"><span class="dot"></span>사무실</a></li>
       <li><a href="#today-section" class="active"><span class="dot"></span>오늘</a></li>
+      <li><a href="#tasks"><span class="dot"></span>할 일</a></li>
       <li><a href="#week"><span class="dot"></span>이번 주</a></li>
       <li><a href="#graph-section"><span class="dot"></span>지식 그래프</a></li>
       <li><a href="#automation"><span class="dot"></span>자동화</a></li>
@@ -585,6 +618,14 @@ h1, h2, h3 { text-wrap: balance; }
       <div class="today-grid" id="todayGrid"><div class="loading">오늘 불러오는 중</div></div>
       <div class="daybar" id="daybar" aria-label="오늘 시간표"></div>
     </div>
+  </section>
+
+  <section class="section tasks-section" id="tasks" aria-labelledby="tasks-h">
+    <div class="section-head"><h2 id="tasks-h">할 일</h2><p id="tasksSub">inbox.md의 체크박스가 그대로 할 일이에요. 결정 되돌아볼 날, 자동화 실패, 일정 준비는 자동으로 들어와요.</p></div>
+    <form class="task-add glass" id="taskAdd"><input type="text" name="text" maxlength="300" placeholder="할 일 추가 (예: 세무사 답장 @waiting(세무사), 보고서 초안 @due(2026-10-02))" autocomplete="off" aria-label="할 일 추가">
+      <select name="when" aria-label="언제"><option value="today">오늘</option><option value="tomorrow">내일</option><option value="week">이번 주</option><option value="someday" selected>언젠가</option></select>
+      <button type="submit" class="text-btn primary">추가</button></form>
+    <div class="tasks" id="tasksGrid"><div class="loading">할 일 불러오는 중</div></div>
   </section>
 
   <section class="section week-section" id="week" aria-labelledby="week-h">
@@ -1496,10 +1537,12 @@ h1, h2, h3 { text-wrap: balance; }
       return '<li><button type="button" class="rv-item" data-path="' + esc(d.path) + '"><span class="t">' + esc(d.title) + "</span>" +
         (lab ? '<span class="' + cls + '">' + lab + "</span>" : "") + "</button></li>";
     }).join("") + "</ul>" : '<p class="t-empty">이번 주에 되돌아볼 결정이 없어요.</p>';
-    var ibHtml = inbox.length ? '<ul aria-label="할 일 (표시 전용)">' + inbox.map(function (it) {
-      var text = typeof it === "string" ? it : (it && (it.text || it.title)) || "";
-      return '<li class="inbox-item"><span class="box" aria-hidden="true"></span><span>' + esc(text) + "</span></li>";
-    }).join("") + "</ul>" : '<p class="t-empty">inbox.md에 <code>- [ ] 항목</code>으로 적으면 여기 떠요.</p>';
+    var tk = t.tasks || { counts: {}, today: [] }, tkc = tk.counts || {};
+    var ibHtml = (tk.today && tk.today.length) ? '<ul aria-label="오늘 할 일">' + tk.today.slice(0, 5).map(function (it) {
+      return '<li class="inbox-item"><span class="box" aria-hidden="true"></span><span>' + esc(it.text) + (it.kind && it.kind !== "task" ? ' <span class="muted" style="font-size:12px">· ' + ({ decision: "결정", automation: "자동화", prep: "준비" }[it.kind] || it.kind) + "</span>" : "") + "</span></li>";
+    }).join("") + "</ul>" + (tk.today.length > 5 ? '<p class="t-empty">외 ' + (tk.today.length - 5) + '개, <a href="#tasks">할 일</a>에서 전체</p>' : "") :
+      '<p class="t-empty">오늘 할 일이 없어요.' + ((tkc.week || 0) + (tkc.someday || 0) ? " 이번 주 " + (tkc.week || 0) + " · 언젠가 " + (tkc.someday || 0) + (tkc.waiting ? " · 기다림 " + tkc.waiting : "") : ' 아래 <a href="#tasks">할 일</a>에서 추가해요.') + "</p>";
+    var inboxCount = tkc.today != null ? tkc.today : inbox.length;
     renderDaybar(t.agenda || {}, t.now);
     var up = (t.agenda && t.agenda.upcoming) || [];
     up.forEach(function (e) { S.events[e.id] = e; });
@@ -1509,7 +1552,7 @@ h1, h2, h3 { text-wrap: balance; }
     $("todayGrid").innerHTML =
       '<div class="tcard wide"><h3>지금 볼 것</h3>' + auHtml + (upHtml ? '<h3 style="margin-top:12px">다가오는 일정 <span class="count">' + up.length + "</span></h3>" + upHtml : "") + "</div>" +
       '<div class="tcard"><h3>되돌아볼 결정 <span class="count">' + rv.length + "</span></h3>" + rvHtml + "</div>" +
-      '<div class="tcard"><h3>할 일 <span class="count">' + inbox.length + "</span></h3>" + ibHtml + "</div>";
+      '<div class="tcard"><h3>할 일 <span class="count">' + inboxCount + "</span></h3>" + ibHtml + "</div>";
   }
 
   /* ───────── 일정: 오늘 시간표 스트립 · 이번 주 ───────── */
@@ -1565,6 +1608,50 @@ h1, h2, h3 { text-wrap: balance; }
     el.innerHTML = html;
     var total = (ag.today || []).length + (ag.upcoming || []).length;
     $("weekSub").textContent = total ? "오늘부터 7일, 일정 " + total + "개." : "오늘부터 7일. 연결된 캘린더에 일정이 없어요.";
+  }
+
+  /* ───────── 할 일 4열 ───────── */
+  var KIND_KO = { decision: "결정", automation: "자동화", prep: "준비" };
+  function taskItem(t, bucket) {
+    var own = !t.kind || t.kind === "task";
+    var meta = "";
+    if (own && t.due) meta = (t.days_left < 0 ? '<span class="ov">' + (-t.days_left) + "일 지남</span>" : t.days_left === 0 ? "오늘" : t.days_left === 1 ? "내일" : "D-" + t.days_left) + " · " + t.due;
+    if (t.waiting) meta = t.waiting + (t.waiting_days != null ? " 기다린 지 " + t.waiting_days + "일" : "");
+    if (!own && t.due) meta = (t.days_left < 0 ? '<span class="ov">' + (-t.days_left) + "일 지남</span>" : t.days_left === 0 ? "오늘" : "D-" + t.days_left) + (t.summary ? " · " + esc(t.summary.slice(0, 40)) : "");
+    var body = own ? esc(t.text) : '<button type="button" class="lnk" ' + (t.kind === "automation" ? 'data-wid="' + esc(t.wid) + '"' : 'data-path="' + esc(t.path) + '"') + ">" + esc(t.text) + "</button>";
+    var mv = own ? '<span class="mv">' + (bucket !== "today" ? '<button type="button" data-mv="today" title="오늘로">오늘</button>' : "") + (bucket !== "week" ? '<button type="button" data-mv="tomorrow" title="내일로">내일</button>' : "") + (bucket !== "someday" ? '<button type="button" data-mv="someday" title="언젠가로">언젠가</button>' : "") + '<button type="button" data-mv="remove" title="지우기">×</button></span>' : "";
+    return '<li class="task' + (t.done ? " done" : "") + '" data-line="' + (own ? t.line : "") + '">' + (own ? '<input type="checkbox"' + (t.done ? " checked" : "") + ' aria-label="완료">' : '<span class="kind ' + esc(t.kind) + '">' + (KIND_KO[t.kind] || t.kind) + "</span>") +
+      '<span class="tx">' + body + (meta ? "<small>" + meta + "</small>" : "") + "</span>" + mv + "</li>";
+  }
+  function renderTasks(b) {
+    S.tasks = b;
+    var cols = [["today", "오늘"], ["week", "이번 주"], ["someday", "언젠가"], ["waiting", "기다림"]];
+    $("tasksGrid").innerHTML = cols.map(function (c) {
+      var items = b[c[0]] || [];
+      return '<div class="tcol glass ' + c[0] + '"><h3>' + c[1] + ' <span class="count">' + items.length + "</span></h3>" + (items.length ? "<ul>" + items.map(function (t) { return taskItem(t, c[0]); }).join("") + "</ul>" : '<p class="t-empty">' + ({ today: "오늘 할 일이 없어요.", week: "이번 주 마감이 없어요.", someday: "언젠가 할 것이 없어요.", waiting: "기다리는 답이 없어요." }[c[0]]) + "</p>") + "</div>";
+    }).join("");
+    var c = b.counts || {};
+    $("tasksSub").textContent = "오늘 " + (c.today || 0) + " · 이번 주 " + (c.week || 0) + " · 언젠가 " + (c.someday || 0) + " · 기다림 " + (c.waiting || 0) + ". 체크하면 inbox.md에 바로 표시돼요.";
+  }
+  function taskPost(body) { return post("task", body).then(function () { return api("tasks").then(renderTasks); }).then(function () { return refreshLive(true); }); }
+  function initTasks() {
+    $("taskAdd").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var f = ev.target, text = f.elements.text.value.trim(), when = f.elements.when.value; if (!text) return;
+      var body = { action: "add", text: text };
+      if (when === "today" || when === "tomorrow") body.due = when; else if (when === "week") body.due = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10); else body.someday = true;
+      f.elements.text.value = "";
+      taskPost(body).catch(function (err) { alert("추가 실패: " + (err.message || err)); });
+    });
+    $("tasksGrid").addEventListener("change", function (ev) {
+      var cb = ev.target; if (cb.type !== "checkbox") return;
+      var li = cb.closest(".task"); taskPost({ action: "check", line: +li.getAttribute("data-line"), done: cb.checked }).catch(function (err) { cb.checked = !cb.checked; alert("저장 실패: " + (err.message || err)); });
+    });
+    $("tasksGrid").addEventListener("click", function (ev) {
+      var b = ev.target.closest("button[data-mv]"); if (!b) return;
+      var li = b.closest(".task"), line = +li.getAttribute("data-line"), mv = b.getAttribute("data-mv");
+      taskPost(mv === "remove" ? { action: "remove", line: line } : { action: "move", line: line, to: mv }).catch(function (err) { alert("실패: " + (err.message || err)); });
+    });
   }
 
   /* 스파크라인 (단일 시리즈: 2px 선, 마지막 점 강조, 최소·최대 라벨) */
@@ -1691,6 +1778,7 @@ h1, h2, h3 { text-wrap: balance; }
     S.live.last = Date.now();
     var a = api("today").then(function (t) { renderToday(t); return true; })
       .catch(function (err) { if (!S.live.okToday) fail($("todayGrid"), "오늘", err); else console.error("[세컨드브레인] 오늘 갱신 실패", err); return false; });
+    api("tasks").then(renderTasks).catch(function (err) { $("tasksGrid").innerHTML = '<div class="loading">할 일을 불러오지 못했어요: ' + esc(String(err && err.message || err)) + "</div>"; });
     api("agenda", { days: 7 }).then(function (ag) {
       renderWeek(ag);
       var want = params.get("event"); // ?event=YYYY-MM-DD|제목 → 상세 패널 바로 열기(카톡 링크·캡처용)
@@ -1774,7 +1862,7 @@ h1, h2, h3 { text-wrap: balance; }
           links.forEach(function (a) { a.classList.toggle("active", a.getAttribute("href") === "#" + id); });
         });
       }, { rootMargin: "-40% 0px -55% 0px" });
-      ["today-section", "week", "graph-section", "automation", "overview", "decisions", "timeline", "projects"].forEach(function (id) { io.observe($(id)); });
+      ["today-section", "tasks", "week", "graph-section", "automation", "overview", "decisions", "timeline", "projects"].forEach(function (id) { io.observe($(id)); });
     }
   }
 
@@ -1784,7 +1872,7 @@ h1, h2, h3 { text-wrap: balance; }
     if (!location.hash && "scrollRestoration" in history) { history.scrollRestoration = "manual"; window.scrollTo(0, 0); }
     // 첫 로드 등장 시퀀스: 탭이 보이고 모션 축소가 아닐 때만, 1.6초 뒤 해제(멈춘 프레임 방지)
     if (!document.hidden && !reduceMotion) { document.documentElement.classList.add("entering"); setTimeout(function () { document.documentElement.classList.remove("entering"); }, 1600); }
-    initTheme(); renderHeader(); initGraphEvents(); initSearch(); initLive(); initGlobal();
+    initTheme(); renderHeader(); initGraphEvents(); initSearch(); initLive(); initGlobal(); initTasks();
     if (!MOCK) api("session").then(function (s) { S.token = s.token; S.writable = !!s.writable; }).catch(function () { S.token = null; });
     api("summary").then(function (s) {
       if (!s.counts || !s.counts.total) { renderEmpty(); return; }

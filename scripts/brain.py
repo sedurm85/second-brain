@@ -1904,6 +1904,194 @@ def parse_inbox(vault):
     return out
 
 
+TASK_LINE_RE = re.compile(r"^(\s*[-*]\s+\[)( |x|X)(\]\s+)(.*)$")
+TAG_RE = re.compile(r"@(due|since|waiting|project)\(([^)]*)\)|@(someday|today|tomorrow)\b")
+
+
+def parse_task_line(text):
+    """'- [ ] 세무사 답장 @waiting(세무사) @since(2026-09-28)' 의 본문 부분을 태그와 내용으로."""
+    tags = {"due": None, "someday": False, "waiting": None, "since": None, "project": None}
+    def take(m):
+        k, v, bare = m.group(1), m.group(2), m.group(3)
+        if bare == "someday":
+            tags["someday"] = True
+        elif bare in ("today", "tomorrow"):
+            tags["due"] = bare  # 상대 표현은 호출자가 날짜로 바꿈
+        elif k in ("due", "since"):
+            tags[k] = (v or "").strip()[:10]
+        elif k == "waiting":
+            tags["waiting"] = (v or "").strip() or "?"
+        elif k == "project":
+            tags["project"] = (v or "").strip()
+        return ""
+    body = TAG_RE.sub(take, text)
+    body = " ".join(body.split())
+    return body, tags
+
+
+def parse_tasks(vault, today=None):
+    """inbox.md의 체크박스 줄 전부(완료 포함). 반환 항목: {line, text, done, due, someday, waiting, since, project, raw}."""
+    today = today or date.today()
+    p = vault / "inbox.md" if vault else None
+    if not p or not p.is_file():
+        return []
+    out = []
+    for i, ln in enumerate(p.read_text(encoding="utf-8", errors="replace").split("\n")):
+        m = TASK_LINE_RE.match(ln)
+        if not m:
+            continue
+        body, tags = parse_task_line(m.group(4))
+        due = tags["due"]
+        if due == "today":
+            due = today.isoformat()
+        elif due == "tomorrow":
+            due = (today + timedelta(days=1)).isoformat()
+        if due and not DATE_RE.match(due):
+            due = None
+        out.append({"line": i, "text": body, "done": m.group(2).lower() == "x", "due": due, "someday": tags["someday"],
+                    "waiting": tags["waiting"], "since": tags["since"], "project": tags["project"], "raw": ln, "kind": "task"})
+    return out
+
+
+def bucket_tasks(tasks, today=None):
+    """4묶음: today(마감 지났거나 오늘), week(7일 안), someday(@someday 또는 마감 없음), waiting(@waiting). 완료는 done_recent."""
+    today = today or date.today()
+    t_iso, w_iso = today.isoformat(), (today + timedelta(days=7)).isoformat()
+    b = {"today": [], "week": [], "someday": [], "waiting": [], "done_recent": []}
+    for t in tasks:
+        if t.get("done"):
+            b["done_recent"].append(t)
+            continue
+        t = dict(t)
+        if t.get("due"):
+            t["days_left"] = (date.fromisoformat(t["due"]) - today).days
+        if t.get("waiting"):
+            if t.get("since") and DATE_RE.match(t["since"]):
+                t["waiting_days"] = (today - date.fromisoformat(t["since"])).days
+            b["waiting"].append(t)
+        elif t.get("due") and t["due"] <= t_iso:
+            b["today"].append(t)
+        elif t.get("due") and t["due"] <= w_iso:
+            b["week"].append(t)
+        elif t.get("someday") or not t.get("due"):
+            b["someday"].append(t)
+        else:
+            b["week"].append(t)
+    for k in ("today", "week"):
+        b[k].sort(key=lambda x: (x.get("due") or "9999", x.get("line", 0)))
+    b["done_recent"] = b["done_recent"][-5:]
+    return b
+
+
+def derived_tasks(vault, today, widgets=None, agenda=None):
+    """볼트·자동화·일정에서 자동으로 생기는 할 일. 결정 되돌아볼 날(7일 안), 자동화 실패·지연, 일정 준비 미완(7일 안)."""
+    out = []
+    notes = load_notes(vault) if vault else []
+    for d in _revisit_soon(notes, today):
+        out.append({"kind": "decision", "text": "결정 되돌아보기: " + d["title"], "due": d["revisit"], "days_left": d["days_left"],
+                    "path": d["path"], "done": False})
+    for w in widgets or []:
+        if w.get("status") in ("fail", "stale") and w.get("state") != "paused":
+            out.append({"kind": "automation", "text": ("실패 확인: " if w["status"] == "fail" else "오래된 자동화: ") + re.sub(r"\s*\(.*\)\s*$", "", w["title"]),
+                        "due": today.isoformat(), "days_left": 0, "wid": w["id"], "summary": w.get("summary") or "", "done": False})
+    for e in ((agenda or {}).get("today") or []) + ((agenda or {}).get("upcoming") or []):
+        n = e.get("note")
+        if n and n.get("total") and n["done"] < n["total"] and (e.get("days_left") is None or e["days_left"] <= 7):
+            for c in n["checklist"]:
+                if not c["done"]:
+                    out.append({"kind": "prep", "text": e["title"] + " 준비: " + c["text"], "due": e["start"][:10], "days_left": e.get("days_left"),
+                                "path": n["path"], "line": c["line"], "event_key": e.get("key"), "done": False})
+    return out
+
+
+def dash_tasks(vault, today=None, widgets=None, agenda=None):
+    """/api/tasks. inbox 할 일 + 파생 할 일을 4묶음으로."""
+    today = today or date.today()
+    own = parse_tasks(vault, today) if vault else []
+    b = bucket_tasks(own, today)
+    for d in derived_tasks(vault, today, widgets, agenda):
+        dl = d.get("days_left")
+        if dl is not None and dl <= 0:
+            b["today"].append(d)
+        elif dl is not None and dl <= 7:
+            b["week"].append(d)
+        else:
+            b["someday"].append(d)
+    b["today"].sort(key=lambda x: (x.get("due") or "9999", x.get("kind") != "task"))
+    b["week"].sort(key=lambda x: (x.get("due") or "9999"))
+    b["counts"] = {k: len(b[k]) for k in ("today", "week", "someday", "waiting")}
+    b["date"] = today.isoformat()
+    return b
+
+
+def task_action(vault, body, today=None):
+    """쓰기: add(text, due|someday|waiting|since|project) · check(line, done) · move(line, to: today|tomorrow|week|someday|clear) · remove(line)."""
+    today = today or date.today()
+    action = body.get("action")
+    p = vault / "inbox.md"
+    if not p.is_file():
+        p.write_text("# inbox\n\n", encoding="utf-8")
+    lines = p.read_text(encoding="utf-8").split("\n")
+    if action == "add":
+        text = " ".join(str(body.get("text") or "").split())
+        if not text:
+            raise BrainError("내용이 비었어요")
+        if len(text) > 300:
+            raise BrainError("할 일은 300자까지")
+        tags = []
+        due = body.get("due")
+        if due in ("today", "tomorrow"):
+            due = (today + timedelta(days=1 if due == "tomorrow" else 0)).isoformat()
+        if due:
+            parse_date(due, "마감")
+            tags.append(f"@due({due})")
+        if body.get("someday"):
+            tags.append("@someday")
+        if body.get("waiting"):
+            tags.append(f"@waiting({str(body['waiting']).strip()[:40]}) @since({today.isoformat()})")
+        if body.get("project"):
+            tags.append(f"@project({str(body['project']).strip()[:40]})")
+        line = f"- [ ] {text}" + (" " + " ".join(tags) if tags else "")
+        while lines and not lines[-1].strip():
+            lines.pop()
+        lines.append(line)
+        p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        git_commit(vault, "brain: task add")
+        return {"ok": True, "line": len(lines) - 1, "text": line}
+    i = int(body.get("line", -1))
+    if not (0 <= i < len(lines)) or not TASK_LINE_RE.match(lines[i]):
+        raise BrainError("할 일 줄이 아니에요(inbox.md가 바뀌었을 수 있어요. 새로 고쳐 주세요)")
+    m = TASK_LINE_RE.match(lines[i])
+    if action == "check":
+        mark = "x" if body.get("done", True) else " "
+        lines[i] = f"{m.group(1)}{mark}{m.group(3)}{m.group(4)}"
+    elif action == "move":
+        to = str(body.get("to") or "")
+        rest = TAG_RE.sub(lambda mm: "" if mm.group(1) in ("due",) or mm.group(3) in ("someday", "today", "tomorrow") else mm.group(0), m.group(4))
+        rest = " ".join(rest.split())
+        if to in ("today", "tomorrow"):
+            rest += f" @due({(today + timedelta(days=1 if to == 'tomorrow' else 0)).isoformat()})"
+        elif to == "week":
+            rest += f" @due({(today + timedelta(days=7)).isoformat()})"
+        elif to == "someday":
+            rest += " @someday"
+        elif to == "clear":
+            pass
+        elif DATE_RE.match(to):
+            parse_date(to, "마감")
+            rest += f" @due({to})"
+        else:
+            raise BrainError("to는 today · tomorrow · week · someday · clear · YYYY-MM-DD")
+        lines[i] = f"{m.group(1)}{m.group(2)}{m.group(3)}{rest}"
+    elif action == "remove":
+        del lines[i]
+    else:
+        raise BrainError("action은 add · check · move · remove 중 하나")
+    p.write_text("\n".join(lines), encoding="utf-8")
+    git_commit(vault, f"brain: task {action}")
+    return {"ok": True}
+
+
 def _revisit_soon(notes, today, days=7):
     limit = (today + timedelta(days=days)).isoformat()
     out = []
@@ -2008,6 +2196,10 @@ def dash_today(vault, today=None, now=None, widgets=None, agenda=None):
     t["agenda"]["upcoming"] = (ag.get("upcoming") or [])[:6]
     t["agenda"]["upcoming_count"] = len(ag.get("upcoming") or [])
     t["agenda"]["sentence"] = agenda_mod.agenda_sentence(ag)
+    tb = dash_tasks(vault, today, widgets, ag)
+    t["tasks"] = {"counts": tb["counts"], "today": tb["today"][:8], "waiting": tb["waiting"][:5]}
+    # 표시용 inbox: 오늘 묶음(직접 적은 것 우선). 예전 계약(문자열 목록) 유지
+    t["inbox"] = [x["text"] for x in tb["today"] if x.get("kind") == "task"] or t["inbox"]
     t["kakao"] = kakao_brief(t)
     return t
 
@@ -2109,6 +2301,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 res = event_note_action(vault, body)
                 self.server.agenda_cache.invalidate()
                 return self._json(200, res)
+            if route == "/api/task":
+                res = task_action(vault, body, self.server.today or date.today())
+                return self._json(200, res)
             if route == "/api/ask":
                 widgets = collect_widgets(self.server.widget_cache)
                 t = dash_today(vault, self.server.today, widgets=widgets, agenda=self.server.agenda_cache.get())
@@ -2154,6 +2349,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._static("office.html")
             if route == "/api/office":
                 return self._json(200, dash_office(collect_widgets(self.server.widget_cache)))
+            if route == "/api/tasks":
+                widgets = collect_widgets(self.server.widget_cache)
+                ag = dict(self.server.agenda_cache.get())
+                attach_event_notes(vault, ag)
+                return self._json(200, dash_tasks(vault, today, widgets, ag))
             if route.startswith("/web/"):
                 return self._static(urllib.parse.unquote(route[len("/web/"):]))
             if route == "/api/summary":
@@ -2821,6 +3021,49 @@ def ask_assistant(question, today):
     return {"answer": ans[:600], "via": argv[0]}
 
 
+def cmd_task(args):
+    v = require_vault()
+    today = date.today()
+    if args.action == "list":
+        widgets = collect_widgets()
+        ag = collect_agenda_safe(7)
+        attach_event_notes(v, ag)
+        b = dash_tasks(v, today, widgets, ag)
+        lines = []
+        for k, label in (("today", "오늘"), ("week", "이번 주"), ("someday", "언젠가"), ("waiting", "기다림")):
+            lines.append(f"[{label} {len(b[k])}]")
+            for t in b[k]:
+                tag = {"decision": "결정", "automation": "자동화", "prep": "준비"}.get(t.get("kind"), "")
+                num = f"#{t['line']}" if t.get("kind") == "task" else f"({tag})"
+                extra = f"  마감 {t['due']}" if t.get("due") and t.get("kind") == "task" else ""
+                if t.get("waiting"):
+                    extra = f"  ← {t['waiting']}" + (f" {t['waiting_days']}일째" if t.get("waiting_days") is not None else "")
+                lines.append(f"  {num:>8}  {t['text']}{extra}")
+        emit(args, b, "\n".join(lines))
+        return EXIT_OK
+    if args.action == "add":
+        if not args.arg1:
+            raise BrainError("내용이 필요해요: task add \"내용\"")
+        res = task_action(v, {"action": "add", "text": args.arg1, "due": args.due or ("tomorrow" if args.tomorrow else None),
+                              "someday": args.someday, "waiting": args.waiting, "project": args.project}, today)
+        emit(args, res, f"추가: {res['text']}  (#{res['line']})")
+        return EXIT_OK
+    if args.arg1 is None or not str(args.arg1).lstrip("#").isdigit():
+        raise BrainError("줄 번호가 필요해요(task list의 # 값)")
+    line = int(str(args.arg1).lstrip("#"))
+    if args.action in ("done", "undo"):
+        res = task_action(v, {"action": "check", "line": line, "done": args.action == "done"}, today)
+        emit(args, res, "완료 표시" if args.action == "done" else "완료 해제")
+        return EXIT_OK
+    if args.action == "move":
+        res = task_action(v, {"action": "move", "line": line, "to": args.arg2 or "tomorrow"}, today)
+        emit(args, res, f"옮김 → {args.arg2 or 'tomorrow'}")
+        return EXIT_OK
+    res = task_action(v, {"action": "remove", "line": line}, today)
+    emit(args, res, "지움")
+    return EXIT_OK
+
+
 def cmd_event(args):
     v = require_vault()
     if args.action == "show":
@@ -3070,6 +3313,16 @@ def build_parser():
 
     s = add("brief", "아침 브리핑(today와 같음). --kakao면 카톡으로 200자 발송", cmd_brief)
     s.add_argument("--kakao", action="store_true", help="카톡 나에게 보내기(헬퍼 필요)")
+
+    s = add("task", "할 일: add <내용> [--due D|--tomorrow|--someday|--waiting 누구] · list · done <줄> · move <줄> <today|tomorrow|week|someday|clear|날짜> · remove <줄>", cmd_task)
+    s.add_argument("action", choices=("add", "list", "done", "undo", "move", "remove"))
+    s.add_argument("arg1", nargs="?", help="add: 내용 · done/undo/move/remove: 줄 번호(list의 #)")
+    s.add_argument("arg2", nargs="?", help="move: 목적지")
+    s.add_argument("--due", help="마감 YYYY-MM-DD")
+    s.add_argument("--tomorrow", action="store_true", help="마감 내일")
+    s.add_argument("--someday", action="store_true", help="언젠가")
+    s.add_argument("--waiting", help="기다리는 상대")
+    s.add_argument("--project", help="프로젝트")
 
     s = add("event", "일정 노트: memo <키> <내용> · todo <키> <항목> · show <키>  (키: 'YYYY-MM-DD|제목')", cmd_event)
     s.add_argument("action", choices=("memo", "todo", "show"))

@@ -174,3 +174,11 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `web/office.html`(무의존): 직원 스프라이트는 16x20 격자 SVG 사각형으로 즉석 생성(머리·셔츠·피부색은 id 해시), 상태별 자세: 가동=타이핑 2프레임(0.5s)·모니터 깜빡, 정상=대기, 실패=머리 감싸기+붉은 램프+붉은 말풍선, 오래됨=눈 감고 zzz, 멈춤=빈 의자. 방 머리에 창문(시간대별 하늘색), 램프(가동 파랑 깜빡/주의 붉음/정상 초록). 팀장의 한마디(지금 제가 하는 일·가동 인원·막힌 담당), 활동 로그 2열, 직원 클릭 → 상세(로그 발췌)
 - `/api/office`: `teams`(widgets.json `team` 또는 id 접두어 기본 배정: 콘텐츠팀/생활팀/커리어팀/운영팀), `widgets`(+team·source), `running`(crontab `>> 로그`↔위젯 source로 스크립트 경로를 얻고 `ps` 명령줄과 파일명 패턴 `[\s/]stem*.py|.sh` 매칭, Claude Helper 등 제외), `jobs`(`$CLAUDE_CONFIG_DIR/jobs/*/state.json`, 일하는 중·막힘 24h / 끝난 것 3h, timeline 최근 5줄), `events`(위젯 갱신 + 작업 detail 시간순 24개), `assistant_name`. 환경변수 `SECOND_BRAIN_JOBS_DIR`로 대체 가능
 - 보드·코어 상단에 「사무실」 링크. brain-view 스킬: 화면 셋 안내. 테스트 +4, 총 126
+
+## v0.10 할 일 체계 (2026-09-30, 2차 2단계)
+
+- inbox.md 체크박스 문법: `- [ ] 내용 @due(YYYY-MM-DD)|@today|@tomorrow`, `@someday`, `@waiting(누구) @since(날짜)`, `@project(이름)`. 파서 `parse_tasks`, 묶음 `bucket_tasks`(오늘=마감 지남·오늘 / 이번 주=7일 안 / 언젠가=@someday·마감 없음 / 기다림=@waiting, 완료 최근 5)
+- 파생 할 일 `derived_tasks`: 결정 되돌아볼 날(7일 안, kind decision), 자동화 실패·지연(kind automation, 멈춤 제외), 일정 준비 미완(kind prep, 7일 안, 항목별). `/api/tasks` = inbox + 파생을 묶음별로. `/api/today`에 `tasks{counts, today, waiting}`; `inbox` 문자열 목록은 오늘 묶음의 직접 항목으로 유지
+- 쓰기 `POST /api/task`(토큰): add(text, due|someday|waiting|project) · check(line, done) · move(line, to today|tomorrow|week|someday|clear|날짜; 다른 태그 유지) · remove(line). CLI `task add|list|done|undo|move|remove`
+- 보드: 새 섹션 「할 일」(추가 폼 + 4열 유리 패널, 체크·호버 시 오늘/내일/언젠가/삭제, 파생 항목은 종류 배지와 원본 링크), 히어로 할 일 카드는 오늘 묶음 요약. 코어: "~ 할 일 추가"/"할 일 추가: ~" 음성 등록(끝에 오늘/내일이면 마감), "할 일" 질문은 오늘 묶음으로 답
+- 테스트 +4, 총 130

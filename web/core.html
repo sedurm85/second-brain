@@ -280,7 +280,16 @@ button { cursor: pointer; }
     if (/이번\s*주|다가오는|앞으로/.test(q)) return speak(weekLines(ag));
     if (/오늘|일정|스케줄|뭐\s*있/.test(q)) return speak((t.agenda && t.agenda.sentence) ? [t.agenda.sentence].concat(nextLine(ag)) : briefLines(t));
     if (/자동화|크론|상태|고장|실패/.test(q)) { var ws = t.widgets_summary || {}, bad = (t.top_widgets || []).filter(function (w) { return w.status !== "ok" && w.status !== "paused"; }); return speak([bad.length ? bad.map(function (w) { return shortTitle(w.title) + " " + (w.status === "fail" ? "실패" : w.status) + ". " + (w.summary || ""); }).join(" ") : "자동화 " + (ws.ok || 0) + "개 모두 정상이에요."]); }
-    if (/할\s*일|인박스|투두/.test(q)) return speak([(t.inbox || []).length ? "할 일 " + t.inbox.length + "건. " + t.inbox.map(function (x) { return typeof x === "string" ? x : x.text; }).slice(0, 4).join(", ") + "." : "남은 할 일이 없어요."]);
+    var addm = /^(?:할\s*일\s*(?:추가|등록|넣어)[:\s]*|(.+?)\s*(?:할\s*일(?:로|에)?\s*(?:추가|등록|넣어)(?:줘|해)?))\s*(.*)$/.exec(q);
+    if (addm) {
+      var txt = (addm[2] || addm[1] || "").trim(); if (!txt) return speak(["무엇을 할 일로 넣을까요?"]);
+      var body = { action: "add", text: txt.replace(/(내일|오늘|언젠가)\s*$/, "").trim() }; if (/내일\s*$/.test(txt)) body.due = "tomorrow"; else if (/오늘\s*$/.test(txt)) body.due = "today"; else body.someday = !/오늘|내일/.test(txt);
+      return fetch("/api/task", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
+        .then(function () { load(); speak(["할 일에 넣었어요. " + body.text + (body.due === "tomorrow" ? ", 내일." : body.due === "today" ? ", 오늘." : ".")]); })
+        .catch(function (err) { speak(["할 일 추가에 실패했어요. " + (err.message || "")]); });
+    }
+    if (/할\s*일|인박스|투두/.test(q)) { var tk = t.tasks || {}, td = tk.today || []; return speak([td.length ? "오늘 할 일 " + td.length + "건. " + td.map(function (x) { return x.text; }).slice(0, 4).join(", ") + "." + ((tk.counts || {}).waiting ? " 기다리는 답이 " + tk.counts.waiting + "건 있어요." : "") : "오늘 할 일은 없어요." + ((tk.counts || {}).someday ? " 언젠가 할 것이 " + tk.counts.someday + "건 있어요." : "")]); }
     if (/결정|되돌아/.test(q)) return speak([(t.revisit || []).length ? "되돌아볼 결정 " + t.revisit.length + "건. " + t.revisit.map(function (d) { return d.title; }).slice(0, 3).join(", ") + "." : "이번 주에 되돌아볼 결정은 없어요."]);
     if (/브리핑|요약|보고/.test(q)) return speak(briefLines(t));
     // 그 밖: 헤드리스 Claude에게 (생각 중 상태)
