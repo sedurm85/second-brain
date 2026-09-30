@@ -374,3 +374,8 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 성공률 색상은 기존 토큰 재사용: 95% 이상 `--accent`, 80~94% `--warn`, 80% 미만 `--crit`. `.room-head`에 `flex-wrap`을 줘 좁은 화면에서 KPI 줄이 아래로 밀려도 방 밖으로 넘치지 않게 함
 - `tests/test_office_kpi.py` 6건 추가(팀별 집계, 기본 팀 라벨이 `dash_office`와 일치, paused 제외, 전체 합산, 실행 0→rate None, `/api/office`에 kpis 포함). 전체 스위트 191 통과
 - Playwright로 1280×800/390×800 두 뷰포트에서 `.kpi` 요소 존재 및 `scrollWidth`가 뷰포트를 넘지 않음을 확인(가로 스크롤 없음)
+## v0.28 보드에서 노트에 기록 (2026-09-30)
+
+- `note_append_action(vault, body)`: 보드 노트 패널에서 어떤 노트(note/idea/decision/project/journal…)든 열어 둔 채로 메모·태그·할 일을 바로 추가. `memo`/`todo`는 `_append_section`으로 `## 메모`/`## 할 일` 절 끝에 붙이고(없으면 새로 만듦, decision의 `결정`/`이유` 절은 건드리지 않음), `tag`는 프론트매터 `tags`에 중복 없이 추가(`#` 제거, 최대 12개). 경로는 `safe_vault_path`로 검증하고 `BRAIN.md`/`inbox.md`는 거부. `POST /api/note-append`로 노출, 처리 후 `dash_note`로 다시 감싸 반환
+- 보드(`web/index.html`) 노트 패널 본문 아래 `.note-actions`: 메모/할 일 모드 선택 + 텍스트 입력 + 버튼 하나, 태그 입력 + 「태그 추가」 버튼. 성공 시 반환된 노트로 패널을 다시 그리고(`renderNotePanel`) `refreshLive(true)` 호출. 기존 `renderMd`는 체크박스 줄의 원본 줄 번호를 추적하지 않아 본문 안 체크박스 클릭 토글은 이번 범위에서 뺐음(하드코딩 금지 원칙)
+- 테스트 +11, 총 258

@@ -2730,6 +2730,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 res = event_note_action(vault, body)
                 self.server.agenda_cache.invalidate()
                 return self._json(200, res)
+            if route == "/api/note-append":
+                return self._json(200, note_append_action(vault, body))
             if route == "/api/remember":
                 return self._json(200, remember_chat(vault, body))
             if route == "/api/suggestion":
@@ -3875,6 +3877,46 @@ def core_chat_today(today, limit=8):
     except OSError:
         return []
     return out[-limit:]
+
+
+def note_append_action(vault, body):
+    """보드 노트 패널 공용: 메모/태그/할 일을 노트 본문·프론트매터에 바로 추가. body: {action: memo|tag|todo, path, text}"""
+    action = body.get("action")
+    if action not in ("memo", "tag", "todo"):
+        raise BrainError("action은 memo · tag · todo 중 하나")
+    rel = str(body.get("path") or "")
+    vault = Path(vault).resolve()  # 임시 폴더 심볼릭 링크(/var→/private/var)에서도 같은 기준으로 비교
+    p = safe_vault_path(vault, rel)
+    if not p.is_file():
+        raise FileNotFoundError(rel)
+    rel_norm = p.relative_to(vault)
+    if rel_norm.parent == Path(".") and rel_norm.name in SKIP_FILES:
+        raise BrainError("이 노트는 여기서 수정할 수 없어요")
+    text = " ".join(str(body.get("text") or "").split())
+    if not text:
+        raise BrainError("내용이 비었어요")
+    if len(text) > 2000:
+        raise BrainError("한 번에 2000자까지만")
+    n = Note(vault, p)
+    if action == "memo":
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        new_body = _append_section(n.body, "## 메모", f"- {stamp}  {text}")
+        write_note(n.path, n.meta, new_body)
+    elif action == "todo":
+        new_body = _append_section(n.body, "## 할 일", f"- [ ] {text}")
+        write_note(n.path, n.meta, new_body)
+    else:  # tag
+        tag = text.lstrip("#").strip()
+        if not tag:
+            raise BrainError("태그가 비었어요")
+        tags = n.tags
+        if tag not in tags:
+            tags = (tags + [tag])[:12]
+        meta = dict(n.meta)
+        meta["tags"] = tags
+        write_note(n.path, meta, n.body)
+    git_commit(vault, f"brain: note {action} {n.rel}")
+    return {"ok": True, "note": dash_note(vault, n.rel)}
 
 
 def remember_chat(vault, body):

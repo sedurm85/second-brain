@@ -256,6 +256,10 @@ h1, h2, h3 { text-wrap: balance; }
 .ev-status { font-size: 12.5px; color: var(--muted); }
 .ev-memo { font-size: 14px; }
 .ev-note-link { margin: 10px 0 0; font-size: 13px; }
+.note-actions { margin: 16px 0; padding-top: 14px; border-top: 1px solid var(--rule); display: flex; flex-direction: column; gap: 8px; }
+.note-actions select { height: 34px; border-radius: var(--r); background: color-mix(in srgb, var(--bg) 60%, transparent); border: 1px solid var(--rule-strong); color: var(--ink); padding: 0 6px; flex: none; }
+.note-actions .ev-form { margin-top: 0; }
+.note-actions .tag-form input[type="text"] { max-width: 160px; flex: none; }
 /* 할 일: 4열 */
 .tasks-section { margin-top: 20px; }
 .task-add { display: flex; gap: 8px; padding: 10px 12px; margin-bottom: 12px; align-items: center; }
@@ -1466,20 +1470,64 @@ h1, h2, h3 { text-wrap: balance; }
     $("panelClose").focus();
     api("note", { path: path }).then(function (n) {
       if (P.path !== path) return;
-      var fm = n.frontmatter || {};
-      $("panelTitle").textContent = n.title || path;
-      $("panelType").innerHTML = typeBadge(n.type || fm.type || "note");
-      $("panelTags").innerHTML = (fm.tags || []).map(function (t) { return '<span class="tag">#' + esc(t) + "</span>"; }).join("");
-      var rows = Object.keys(fm).filter(function (k) { return k !== "title" && k !== "tags" && k !== "summary"; }).map(function (k) {
-        return "<tr><th>" + esc(k) + "</th><td>" + fmVal(fm[k]) + "</td></tr>";
-      }).join("");
-      var body = String(n.body || "").replace(/^#\s+.*\n+/, ""); // 제목 H1은 헤더와 중복이라 생략
-      var summary = fm.summary ? '<p class="note-summary">' + esc(fm.summary) + "</p>" : "";
-      $("panelBody").innerHTML = summary + (rows ? '<table class="fm"><caption class="sr-only">프론트매터</caption>' + rows + "</table>" : "") +
-        '<div class="md">' + renderMd(body) + '</div><div class="links">' +
-        linkList("들어오는 링크", n.links_in) + linkList("나가는 링크", n.links_out) + "</div>";
-      $("panelBody").scrollTop = 0;
+      renderNotePanel(n);
     }).catch(function (err) { fail($("panelBody"), "노트", err); });
+  }
+  /* 노트 패널 본문(프론트매터+본문+기록 폼) 렌더링. 최초 로딩과 기록 추가 후 재렌더링에 공용으로 쓴다 */
+  function renderNotePanel(n) {
+    var fm = n.frontmatter || {};
+    $("panelTitle").textContent = n.title || n.path;
+    $("panelType").innerHTML = typeBadge(n.type || fm.type || "note");
+    $("panelTags").innerHTML = (fm.tags || []).map(function (t) { return '<span class="tag">#' + esc(t) + "</span>"; }).join("");
+    var rows = Object.keys(fm).filter(function (k) { return k !== "title" && k !== "tags" && k !== "summary"; }).map(function (k) {
+      return "<tr><th>" + esc(k) + "</th><td>" + fmVal(fm[k]) + "</td></tr>";
+    }).join("");
+    var body = String(n.body || "").replace(/^#\s+.*\n+/, ""); // 제목 H1은 헤더와 중복이라 생략
+    var summary = fm.summary ? '<p class="note-summary">' + esc(fm.summary) + "</p>" : "";
+    var actions = '<div class="note-actions">' +
+      '<form class="ev-form" data-act="note-memo">' +
+      '<select name="mode" aria-label="기록 종류"><option value="memo">메모</option><option value="todo">할 일</option></select>' +
+      '<input type="text" name="text" maxlength="2000" placeholder="이 노트에 남길 메모" autocomplete="off">' +
+      '<button type="submit" class="text-btn primary">메모 남기기</button></form>' +
+      '<form class="ev-form tag-form" data-act="note-tag">' +
+      '<input type="text" name="tag" maxlength="40" placeholder="태그" autocomplete="off">' +
+      '<button type="submit" class="text-btn">태그 추가</button>' +
+      '<span class="ev-status" aria-live="polite"></span></form></div>';
+    $("panelBody").innerHTML = summary + (rows ? '<table class="fm"><caption class="sr-only">프론트매터</caption>' + rows + "</table>" : "") +
+      '<div class="md">' + renderMd(body) + '</div>' + actions + '<div class="links">' +
+      linkList("들어오는 링크", n.links_in) + linkList("나가는 링크", n.links_out) + "</div>";
+    $("panelBody").scrollTop = 0;
+    wireNoteActions(n);
+  }
+  function wireNoteActions(n) {
+    var panelBody = $("panelBody");
+    var mf = panelBody.querySelector('form[data-act="note-memo"]');
+    if (mf) {
+      var modeSel = mf.elements.mode, textInput = mf.elements.text, btn = mf.querySelector("button");
+      var syncMode = function () {
+        if (modeSel.value === "todo") { textInput.placeholder = "할 일 내용"; btn.textContent = "할 일 추가"; }
+        else { textInput.placeholder = "이 노트에 남길 메모"; btn.textContent = "메모 남기기"; }
+      };
+      modeSel.addEventListener("change", syncMode); syncMode();
+      mf.addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        var text = textInput.value.trim(); if (!text) return;
+        post("note-append", { action: modeSel.value, path: n.path, text: text })
+          .then(function (r) { renderNotePanel(r.note); refreshLive(true); })
+          .catch(function (err) { var st = mf.querySelector(".ev-status"); if (st) st.textContent = "저장 실패: " + (err.message || err); else alert("저장 실패: " + (err.message || err)); });
+      });
+    }
+    var tf = panelBody.querySelector('form[data-act="note-tag"]');
+    if (tf) {
+      tf.addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        var tag = tf.elements.tag.value.trim(); if (!tag) return;
+        var st = tf.querySelector(".ev-status"); if (st) st.textContent = "저장 중";
+        post("note-append", { action: "tag", path: n.path, text: tag })
+          .then(function (r) { renderNotePanel(r.note); refreshLive(true); })
+          .catch(function (err) { if (st) st.textContent = "저장 실패: " + (err.message || err); });
+      });
+    }
   }
   /* 일정 상세 패널: 캘린더 정보 + 볼트 일정 노트(메모·준비 체크리스트) */
   function mapLink(loc) { return "https://map.naver.com/p/search/" + encodeURIComponent(loc); }
