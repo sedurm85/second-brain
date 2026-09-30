@@ -240,5 +240,115 @@ class CollectTest(unittest.TestCase):
         self.assertEqual([x["name"] for x in cfg["calendar"]["sources"]], ["테스트", "구글"])
 
 
+GAP_ICS = """BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//test//KO
+BEGIN:VEVENT
+UID:g1
+DTSTART;TZID=Asia/Seoul:20260930T100000
+DTEND;TZID=Asia/Seoul:20260930T110000
+SUMMARY:A
+LOCATION:강남
+END:VEVENT
+BEGIN:VEVENT
+UID:g2
+DTSTART;TZID=Asia/Seoul:20260930T111000
+DTEND;TZID=Asia/Seoul:20260930T120000
+SUMMARY:B
+LOCATION:판교
+END:VEVENT
+BEGIN:VEVENT
+UID:g3
+DTSTART;TZID=Asia/Seoul:20260930T140000
+DTEND;TZID=Asia/Seoul:20260930T150000
+SUMMARY:C
+LOCATION:강남
+END:VEVENT
+BEGIN:VEVENT
+UID:g4
+DTSTART;TZID=Asia/Seoul:20260930T150500
+DTEND;TZID=Asia/Seoul:20260930T160000
+SUMMARY:D
+LOCATION:강남
+END:VEVENT
+BEGIN:VEVENT
+UID:g5
+DTSTART;TZID=Asia/Seoul:20260930T170000
+DTEND;TZID=Asia/Seoul:20260930T180000
+SUMMARY:E
+END:VEVENT
+BEGIN:VEVENT
+UID:g6
+DTSTART;TZID=Asia/Seoul:20260930T173000
+DTEND;TZID=Asia/Seoul:20260930T183000
+SUMMARY:F
+END:VEVENT
+END:VCALENDAR
+"""
+
+
+class GapTest(unittest.TestCase):
+    """일정 사이 여유 경고(tight/travel gap). E/F는 겹쳐서 conflicts로만 잡혀야 한다."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self.tmp.name)
+        self._old = {k: os.environ.get(k) for k in ("HOME", "XDG_CACHE_HOME", "SECOND_BRAIN_VAULT", "SECOND_BRAIN_OFFLINE")}
+        os.environ["HOME"] = str(self.home)
+        os.environ["XDG_CACHE_HOME"] = str(self.home / ".cache")
+        os.environ.pop("SECOND_BRAIN_VAULT", None)
+        os.environ["SECOND_BRAIN_OFFLINE"] = "1"
+        (self.home / "cal.ics").write_text(GAP_ICS, encoding="utf-8")
+        cfgdir = self.home / ".config" / "second-brain"
+        cfgdir.mkdir(parents=True)
+        (cfgdir / "config.json").write_text(json.dumps({
+            "vault": str(self.home / "brain"),
+            "calendar": {"sources": [{"kind": "ics", "name": "테스트", "path": str(self.home / "cal.ics")}]},
+        }), encoding="utf-8")
+        self.now = datetime(2026, 9, 30, 9, 0, tzinfo=KST)
+
+    def tearDown(self):
+        for k, v in self._old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        self.tmp.cleanup()
+
+    def test_tight_and_travel_gaps_exclude_overlaps(self):
+        ag = agenda.collect_agenda(brain.load_config(), now=self.now, days=7)
+        today_gaps = [g for g in ag["gaps"] if "day" not in g]
+        by_pair = {(g["from"], g["to"]): g for g in today_gaps}
+        self.assertEqual(by_pair[("A", "B")]["kind"], "travel")
+        self.assertEqual(by_pair[("A", "B")]["gap_min"], 10)
+        self.assertEqual(by_pair[("C", "D")]["kind"], "tight")
+        self.assertEqual(by_pair[("C", "D")]["gap_min"], 5)
+        self.assertNotIn(("D", "E"), by_pair)  # 60분 여유, 장소 하나 없음 → 경고 아님
+        self.assertNotIn(("B", "C"), by_pair)  # 120분 여유, 장소 달라도 travel_gap 이상
+        # 겹치는 E/F는 gaps가 아니라 conflicts로 잡힌다
+        self.assertFalse(any(g["from"] == "E" and g["to"] == "F" for g in today_gaps))
+        e_id = next(e["id"] for e in ag["today"] if e["title"] == "E")
+        f_id = next(e["id"] for e in ag["today"] if e["title"] == "F")
+        conflict_ids = set(sum(ag["conflicts"], []))
+        self.assertIn(e_id, conflict_ids)
+        self.assertIn(f_id, conflict_ids)
+
+    def test_sentence_kakao_human_mention_gap(self):
+        ag = agenda.collect_agenda(brain.load_config(), now=self.now, days=7)
+        s = agenda.agenda_sentence(ag)
+        self.assertIn("빠듯해요", s)
+        k = agenda.agenda_kakao(ag)
+        self.assertIn("빠듯", k)
+        self.assertLessEqual(len(k), 90)
+        h = agenda.agenda_human(ag)
+        self.assertIn("여유 경고", h)
+
+    def test_dash_today_has_gaps_and_kakao_brief_mentions_it(self):
+        ag = agenda.collect_agenda(brain.load_config(), now=self.now, days=7)
+        t = brain.dash_today(None, today=self.now.date(), now=self.now, widgets=[], agenda=ag)
+        self.assertTrue(t["agenda"]["gaps"])
+        self.assertIn("빠듯", t["kakao"])
+
+
 if __name__ == "__main__":
     unittest.main()

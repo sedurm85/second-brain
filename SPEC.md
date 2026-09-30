@@ -538,3 +538,10 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 보드(`web/index.html`)는 60초마다 `/api/remind-peek`을 물어 `localStorage["brain-announced:<오늘 날짜>"]`(날짜별로 나뉘어 자정 넘으면 자연히 리셋)에 없는 항목만 「확인」 버튼이 있는 지속형 토스트(강조색 좌측 보더, 최대 3개 동시)로 띄우고 topbar 램프를 살짝 블링크한다(`prefers-reduced-motion`은 전역 CSS 규칙이 그대로 무효화)
 - 코어(`web/core.html`)도 같은 주기·같은 localStorage 키로 동일한 항목을 확인해, 오디오가 풀려 있으면(`S.activated`) `speak()`로 한 번만 말하고 아니면 자막에만 띄운다. 보드·코어가 origin이 같아 키를 공유하므로 두 화면을 동시에 열어도 중복으로 알리지 않는다
 - 테스트 `tests/test_remind_peek.py` 2건: 실제 시각 기준 20분 뒤 ICS 일정이 두 번 물어봐도 계속 같은 항목으로 오는지(마킹 없음)·`reminded.json`이 생기지 않는지, 오늘 마감 할 일이 한 번만 포함되고 먼 마감은 빠지는지. 전체 스위트 524 통과(기존 522 + 신규 2)
+## v0.30 일정 여유 경고
+
+- `agenda.py`에 `_tight_gaps(evs, min_gap=15, travel_gap=45)` 추가: 겹치지 않는 연속 시간 지정 일정 사이 여유가 15분 미만이면 `"tight"`, 장소가 서로 다르고(소문자·공백·괄호 정리 후 비교) 45분 미만이면 `"travel"`로 표시. `collect_agenda`가 오늘과 다가오는 날짜별로 계산해 `gaps`(오늘은 `day` 없음, 다가오는 날은 `day` 포함)로 붙인다. 겹치는 일정은 여전히 `conflicts`만 잡는다
+- `agenda_sentence`는 오늘 첫 여유 경고를 한 문장 덧붙이고(`13:00 치과 다음 15분 뒤 회의라 빠듯해요`), `agenda_kakao`는 25자 이내로 `빠듯: A→B n분`을 붙이고, `agenda_human`은 "여유 경고" 줄을 출력한다. `dash_today`가 복사하는 agenda 키 목록에 `gaps`를 추가해 보드·코어에도 전달된다
+- 보드(`web/index.html`) 「오늘 시간표」는 빠듯/이동 경고가 있는 일정 블록 뒤에 작은 점 마커를 찍고(이동은 진한 색, 툴팁에 "이동 45분 미만: 장소A → 장소B"), 「지금 볼 것」 영역에는 기존 `.db-src` 스타일 그대로 "여유 경고: ..." 한 줄을 보여준다
+- 코어(`web/core.html`)는 별도 규칙 없이 그대로 동작한다: "오늘" 규칙이 이미 백엔드의 `agenda.sentence`를 그대로 말하므로, 여유 경고가 있으면 자동으로 문장에 실려 나온다
+- 테스트 `tests/test_agenda.py`에 `GapTest` 3건 추가(이동/빠듯 판정, 겹침은 gaps 제외하고 conflicts 유지, 세 문장·`dash_today`·`kakao_brief`가 경고를 언급). 전체 스위트 536 통과(기존 533 + 신규 3). `node --check`로 `web/index.html`·`web/core.html` `<script>` 문법 확인

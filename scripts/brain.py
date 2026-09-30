@@ -3537,7 +3537,7 @@ def dash_today(vault, today=None, now=None, widgets=None, agenda=None):
     ag = dict(agenda if agenda is not None else collect_agenda_safe(7, now=now))
     if vault:
         attach_event_notes(vault, ag)
-    t["agenda"] = {k: ag.get(k) for k in ("today", "next", "current", "conflicts", "sources", "total", "steps_today", "steps_upcoming")}
+    t["agenda"] = {k: ag.get(k) for k in ("today", "next", "current", "conflicts", "gaps", "sources", "total", "steps_today", "steps_upcoming")}
     t["agenda"]["upcoming"] = (ag.get("upcoming") or [])[:6]
     t["agenda"]["upcoming_count"] = len(ag.get("upcoming") or [])
     t["agenda"]["sentence"] = agenda_mod.agenda_sentence(ag)

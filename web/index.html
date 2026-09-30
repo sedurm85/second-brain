@@ -205,6 +205,8 @@ h1, h2, h3 { text-wrap: balance; }
 .db-steps li.past { opacity: .5; } .db-steps li.now .n { color: var(--ink); }
 .db-now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--st-crit); box-shadow: 0 0 8px var(--st-crit); }
 .db-now::after { content: ""; position: absolute; top: -1px; left: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--st-crit); }
+.db-gap { position: absolute; top: 4px; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: var(--st-warn); box-shadow: 0 0 6px var(--st-warn); cursor: default; z-index: 2; }
+.db-gap.travel { background: var(--st-crit); box-shadow: 0 0 6px var(--st-crit); }
 .db-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 2px 24px; }
 .db-list li { display: flex; gap: 10px; font-size: 13.5px; padding: 3px 0; min-width: 0; }
 .db-list .t { color: var(--accent); font-weight: 600; flex: none; width: 92px; font-variant-numeric: tabular-nums; }
@@ -2262,6 +2264,10 @@ h1, h2, h3 { text-wrap: balance; }
     var wpHtml = wp.length ? '<h4 class="rq-h">이번 주 계획 <small>' + esc(wp[0].date || "") + "</small></h4><ul class=\"rq\">" + wp.map(function (q) {
       return '<li><label><input type="checkbox" data-rq-path="' + esc(q.path) + '" data-rq-line="' + q.line + '"> <span>' + esc(q.text) + "</span></label></li>";
     }).join("") + "</ul>" : "";
+    var gapsToday = ((t.agenda && t.agenda.gaps) || []).filter(function (g) { return !g.day; });
+    var gapHtml = gapsToday.length ? '<p class="db-src">여유 경고: ' + gapsToday.map(function (g) {
+      return esc(g.from) + "→" + esc(g.to) + " " + g.gap_min + "분" + (g.kind === "travel" ? " (이동)" : "");
+    }).join(", ") + "</p>" : "";
     renderDaybar(t.agenda || {}, t.now);
     setTimeout(function () {
       document.querySelectorAll("[data-rq-path]").forEach(function (cb) {
@@ -2285,7 +2291,7 @@ h1, h2, h3 { text-wrap: balance; }
       return '<li><button type="button" class="ev up" data-eid="' + esc(e.id) + '"><span class="d">' + esc(dLeft(e.days_left)) + '</span><span class="n">' + esc(e.title) + (e.all_day ? "" : " <small>" + esc(hm(e.start)) + "</small>") + (e.weather ? ' <small class="muted">' + esc(e.weather.summary) + (e.weather.umbrella ? " · 우산" : "") + "</small>" : "") + "</span>" + noteMark(e) + "</button></li>";
     }).join("") + "</ul>" : "";
     $("todayGrid").innerHTML =
-      '<div class="tcard wide"><h3>지금 볼 것</h3>' + auHtml + prepHtml + (upHtml ? '<h3 style="margin-top:12px">다가오는 일정 <span class="count">' + up.length + "</span></h3>" + upHtml : "") + "</div>" +
+      '<div class="tcard wide"><h3>지금 볼 것</h3>' + auHtml + gapHtml + prepHtml + (upHtml ? '<h3 style="margin-top:12px">다가오는 일정 <span class="count">' + up.length + "</span></h3>" + upHtml : "") + "</div>" +
       '<div class="tcard"><h3>되돌아볼 결정 <span class="count">' + (rv.length + (t.retro_questions || []).length) + "</span></h3>" + rvHtml + "</div>" +
       '<div class="tcard"><h3>할 일 <span class="count">' + inboxCount + "</span></h3>" + ibHtml + wpHtml + "</div>";
   }
@@ -2300,13 +2306,22 @@ h1, h2, h3 { text-wrap: balance; }
     var H0 = 6, H1 = 24, span = (H1 - H0) * 60;
     var now = nowIso ? new Date(nowIso) : new Date(), nowM = now.getHours() * 60 + now.getMinutes();
     var conf = {}; (ag.conflicts || []).forEach(function (p) { conf[p[0]] = conf[p[1]] = true; });
+    var byId = {}; today.forEach(function (e) { byId[e.id] = e; });
+    var gapMap = {}; (ag.gaps || []).filter(function (g) { return !g.day; }).forEach(function (g) { gapMap[g.a] = g; });
     function pct(m) { return Math.max(0, Math.min(100, ((m - H0 * 60) / span) * 100)); }
     var hours = "";
     for (var hh = H0; hh < H1; hh += 3) hours += '<div class="db-hour" style="left:' + pct(hh * 60) + '%"><span>' + hh + "</span></div>";
     var timed = today.filter(function (e) { return !e.all_day; }), allday = today.filter(function (e) { return e.all_day; });
     var blocks = timed.map(function (e) {
       var a = minsOf(e.start), b = Math.max(a + 20, minsOf(e.end)), cls = "db-ev" + (b <= nowM ? " past" : a <= nowM && nowM < b ? " now" : "") + (conf[e.id] ? " conflict" : "");
-      return '<div class="' + cls + '" style="left:' + pct(a) + "%;width:" + Math.max(1.5, pct(b) - pct(a)) + '%" title="' + esc(hm(e.start) + "-" + hm(e.end) + " " + e.title) + '">' + esc(e.title) + "</div>";
+      var block = '<div class="' + cls + '" style="left:' + pct(a) + "%;width:" + Math.max(1.5, pct(b) - pct(a)) + '%" title="' + esc(hm(e.start) + "-" + hm(e.end) + " " + e.title) + '">' + esc(e.title) + "</div>";
+      var g = gapMap[e.id], other = g && byId[g.b];
+      if (g) {
+        var tip = g.kind === "travel" ? "이동 45분 미만: " + (e.location || g.from) + " → " + ((other && other.location) || g.to)
+          : g.gap_min + "분밖에 없어요: " + g.from + " → " + g.to;
+        block += '<div class="db-gap' + (g.kind === "travel" ? " travel" : "") + '" style="left:' + pct(minsOf(e.end)) + '%" title="' + esc(tip) + '"></div>';
+      }
+      return block;
     }).join("");
     var steps = ag.steps_today || [];
     var stepMarks = steps.map(function (s) {

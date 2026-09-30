@@ -496,6 +496,14 @@ def collect_agenda(cfg: dict, now: datetime | None = None, days: int = 7):
     nxt = next((e for e in today if not e["all_day"] and e["_start"] > now), None)
     cur = [e for e in today if not e["all_day"] and e["_start"] <= now < e["_end"]]
     conflicts = _conflicts(today)
+    gaps = _tight_gaps(today)
+    by_day = {}
+    for e in upcoming:
+        by_day.setdefault(e["_start"].date(), []).append(e)
+    for day in sorted(by_day):
+        for g in _tight_gaps(by_day[day]):
+            g["day"] = day.isoformat()
+            gaps.append(g)
     def strip(e):
         return {k: v for k, v in e.items() if not k.startswith("_")}
     return {
@@ -507,6 +515,7 @@ def collect_agenda(cfg: dict, now: datetime | None = None, days: int = 7):
         "next": strip(nxt) if nxt else None,
         "current": [strip(e) for e in cur],
         "conflicts": conflicts,
+        "gaps": gaps,
         "sources": sources,
         "total": len(uniq),
     }
@@ -525,6 +534,33 @@ def _conflicts(evs):
             a, b = timed[i], timed[j]
             if a["_start"] < b["_end"] and b["_start"] < a["_end"] and a.get("busy", True) and b.get("busy", True):
                 out.append([a["id"], b["id"]])
+    return out
+
+
+def _norm_loc(loc):
+    """장소 비교용 정규화: 소문자 + 공백/괄호 제거."""
+    return re.sub(r"[\s()]+", "", (loc or "").lower())
+
+
+def _tight_gaps(evs, min_gap=15, travel_gap=45):
+    """연속된 시간 지정 일정 사이 여유 확인. 겹치는 일정은 conflicts가 다루므로 여기서는 건너뛴다.
+    장소가 서로 다르고 여유가 travel_gap 미만이면 "travel"(이동 빠듯), 그 외 여유가 min_gap
+    미만이면 "tight"(빠듯)."""
+    timed = sorted((e for e in evs if not e["all_day"] and e.get("busy", True)), key=lambda e: e["_start"])
+    out = []
+    for a, b in zip(timed, timed[1:]):
+        if a["_end"] > b["_start"]:
+            continue  # 겹침은 conflicts에서 다룬다
+        gap_min = int((b["_start"] - a["_end"]).total_seconds() // 60)
+        loc_a, loc_b = _norm_loc(a.get("location")), _norm_loc(b.get("location"))
+        if loc_a and loc_b and loc_a != loc_b and gap_min < travel_gap:
+            kind = "travel"
+        elif gap_min < min_gap:
+            kind = "tight"
+        else:
+            continue
+        out.append({"a": a["id"], "b": b["id"], "gap_min": gap_min, "kind": kind,
+                    "from": a["title"], "to": b["title"], "at": hhmm(a["start"])})
     return out
 
 
@@ -559,6 +595,10 @@ def agenda_sentence(agenda: dict):
     s += "."
     if agenda.get("conflicts"):
         s += f" 겹치는 일정 {len(agenda['conflicts'])}쌍이 있어요."
+    today_gaps = [g for g in (agenda.get("gaps") or []) if "day" not in g]
+    if today_gaps:
+        g = today_gaps[0]
+        s += f" · {g['at']} {g['from']} 다음 {g['gap_min']}분 뒤 {g['to']}라 빠듯해요."
     return s
 
 
@@ -571,6 +611,10 @@ def agenda_kakao(agenda: dict, limit: int = 90):
     for e in today[:4]:
         bits.append((("종일 " if e["all_day"] else hhmm(e["start"]) + " ") + e["title"]))
     s = "일정 " + ", ".join(bits) + (f" 외 {len(today) - 4}" if len(today) > 4 else "")
+    today_gaps = [g for g in (agenda.get("gaps") or []) if "day" not in g]
+    if today_gaps:
+        g = today_gaps[0]
+        s += " · " + f"빠듯: {g['from']}→{g['to']} {g['gap_min']}분"[:25]
     return s[:limit]
 
 
@@ -587,6 +631,9 @@ def agenda_human(agenda: dict):
             lines.append(f"  {when}  {e['title']}{loc}  [{e['calendar']}]{mark}")
             if e.get("description"):
                 lines.append("             " + e["description"].split("\n")[0][:80])
+        today_gaps = [g for g in (agenda.get("gaps") or []) if "day" not in g]
+        if today_gaps:
+            lines.append("여유 경고: " + ", ".join(f"{g['from']}→{g['to']} {g['gap_min']}분" for g in today_gaps))
     else:
         lines.append("오늘 일정 없음")
     up = agenda.get("upcoming") or []
