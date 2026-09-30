@@ -148,6 +148,7 @@ Obsidian → **Open folder as vault** → `~/brain` 선택. 그래프 뷰·백�
 - hongik.man 릴스 "클로드로 주말 동안 만들 수 있는 AI 프로젝트 3가지" 중 2번(개인 지식 창고)
 - reznikov_engineering 릴스(살아 있는 구체와 말하는 에이전트) → 코어 화면
 - godseng.mom 릴스 "자동으로 일하는 나만의 직원" → 사무실 화면
+- 코어에서 나눈 문답은 「이 대화 기억해」(또는 "기억해")로 볼트 노트가 되고, 사무실 책상 상세의 「이번 주 한 줄」은 비서가 그 직원의 로그를 읽고 한 일·문제·기분을 요약합니다
 
 설계 기록은 [SPEC.md](SPEC.md), 2차 기획은 [docs/v2-plan.md](docs/v2-plan.md), 볼트 형식은 [docs/vault-format.md](docs/vault-format.md).
 

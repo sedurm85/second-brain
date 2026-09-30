@@ -280,3 +280,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `review --semantic [--limit 25]`: 고아·최근 노트를 후보로 카탈로그(stem|제목|요약)와 견줘 Claude가 내용상 관련 쌍(후보당 최대 2)을 고름. 존재하지 않는 stem·이미 연결된 쌍·중복은 버림, 이유는 「의미: …」 접두. 적용은 여전히 사람이 `link A B`. brain-review 스킬 갱신
 - journal target_path: 제목이 「… 주간 회고」면 `-weekly` 접미
 - 테스트 169
+
+## v0.24 코어 대화 기억·사무실 직원 한 줄 (2026-09-30)
+
+- 코어: `/api/ask` 문답을 `~/.cache/second-brain/core_log.jsonl`에 남기고, 오늘 최근 4턴을 「[최근 대화]」로 다음 질문에 붙여 이어 말하기가 된다. 답 아래 「이 대화 기억해」 버튼 또는 "기억해/저장해" 명령 → `POST /api/remember {question, answer, title?}` → `notes/…` 노트(태그 코어·대화, 「## 질문 / ## 답 / 맥락」). 오늘 일지 재료에 `core_chat`(최대 6턴) 포함
+- 사무실: 책상 상세에 「이번 주 한 줄」 버튼 → `POST /api/widget {action: brief, id, force?}` → `staff_brief`: 로그 끝 80줄 + 7일 실행/실패 수를 Claude에게 → `{did, issue, mood}`. `staff_briefs.json`에 하루 1회 캐시(「다시」로 force). 사무실도 세션 토큰을 미리 받는다
+- 테스트 172

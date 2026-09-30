@@ -2465,6 +2465,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 res = event_note_action(vault, body)
                 self.server.agenda_cache.invalidate()
                 return self._json(200, res)
+            if route == "/api/remember":
+                return self._json(200, remember_chat(vault, body))
             if route == "/api/suggestion":
                 res = suggestion_action(vault, body, self.server.today)
                 self.server.agenda_cache.invalidate()
@@ -3293,7 +3295,12 @@ def widget_action(body, widgets):
         return dict(run_widget(wid, widgets, dry=bool(body.get("dry"))), action="run")
     if action in ("pause", "resume"):
         return dict(set_widget_state(wid, "paused" if action == "pause" else "active"), action=action)
-    raise BrainError("action은 run · pause · resume 중 하나")
+    if action == "brief":
+        w = next((x for x in widgets if x["id"] == wid), None)
+        if not w:
+            raise BrainError(f"위젯이 없어요: {wid}")
+        return dict(staff_brief(w, force=bool(body.get("force"))), action="brief")
+    raise BrainError("action은 run · pause · resume · brief 중 하나")
 
 
 DATE_IN_LINE_RE = re.compile(r"(20\d{2})-(\d{2})-(\d{2})")
@@ -3497,9 +3504,10 @@ def ask_assistant(question, today, vault=None):
                     memory.append({"title": h["title"], "type": h["type"], "created": h.get("created"), "snippet": " ".join((h.get("snippets") or [""])[0].split())[:220]})
         except Exception as e:  # noqa: BLE001
             log(f"경고: 볼트 검색 실패({e})")
-    prompt = (f"너는 사용자의 개인 비서 「{name}」이다. 아래 [오늘 상태]는 일정·할 일·되돌아볼 결정·자동화, [기억]은 사용자의 노트 창고에서 질문과 관련 있어 보이는 기록 발췌다. "
+    recent = core_chat_today(date.today())[-4:]
+    prompt = (f"너는 사용자의 개인 비서 「{name}」이다. 아래 [오늘 상태]는 일정·할 일·되돌아볼 결정·자동화, [기억]은 사용자의 노트 창고에서 질문과 관련 있어 보이는 기록 발췌, [최근 대화]는 오늘 코어 화면에서 나눈 직전 문답이다. "
               f"이 자료와 상식으로 질문에 한국어 해요체로 2~3문장, 220자 안에서 답한다. 기억에 근거하면 어느 기록인지 제목을 짧게 밝힌다. 자료에 없으면 모른다고 말한다. 목록·마크다운 없이 말로.\n\n"
-              f"[오늘 상태]\n{json.dumps(ctx, ensure_ascii=False)}\n\n[기억]\n{json.dumps(memory, ensure_ascii=False)}\n\n[질문]\n{q}")
+              f"[오늘 상태]\n{json.dumps(ctx, ensure_ascii=False)}\n\n[기억]\n{json.dumps(memory, ensure_ascii=False)}\n\n[최근 대화]\n{json.dumps(recent, ensure_ascii=False)}\n\n[질문]\n{q}")
     import shlex
     argv = shlex.split(cmd)
     try:
@@ -3511,8 +3519,109 @@ def ask_assistant(question, today, vault=None):
         raise BrainError("답이 늦어요. 잠시 뒤 다시 물어봐 주세요")
     if r.returncode != 0:
         raise BrainError(f"답변 실패: {(r.stderr or r.stdout).strip()[:160]}")
-    ans = " ".join(r.stdout.split())
-    return {"answer": ans[:600], "via": argv[0], "memory_used": [m["title"] for m in memory]}
+    ans = " ".join(r.stdout.split())[:600]
+    log_core_chat(q, ans)
+    return {"answer": ans, "via": argv[0], "memory_used": [m["title"] for m in memory]}
+
+
+def core_log_path():
+    return agenda_mod.cache_dir() / "core_log.jsonl"
+
+
+def log_core_chat(q, a):
+    """코어 문답 한 줄 기록(JSONL). 실패해도 답변은 막지 않는다."""
+    try:
+        p = core_log_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": datetime.now().isoformat(timespec="minutes"), "q": q[:500], "a": a[:600]}, ensure_ascii=False) + "\n")
+    except OSError as e:
+        log(f"경고: 대화 기록 실패({e})")
+
+
+def core_chat_today(today, limit=8):
+    p = core_log_path()
+    if not p.exists():
+        return []
+    day = today.isoformat()
+    out = []
+    try:
+        for ln in _tail_lines(p, 200):
+            try:
+                d = json.loads(ln)
+            except ValueError:
+                continue
+            if str(d.get("ts", ""))[:10] == day:
+                out.append({"time": str(d.get("ts", ""))[11:16], "q": d.get("q", ""), "a": d.get("a", "")})
+    except OSError:
+        return []
+    return out[-limit:]
+
+
+def remember_chat(vault, body):
+    """코어 문답을 볼트 노트로. body: {question, answer, title?, tags?}"""
+    q = " ".join(str(body.get("question") or "").split())
+    a = " ".join(str(body.get("answer") or "").split())
+    if not q or not a:
+        raise BrainError("질문과 답이 모두 있어야 기억할 수 있어요")
+    title = " ".join(str(body.get("title") or "").split()) or q[:40].rstrip("?？.!")
+    tags = ["코어", "대화"] + [str(t).strip() for t in (body.get("tags") or []) if str(t).strip()][:3]
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    text = f"# {title}\n\n## 질문\n{q}\n\n## 답\n{a}\n\n맥락: 코어 화면 대화 ({stamp}). 「기억해」로 저장.\n"
+    path = create_note(vault, "note", title, tags=tags, body=text)
+    build_index(vault)
+    git_commit(vault, f"brain: remember {path.stem}")
+    return {"ok": True, "path": path.relative_to(Path(vault)).as_posix(), "title": title}
+
+
+STAFF_BRIEF_LINES = 80
+
+
+def staff_briefs_path():
+    return agenda_mod.cache_dir() / "staff_briefs.json"
+
+
+def staff_brief(w, today=None, force=False):
+    """자동화 직원 한 명의 「이번 주 한 줄」: 최근 로그 80줄 → Claude {did, issue, mood}. 하루 한 번 캐시."""
+    today = today or date.today()
+    p = staff_briefs_path()
+    cache = {}
+    if p.exists():
+        try:
+            cache = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            cache = {}
+    hit = cache.get(w["id"])
+    if hit and hit.get("date") == today.isoformat() and not force:
+        return dict(hit, cached=True)
+    src = os.path.expanduser(str(w.get("source") or ""))
+    lines = []
+    if w.get("kind") == "log" and src and os.path.isfile(src):
+        lines = [l.strip()[:200] for l in _tail_lines(Path(src), STAFF_BRIEF_LINES) if l.strip()]
+    if not lines:
+        lines = [str(w.get("summary") or "")]
+    hist = widget_history(w, days=7, today=today) if w.get("kind") == "log" else {}
+    ctx = {"title": w.get("title"), "status": w.get("status"), "state": w.get("state"), "runs_7d": hist.get("total_runs"), "fails_7d": hist.get("total_fails"),
+           "since": (today - timedelta(days=6)).isoformat(), "until": today.isoformat(), "log_tail": lines[-STAFF_BRIEF_LINES:]}
+    prompt = ("너는 자동화 직원(크론·launchd 작업)의 팀장이다. 아래 [기록]은 이 직원의 최근 로그다. JSON 객체 하나로만 답한다(설명·마크다운 금지). 형식:\n"
+              '{"did": "이번 주 한 일 한 문장(60자 이내, 로그에 근거, 숫자 있으면 포함)", "issue": "문제 한 문장(50자 이내, 없으면 \"문제 없음\")", '
+              '"mood": "직원 기분 한 마디(15자 이내, 가볍게. 예: 순조로움 / 지쳤어요 / 억울해요)"}\n'
+              "로그에 없는 사실을 만들지 마라.\n\n[기록]\n" + json.dumps(ctx, ensure_ascii=False))
+    raw = _run_claude_json(prompt, timeout=180)
+    if isinstance(raw, list):
+        raw = raw[0] if raw and isinstance(raw[0], dict) else {}
+    if not isinstance(raw, dict):
+        raise BrainError("요약 응답이 객체가 아니에요")
+    rec = {"id": w["id"], "date": today.isoformat(), "did": " ".join(str(raw.get("did") or "").split())[:120],
+           "issue": " ".join(str(raw.get("issue") or "").split())[:100] or "문제 없음", "mood": " ".join(str(raw.get("mood") or "").split())[:20],
+           "runs_7d": hist.get("total_runs"), "fails_7d": hist.get("total_fails")}
+    cache[w["id"]] = rec
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
+    except OSError as e:
+        log(f"경고: 직원 요약 캐시 실패({e})")
+    return dict(rec, cached=False)
 
 
 def cmd_task(args):
@@ -3923,9 +4032,10 @@ def journal_material(vault, today, widgets=None, agenda=None):
     for j in claude_jobs() if is_today else []:
         if j.get("title") or j.get("detail"):
             jobs.append((j.get("title") or "") + (" — " + j["detail"][:80] if j.get("detail") else ""))
-    mat = {"date": day, "weekday": WEEKDAYS_KO[today.weekday()] if "WEEKDAYS_KO" in globals() else "", "new_notes": new_notes, "event_memos": memos[:8],
-           "events": events, "tasks_done": done, "tasks_left": left, "automation_issues": bad, "claude_jobs": jobs[:6]}
-    mat["empty"] = not (new_notes or memos or events or done or jobs)
+    chat = [{"q": c["q"][:120], "a": c["a"][:160]} for c in core_chat_today(today)][-6:]
+    mat = {"date": day, "weekday": WEEKDAYS_KO[today.weekday()], "new_notes": new_notes, "event_memos": memos[:8],
+           "events": events, "tasks_done": done, "tasks_left": left, "automation_issues": bad, "claude_jobs": jobs[:6], "core_chat": chat}
+    mat["empty"] = not (new_notes or memos or events or done or jobs or chat)
     return mat
 
 

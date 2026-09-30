@@ -82,6 +82,13 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 .say.zzz { background: #e2e8f0; color: #526273; font-style: italic; }
 .say.think { background: #dff6ff; color: #0b4a63; }
 .say.mind { background: rgba(255, 255, 255, .78); color: #3b4653; font-style: italic; border: 1px dashed rgba(90, 110, 130, .45); box-shadow: none; }
+.staff-brief { margin: 10px 0; font-size: 13.5px; line-height: 1.55; }
+.staff-brief .sb-did { color: var(--ink); }
+.staff-brief .sb-issue { color: var(--crit); }
+.staff-brief .sb-ok { color: var(--muted); }
+.staff-brief .sb-meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.staff-brief .text-btn { background: none; border: 1px solid var(--rule, rgba(120,140,160,.4)); border-radius: 6px; padding: 4px 10px; color: var(--ink); font: inherit; font-size: 12.5px; cursor: pointer; }
+.staff-brief .text-btn.sm { padding: 1px 6px; font-size: 11.5px; }
 .say.mind::after { background: rgba(255, 255, 255, .78); }
 .desk .st .sc { display: block; color: var(--muted); opacity: .8; }
 .desk.talk .say { white-space: normal; max-width: 180px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
@@ -132,6 +139,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
   <h3><span id="dTitle"></span><button type="button" class="close" id="dClose" aria-label="닫기">×</button></h3>
   <div class="meta" id="dMeta"></div>
   <div class="hist" id="dHist"></div>
+  <div class="staff-brief" id="dBrief"></div>
   <pre id="dBody"></pre>
 </aside>
 <script>
@@ -295,7 +303,22 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
   function nextShift(ws) { var t = ws.map(function (w) { return sched(w.title); }).filter(Boolean)[0]; return t || ""; }
 
   /* ───────── 상세 ───────── */
-  function openDetail(title, meta, body) { $("dTitle").textContent = title; $("dMeta").textContent = meta; $("dBody").textContent = body || "(내용 없음)"; $("detail").classList.add("open"); }
+  function openDetail(title, meta, body) { $("dTitle").textContent = title; $("dMeta").textContent = meta; $("dBody").textContent = body || "(내용 없음)"; $("dBrief").innerHTML = ""; $("detail").classList.add("open"); }
+  function renderBrief(wid, b) {
+    var el = $("dBrief");
+    if (!b) { el.innerHTML = '<button type="button" class="text-btn" data-brief="' + esc(wid) + '">이번 주 한 줄 (' + esc(S.assistantName || "브레인") + '이 로그 읽고 요약)</button>'; return; }
+    el.innerHTML = '<div class="sb-did">' + esc(b.did || "") + "</div>" + (b.issue && b.issue !== "문제 없음" ? '<div class="sb-issue">' + esc(b.issue) + "</div>" : '<div class="sb-ok">문제 없음</div>') +
+      '<div class="sb-meta">' + (b.mood ? "기분: " + esc(b.mood) + " · " : "") + (b.runs_7d != null ? "7일 실행 " + b.runs_7d + (b.fails_7d ? " · 실패 " + b.fails_7d : "") + " · " : "") + esc(b.date || "") + (b.cached ? " (캐시)" : "") + ' <button type="button" class="text-btn sm" data-brief="' + esc(wid) + '" data-force="1">다시</button></div>';
+  }
+  document.addEventListener("click", function (ev) {
+    var bb = ev.target.closest("[data-brief]"); if (!bb) return;
+    var wid = bb.getAttribute("data-brief"), force = !!bb.getAttribute("data-force");
+    bb.textContent = "읽는 중…"; bb.disabled = true;
+    fetch("/api/widget", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify({ action: "brief", id: wid, force: force }) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
+      .then(function (j) { renderBrief(wid, j); })
+      .catch(function (err) { $("dBrief").innerHTML = '<div class="sb-issue">요약 실패: ' + esc(err.message || err) + "</div>"; });
+  });
   function renderHistory(h) {
     var el = $("dHist"); if (!h || !h.days) { el.innerHTML = ""; return; }
     var max = Math.max(1, Math.max.apply(null, h.days.map(function (d) { return d.runs; })));
@@ -330,6 +353,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
       var d = w.data || {}, body = d.lines ? d.lines.join("\n") : d.text || (d.fields ? Object.keys(d.fields).map(function (k) { return k + ": " + d.fields[k]; }).join("\n") : "") || w.summary;
       openDetail(w.title, (ST_KO[w.status] || w.status) + " · " + ago(w.age_minutes) + (w.updated_at ? " · " + String(w.updated_at).replace("T", " ").slice(0, 16) : ""), body);
       if (w.kind === "log") fetch("/api/widget-history?id=" + encodeURIComponent(w.id)).then(function (r) { return r.json(); }).then(renderHistory).catch(function () {});
+      renderBrief(w.id, null);
     } else if (b.getAttribute("data-job")) {
       var j = (S.data.jobs || []).filter(function (x) { return x.id === b.getAttribute("data-job"); })[0]; if (!j) return;
       openDetail("Claude 작업 " + j.id, (j.state || "") + (j.tempo ? " · " + j.tempo : "") + (j.updated_min != null ? " · " + ago(j.updated_min) : ""), (j.detail || "") + (j.recent && j.recent.length ? "\n\n최근:\n" + j.recent.join("\n") : ""));
@@ -342,6 +366,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
   tick(); setInterval(tick, 10000);
   function load() { return fetch("/api/office").then(function (r) { return r.json(); }).then(render).catch(function (err) { $("leadSay").textContent = "사무실 데이터를 불러오지 못했어요: " + (err.message || err); }); }
   load(); setInterval(function () { if (!document.hidden) load(); }, 15000);
+  fetch("/api/session").then(function (r) { return r.json(); }).then(function (s) { S.token = s.token; S.assistantName = s.assistant_name || "브레인"; }).catch(function () {});
   setInterval(function () {
     document.querySelectorAll(".desk .say.mind").forEach(function (el) {
       var b = el.parentNode, wid = b.getAttribute("data-wid"), jid = b.getAttribute("data-job");

@@ -98,6 +98,7 @@ button { cursor: pointer; }
   </div>
 </div>
 <div class="hint" id="hint"></div>
+<style>.linkbtn { background: none; border: 0; padding: 0; color: var(--accent, #4fd1ff); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }</style>
 
 <script>
 (function () {
@@ -317,14 +318,30 @@ button { cursor: pointer; }
     if (/할\s*일|인박스|투두/.test(q)) { var tk = t.tasks || {}, td = tk.today || []; return speak([td.length ? "오늘 할 일 " + td.length + "건. " + td.map(function (x) { return x.text; }).slice(0, 4).join(", ") + "." + ((tk.counts || {}).waiting ? " 기다리는 답이 " + tk.counts.waiting + "건 있어요." : "") : "오늘 할 일은 없어요." + ((tk.counts || {}).someday ? " 언젠가 할 것이 " + tk.counts.someday + "건 있어요." : "")]); }
     if (/결정|되돌아/.test(q)) return speak([(t.revisit || []).length ? "되돌아볼 결정 " + t.revisit.length + "건. " + t.revisit.map(function (d) { return d.title; }).slice(0, 3).join(", ") + "." : "이번 주에 되돌아볼 결정은 없어요."]);
     if (/메일|편지|인박스\s*메일/.test(q)) { var ml = t.mail || {}; return speak([ml.configured ? (ml.sentence || "메일 상태를 아직 못 읽었어요.") + ((ml.reply || []).length ? " " + ml.reply.slice(0, 2).map(function (x) { return x.from_name + "의 " + x.subject; }).join(", ") + "." : "") : "메일은 아직 연결되지 않았어요. 설정에서 IMAP 계정을 붙일 수 있어요."]); }
+    if (/^(이거\s*)?기억해|기억해\s*줘|저장해\s*줘?$/.test(q)) return remember();
     if (/브리핑|요약|보고/.test(q)) return speak(briefLines(t));
     // 그 밖: 헤드리스 Claude에게 (생각 중 상태)
     S.thinking = true; setState("think"); S.target = .45; caption("생각하고 있어요…", false);
     fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify({ text: q }) })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
-      .then(function (j) { S.thinking = false; speak([j.answer || "답을 만들지 못했어요."]); if (j.memory_used && j.memory_used.length) $("hint").textContent = "참고한 기록: " + j.memory_used.slice(0, 3).join(", "); })
+      .then(function (j) {
+        S.thinking = false; speak([j.answer || "답을 만들지 못했어요."]);
+        S.lastQA = j.answer ? { q: q, a: j.answer } : null;
+        $("hint").innerHTML = (j.memory_used && j.memory_used.length ? "참고한 기록: " + esc(j.memory_used.slice(0, 3).join(", ")) + " · " : "") +
+          (S.lastQA ? '<button type="button" class="linkbtn" id="rememberBtn">이 대화 기억해</button>' : "");
+        var rb = $("rememberBtn"); if (rb) rb.addEventListener("click", function () { remember(); });
+      })
       .catch(function (err) { S.thinking = false; setState("idle"); S.target = 0; speak(["지금은 답하기 어려워요. " + (err.message || "")]); });
   }
+  function remember() {
+    if (!S.lastQA) return speak(["기억할 대화가 아직 없어요. 먼저 무엇이든 물어봐 주세요."]);
+    var qa = S.lastQA; $("hint").textContent = "기록하는 중…";
+    fetch("/api/remember", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify({ question: qa.q, answer: qa.a }) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
+      .then(function (j) { S.lastQA = null; $("hint").textContent = "기록했어요: " + j.title; speak(["「" + j.title + "」으로 기억해 두었어요."]); })
+      .catch(function (err) { $("hint").textContent = "기록 실패: " + (err.message || err); });
+  }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function dLeftKo(n) { return n === 0 ? "오늘" : n === 1 ? "내일" : n == null ? "" : n + "일 뒤"; }
   function nextLine(ag) { var nx = ag && ag.next; return nx ? ["다음 일정은 " + hm(nx.start) + " " + nx.title + (nx.location ? ", " + nx.location : "") + "이에요."] : []; }
 
