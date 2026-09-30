@@ -454,6 +454,12 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `web/index.html`(JS): `/`·`⌘/Ctrl K`로 검색창 포커스(텍스트 선택 포함), `g` 다음 `t/h/w/a/d/l/j/p`(1.2초 이내 체인)로 오늘·할 일·이번 주·자동화·결정·타임라인·일지·프로젝트 섹션 스크롤, `n`은 할 일 추가 입력창 포커스, `r`은 새로 고침, `t`는 테마 전환(`toggleTheme()`로 분리), `?`는 도움말 시트. 입력창(input/textarea/select)에 포커스가 있거나 노트 패널·위젯 모달이 열려 있으면 모두 무시
 - 명령 팔레트: 검색창에 `>`를 입력하면(또는 `⌘/Ctrl⇧P`) 노트 검색 대신 명령 목록(오늘로·할 일로·…·코어/사무실/리포트 열기·테마 전환·새로 고침·"할 일 추가: <텍스트>")을 부분일치로 필터링해 보여주고, 기존 화살표 이동·Enter로 그대로 실행. "할 일 추가"는 기존 `taskPost`를 재사용, 별도 "메모" 명령은 적합한 캡처용 API가 없어 넣지 않음
 - 접근성: 도움말 시트는 `role="dialog"` + `<dl>` 목록, 토스트(`#scToast`)는 `aria-live="polite"`(alert 미사용), Esc로 검색 결과·팔레트·도움말 모두 닫힘(패널 Esc 동작은 그대로 유지). 토픽바에 "?" 버튼 추가, 390px 폭에서도 레이아웃 유지 확인
+## v0.29 Apple Notes 가져오기
+
+- 새 어댑터 `scripts/apple_notes.py`: `fetch_notes(folders, limit, timeout)`가 reminders.py와 같은 패턴(JXA `osascript -l JavaScript`, `-1743` 권한 힌트, `SECOND_BRAIN_APPLE_NOTES_CMD`로 테스트 대체)으로 Notes.app의 계정→폴더→노트를 읽는다. `html_to_markdown()`은 표준 라이브러리 `HTMLParser`로 헤딩/굵게·기울임/리스트/줄바꿈/링크/엔티티를 변환하고, `<img>`/`<object>`는 "(첨부 N개)" 한 줄로 남긴다
+- `brain.py import --apple-notes [--folder 이름 …] [--since YYYY-MM-DD] [--dry-run]`: `import_apple_notes()`(`import_path` 옆에 추가)가 노트를 `type: note`, `tags: [apple-notes, 폴더슬러그]`, `imported_from: "apple-notes:<id>"`, `source_modified: <수정일>`로 저장. 같은 id가 이미 있으면 메모 앱의 수정 시각이 저장된 값보다 최신일 때만 본문을 갱신("갱신"), 아니면 "건너뜀"; 새 id면 "생성". Claude 호출 없음(정제는 `enrich`로 별도 안내)
+- `write_note`가 그대로 캐시 무효화·`build_index`를 처리하고, `--dry-run`이면 아무것도 쓰지 않는다. 권한 오류(-1743)는 사람 문구+종료 코드 2로 보고
+- `tests/test_apple_notes.py` 19건(HTML 변환 11건 + 생성/재실행 스킵/수정 갱신/폴더·since 필터/권한 오류/dry-run 8건). 전체 스위트 436 통과(기존 417 + 신규 19)
 - 검증: `python3 -m unittest tests.test_serve`(21건 통과, 백엔드 무변경), `node --check`로 스크립트 문법 확인, Playwright로 `/` 포커스·`>할 일` 팔레트·`g`→`d` 스크롤·`?` 다이얼로그 열림/Esc 닫힘을 데모 서버(7796)에서 실측 확인
 ## v0.29 여행 모드
 

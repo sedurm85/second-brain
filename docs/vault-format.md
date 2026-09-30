@@ -196,11 +196,13 @@ location: 김포공항
 | 프론트매터 있는 마크다운 | `title`/`type`/`created`(또는 `date`)/`tags` 매핑, 나머지 단순 필드 유지 |
 | 프론트매터 없는 마크다운 | 첫 헤딩 → `title`(없으면 파일명), 파일 수정시각 → `created`, `type: note` |
 | Claude Code 메모리(`name`/`description`/`type` 또는 `metadata.type`) | feedback→note, project→project, reference→source, user→person. `description`은 본문 첫 줄 인용으로, `modified` → `created`, 태그 `claude-memory` + 원래 타입. `MEMORY.md` 인덱스는 건너뜀 |
+| 애플 메모(`import --apple-notes`, JXA로 읽기) | `type: note`, `title`=메모 이름(없으면 본문 첫 줄), `created`=생성일, `tags: [apple-notes, 폴더슬러그]`, 본문은 HTML→마크다운 변환 + "맥락: Apple Notes 「폴더」에서 가져옴" 각주 |
 
 - 위키링크 재작성: 가져오기 전에 원본 전체를 훑어 `원래 이름(메모리 name·파일명) → 새 파일명` 매핑을 만들고, 본문과 프론트매터 `links`의 `[[원래이름]]`을 `[[새파일명]]`으로 바꿔요. 매핑에 없는 링크는 그대로 두고, 이미 잘못 가져온 볼트는 `brain.py relink [--dry-run]`으로 복구해요.
 - 메모리 제목: `name`이 영문 슬러그면 `description` 첫 문장(` — `/` - ` 앞 → 첫 마침표/쉼표 앞 → 40자 절단)을 `title`로 써요. 짧고 구분자 없는 설명이면 기존처럼 `name`에서 만들고, 파일명은 항상 `name` 기준이라 바뀌지 않아요.
+- 애플 메모 idempotence: `title`+`created`가 아니라 프론트매터 `imported_from: "apple-notes:<메모ID>"`로 같은 노트를 식별해요. 메모 앱에서 수정된 시각(`source_modified`)이 저장된 값보다 최신이면 본문만 갱신하고, 그대로면 건너뛰어요. `--folder 이름`(여러 번 가능)·`--since YYYY-MM-DD`로 범위를 줄일 수 있고, 메모 앱 자체는 읽기만 해요.
 
-원본 파일은 읽기만 하고, 볼트에 같은 `title`+`created` 노트가 있으면 건너뛰어요. `--dry-run`으로 먼저 확인할 수 있어요.
+원본 파일은 읽기만 하고, 볼트에 같은 `title`+`created` 노트가 있으면 건너뛰어요(애플 메모는 위 기준으로 별도 판단). `--dry-run`으로 먼저 확인할 수 있어요.
 
 ## 위젯 설정 (`~/.config/second-brain/widgets.json`, v0.3)
 

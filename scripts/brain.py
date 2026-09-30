@@ -24,6 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import agenda as agenda_mod  # noqa: E402 - 일정 어댑터(같은 폴더)
+import apple_notes as apple_notes_mod  # noqa: E402 - 애플 메모 어댑터(JXA, 읽기 전용)
 import mailer as mail_mod  # noqa: E402 - 메일 어댑터(IMAP 읽기 전용, 기본 꺼짐)
 import reminders as reminders_mod  # noqa: E402 - 미리알림 어댑터(맥 미리알림, 읽기 전용, 기본 꺼짐)
 import weather as weather_mod  # noqa: E402 - 날씨 어댑터(읽기 전용, 실패해도 일정 표시는 막지 않음)
@@ -1182,6 +1183,73 @@ def import_path(vault, src, dry_run=False):
                                    "type": ntype, "title": meta["title"]})
     result["relinked"] = relinked
     if not dry_run and result["imported"]:
+        build_index(vault)
+    return result
+
+
+def import_apple_notes(vault, folders=None, since=None, dry_run=False, limit=500, timeout=60):
+    """맥 메모 앱(Notes.app)을 apple_notes.fetch_notes()로 읽어 볼트로 가져온다(읽기 전용, 쓰기는 볼트에만).
+
+    idempotent 기준은 frontmatter의 `imported_from: "apple-notes:<id>"`:
+    - 같은 id의 노트가 볼트에 없으면 새로 생성.
+    - 있으면 메모 앱의 modified가 저장된 source_modified보다 최신일 때만 본문을 갱신("갱신"),
+      아니면 건너뜀("변경 없음").
+    since가 있으면 노트 생성일이 그 날짜 이후인 것만 대상으로 한다.
+    """
+    if since:
+        parse_date(since, "--since")
+    notes = apple_notes_mod.fetch_notes(folders=folders, limit=limit, timeout=timeout)
+    err = apple_notes_mod.LAST_ERROR
+    result = {"dry_run": dry_run, "created": [], "updated": [], "skipped": [], "error": err}
+    if err:
+        return result
+    if since:
+        notes = [n for n in notes if str(n.get("created") or "")[:10] >= since]
+    existing_by_key = {}
+    for n in load_notes(vault):
+        key = str(n.meta.get("imported_from") or "")
+        if key.startswith("apple-notes:"):
+            existing_by_key[key] = n
+    taken = existing_stems(vault)
+    today = date.today().isoformat()
+    for note in notes:
+        nid = str(note.get("id") or "")
+        if not nid:
+            result["skipped"].append({"id": "", "title": note.get("title") or "", "reason": "id 없음"})
+            continue
+        key = f"apple-notes:{nid}"
+        folder = str(note.get("folder") or "")
+        body_md = apple_notes_mod.html_to_markdown(note.get("body_html") or "")
+        if not body_md.strip():
+            body_md = str(note.get("plaintext") or "").strip()
+        title = str(note.get("title") or "").strip() or (body_md.split("\n", 1)[0].strip()[:80] or "제목 없음")
+        created = str(note.get("created") or "")[:10]
+        if not DATE_RE.match(created):
+            created = today
+        modified_iso = str(note.get("modified") or "")
+        context_line = f"맥락: Apple Notes 「{folder}」에서 가져옴 ({today})" if folder else f"맥락: Apple Notes에서 가져옴 ({today})"
+        body = f"# {title}\n\n{body_md}\n\n{context_line}\n"
+        existing = existing_by_key.get(key)
+        if existing:
+            old_modified = str(existing.meta.get("source_modified") or "")
+            if modified_iso and modified_iso > old_modified:
+                new_meta = dict(existing.meta)
+                new_meta["source_modified"] = modified_iso
+                if not dry_run:
+                    write_note(existing.path, new_meta, body)
+                result["updated"].append({"path": existing.rel, "title": title})
+            else:
+                result["skipped"].append({"id": nid, "title": title, "reason": "변경 없음"})
+            continue
+        tags = ["apple-notes"] + ([slugify(folder)] if folder else [])
+        meta = {"title": title, "type": "note", "created": created, "tags": tags,
+                "imported_from": key, "source_modified": modified_iso}
+        dest = target_path(vault, "note", title, created, taken)
+        taken.add(dest.stem)
+        if not dry_run:
+            write_note(dest, meta, body)
+        result["created"].append({"path": dest.relative_to(vault).as_posix(), "title": title, "folder": folder})
+    if not dry_run and (result["created"] or result["updated"]):
         build_index(vault)
     return result
 
@@ -3248,6 +3316,10 @@ def cmd_link(args):
 
 def cmd_import(args):
     v = require_vault()
+    if getattr(args, "apple_notes", False):
+        return _cmd_import_apple_notes(v, args)
+    if not args.path:
+        raise BrainError("가져올 경로(path)가 필요합니다(--apple-notes를 쓰지 않는 경우).")
     r = import_path(v, args.path, dry_run=args.dry_run)
     if not args.dry_run and r["imported"]:
         git_commit(v, f"brain: import {len(r['imported'])} notes")
@@ -3264,6 +3336,32 @@ def cmd_import(args):
     if len(r["imported"]) > 30:
         out.append(f"- ... 외 {len(r['imported']) - 30}개")
     out += [f"! {Path(e['file']).name}: {e['error']}" for e in r["errors"]]
+    print("\n".join(out))
+    return EXIT_OK
+
+
+def _cmd_import_apple_notes(vault, args):
+    r = import_apple_notes(vault, folders=args.folder, since=args.since, dry_run=args.dry_run)
+    if r.get("error"):
+        if args.json:
+            emit(args, r, None)
+        else:
+            log(f"오류: {r['error']}")
+        return EXIT_INPUT
+    if not args.dry_run and (r["created"] or r["updated"]):
+        git_commit(vault, f"brain: apple notes 가져오기 생성 {len(r['created'])}·갱신 {len(r['updated'])}")
+    if args.json:
+        emit(args, r, None)
+        return EXIT_OK
+    mode = " (미리보기, 아무것도 쓰지 않음)" if args.dry_run else ""
+    out = [f"Apple Notes 가져오기{mode}: 생성 {len(r['created'])} · 갱신 {len(r['updated'])} · "
+           f"건너뜀 {len(r['skipped'])}"]
+    out += [f"+ {x['path']}" for x in r["created"][:30]]
+    if len(r["created"]) > 30:
+        out.append(f"+ ... 외 {len(r['created']) - 30}개")
+    out += [f"~ {x['path']}" for x in r["updated"][:30]]
+    if r["created"] or r["updated"]:
+        out.append("힌트: `brain.py enrich`로 가져온 노트를 Claude가 요약·태그 정제하게 할 수 있어요.")
     print("\n".join(out))
     return EXIT_OK
 
@@ -6292,9 +6390,12 @@ def build_parser():
     s.add_argument("a", help="노트 A")
     s.add_argument("b", help="노트 B")
 
-    s = add("import", "마크다운 폴더·Obsidian 볼트·Claude Code 메모리 가져오기", cmd_import)
-    s.add_argument("path", help="가져올 파일/폴더(홈 아래)")
+    s = add("import", "마크다운 폴더·Obsidian 볼트·Claude Code 메모리·애플 메모 가져오기", cmd_import)
+    s.add_argument("path", nargs="?", help="가져올 파일/폴더(홈 아래). --apple-notes면 생략")
     s.add_argument("--dry-run", action="store_true", help="쓰지 않고 결과만 미리보기")
+    s.add_argument("--apple-notes", action="store_true", help="맥 메모 앱(Notes.app)에서 가져오기(JXA, 읽기 전용)")
+    s.add_argument("--folder", action="append", metavar="이름", help="애플 메모 폴더 이름 필터(여러 번 지정 가능)")
+    s.add_argument("--since", metavar="YYYY-MM-DD", help="애플 메모: 이 날짜 이후 생성된 노트만")
 
     s = add("relink", "끊어진 [[링크]] 복구(`_`→`-`·메모리 타입 접두어 제거로 찾기)", cmd_relink)
     s.add_argument("--dry-run", action="store_true", help="쓰지 않고 변경 대상만 출력")
