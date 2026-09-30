@@ -109,7 +109,7 @@ button { cursor: pointer; }
 
   /* ───────── 상태 ───────── */
   var S = { state: "idle", level: 0, target: 0, today: null, agenda: null, token: null, name: "브레인",
-            muted: false, speaking: false, listening: false, thinking: false, lastLine: "",
+            muted: localStorage.getItem("brain.muted") === "1", speaking: false, listening: false, thinking: false, lastLine: "",
             activated: false, seenFails: null, spoken: {} };
   var COLORS = {
     idle: ["#4fd1ff", "#3fe0a8", "#0b3a5c"], talk: ["#b48cf0", "#ff9ecf", "#2a1547"],
@@ -383,7 +383,8 @@ button { cursor: pointer; }
   $("micBtn").addEventListener("click", function () { S.listening ? stopListen() : startListen(); });
   $("askForm").addEventListener("submit", function (ev) { ev.preventDefault(); var v = $("ask").value; $("ask").value = ""; answer(v); });
   $("speakBtn").addEventListener("click", function () { speak(briefLines(S.today || {})); });
-  $("muteBtn").addEventListener("click", function () { S.muted = !S.muted; $("muteBtn").setAttribute("aria-pressed", String(S.muted)); if (S.muted && synth) synth.cancel(); caption(S.muted ? "소리를 껐어요. 자막으로만 답해요." : "소리를 켰어요.", false); });
+  $("muteBtn").setAttribute("aria-pressed", String(S.muted));
+  $("muteBtn").addEventListener("click", function () { S.muted = !S.muted; localStorage.setItem("brain.muted", S.muted ? "1" : "0"); $("muteBtn").setAttribute("aria-pressed", String(S.muted)); if (S.muted && synth) synth.cancel(); caption(S.muted ? "소리를 껐어요. 자막으로만 답해요." : "소리를 켰어요.", false); });
   addEventListener("keydown", function (ev) { if (ev.code === "Space" && document.activeElement === document.body) { ev.preventDefault(); S.listening ? stopListen() : startListen(); } if (ev.key === "Escape") { synth && synth.cancel(); stopListen(); } });
 
   /* ───────── 데이터 ───────── */
