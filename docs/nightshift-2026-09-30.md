@@ -67,3 +67,9 @@
 - 워커 추가: wt/core-voice(회사 현황·누가 일해·미리알림·선제 알림), wt/edge-tests(파서 경계 테스트·버그 사냥), wt/demo-rich(데모 캐시 격리·전 기능 데이터)
 - 가동 중: weather-integration(장기), core-voice, edge-tests, demo-rich
 - 18:05 wt/weather-integration 머지(import 충돌 양쪽 유지, 지명 정규화·일정 카드 날씨·브리핑 우산, 테스트 307), wt/core-voice 머지(회사 현황·누가 일해·선제 알림). v0.28.0 태그
+- 18:08 릴리스 v0.28.0 발행(테스트 307). 실제 캘린더 「제주도」에 날씨 붙음(이슬비 24% · 16~23°). 사용자 widgets.json에 allow_hire 켬
+
+### 사이클 7 (18:08~)
+- 워커 추가: wt/people-link(참석자 ↔ people/ 노트, 사람 노트 만들기, 브리핑에 이름), wt/office-schedule(크론·launchd 파싱 → 오늘 근무표 띠·다음 근무)
+- 가동 중: edge-tests, demo-rich, people-link, office-schedule
+- 다음 후보: 여행 모드(여러 날 일정 → 짐 목록·일자별 동선), 보드 단축키(Cmd+K), 21:30 저녁 마감 실행 검증
