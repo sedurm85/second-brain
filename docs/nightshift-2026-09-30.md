@@ -106,3 +106,4 @@
 - 19:50 wt/monthly-retro 머지(테스트 596) → 실제 설치(매월 1일 9:10, 내일 첫 실행) + 관리자가 9월 월간 회고를 지금 생성. 가동 중: perf-bench, e2e-suite, board-staff-brief, ask-guard
 - 19:58 wt/e2e-suite 머지(Playwright 16건, 총 612, 실제 버그 0). 워커 추가: wt/decision-review(되돌아볼 결정 유지/변경/종결 UI), wt/board-mobile(보드 390px 섹션별 폴리시). 가동 중: perf-bench, board-staff-brief, ask-guard, decision-review, board-mobile
 - 19:33 wt/board-staff-brief 머지(보드 자동화 행 「왜 실패했어?」). 가동 중: perf-bench, ask-guard, decision-review, board-mobile. 21:30 저녁 마감 에이전트 실행 로그 확인 예정
+- 19:52 wt/perf-bench 머지(검색 236→26ms, office 24→0.5ms @1000노트, 테스트 621). 워커 추가: wt/office-mobile-2(사무실 390px 재점검), wt/kakao-budget(200자 카톡 우선순위·잘림 보장). 가동 중: ask-guard, decision-review, board-mobile, office-mobile-2, kakao-budget
