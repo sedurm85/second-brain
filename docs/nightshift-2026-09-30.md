@@ -102,3 +102,4 @@
 - 19:30 wt/obsidian-init 머지(테스트 571) → 실볼트에 `obsidian init` 적용(.obsidian 설정·템플릿 4개, 노트 무변경). 워커 추가: wt/perf-bench(1000노트 벤치·느린 API 캐시)
 - 19:35 wt/inpage-remind 머지(테스트 573, /api/remind-peek). 워커 추가: wt/e2e-suite(Playwright 회귀 스위트, 없으면 skip), wt/monthly-retro(월간 회고·매월 1일 에이전트). 가동 중: agenda-gaps, onboarding-qa, perf-bench, e2e-suite, monthly-retro
 - 19:40 wt/agenda-gaps 머지(빠듯/이동 경고, 테스트 576). 가동 중: onboarding-qa, perf-bench, e2e-suite, monthly-retro
+- 19:45 wt/onboarding-qa 머지(결함 2건 수정: 미리알림 enabled 가드·agents status 모순, --help 4단 그룹, 테스트 583). 워커 추가: wt/board-staff-brief(보드 자동화 섹션에서 실패 원인 한 줄), wt/ask-guard(Claude 호출 동시성·시간당 상한)
