@@ -123,6 +123,14 @@ print("?")
         with self.assertRaises(brain.BrainError):
             brain.widget_action({"action": "brief", "id": "ghost"}, [w])
 
+    def test_ask_cli(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            rc = brain.main(["ask", "내일", "뭐", "있어"])
+        self.assertEqual(rc, 0)
+        self.assertIn("직전 대화 0건", buf.getvalue())
+        self.assertEqual(brain.core_chat_today(self.today)[-1]["q"], "내일 뭐 있어")
+
 
 if __name__ == "__main__":
     unittest.main()

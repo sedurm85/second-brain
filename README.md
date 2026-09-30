@@ -49,6 +49,7 @@ python3 scripts/brain.py calendar add ics 구글 --url-file ~/.config/second-bra
 python3 scripts/brain.py reminders on --lists 장보기,회사  # 맥 미리알림 읽기(기본 꺼짐, 최초 1회 권한 허용)
 python3 scripts/brain.py agenda                        # 오늘·7일 일정
 python3 scripts/brain.py today                         # 브리핑(사람용 + 카톡용 200자)
+python3 scripts/brain.py ask "내일 뭐 준비해야 해?"          # 터미널에서 비서에게 질문(코어와 같은 맥락)
 python3 scripts/brain.py brief --kakao                 # 아침 브리핑 카톡
 python3 scripts/brain.py brief --evening --kakao       # 저녁 마감 카톡
 python3 scripts/brain.py remind --kakao                # 곧 시작하는 동선·일정 알림(10분마다 돌리기)

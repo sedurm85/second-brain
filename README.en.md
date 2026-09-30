@@ -51,6 +51,7 @@ python3 scripts/brain.py calendar add ics google --url-file ~/.config/second-bra
 python3 scripts/brain.py reminders on --lists Groceries,Work  # read macOS Reminders (off by default, one-time permission prompt)
 python3 scripts/brain.py agenda                        # today and the next 7 days
 python3 scripts/brain.py today                         # briefing (human + 200-char Kakao version)
+python3 scripts/brain.py ask "what should I prepare tomorrow?"  # ask the assistant from the terminal
 python3 scripts/brain.py brief --kakao                 # morning briefing to KakaoTalk
 python3 scripts/brain.py brief --evening --journal --kakao   # evening wrap-up + daily journal
 python3 scripts/brain.py remind --kakao                # upcoming itinerary steps and events (run every 10 min)
