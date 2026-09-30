@@ -34,7 +34,7 @@ NOTE_TYPES = ("note", "idea", "source", "meeting", "event")
 ALL_TYPES = NOTE_TYPES + ("decision", "project", "person")
 DECISION_STATUSES = ("open", "decided", "superseded")
 SKIP_FILES = {"BRAIN.md", "inbox.md"}
-SKIP_DIRS = {".git", ".obsidian", ".trash", "node_modules"}
+SKIP_DIRS = {".git", ".obsidian", ".trash", "node_modules", "_demo"}
 
 DEFAULT_CONFIG = {"vault": "~/brain", "git_autocommit": False, "index_head": 40}
 
@@ -270,6 +270,9 @@ def config_path():
     return home_dir() / ".config" / "second-brain" / "config.json"
 
 
+CONFIG_OVERRIDES = {}  # 데모 모드 등에서 파일 설정 위에 덧씌우는 값(저장되지 않음)
+
+
 def load_config():
     cfg = dict(DEFAULT_CONFIG)
     p = config_path()
@@ -281,6 +284,7 @@ def load_config():
             data = {}
         if isinstance(data, dict):
             cfg.update(data)
+    cfg.update(CONFIG_OVERRIDES)
     return cfg
 
 
@@ -1513,8 +1517,67 @@ def build_demo_vault(vault=None, today=None):
         if wl:
             body = body.rstrip("\n") + "\n\n관련: " + ", ".join(wl) + "\n"
         write_note(pa, meta, body)
+    build_demo_assistant(vault, today)
     build_index(vault, today)
     return vault
+
+
+def build_demo_assistant(vault, today):
+    """데모 볼트에 비서 샘플: inbox 할 일, 일정 노트(준비·동선), 데모 캘린더 ICS, 데모 위젯 로그. 서버는 CONFIG_OVERRIDES로 이것들을 쓴다."""
+    def d(k):
+        return (today + timedelta(days=k))
+    (vault / "inbox.md").write_text("# inbox\n\n"
+                                    f"- [ ] 주간회의 자료 마무리 @due({today.isoformat()})\n"
+                                    f"- [ ] 치과 예약 변경 전화 @due({d(1).isoformat()}) @project(건강)\n"
+                                    "- [ ] 세컨드브레인 볼트를 git private 저장소에 올리기 @someday\n"
+                                    f"- [ ] 회계사 답장 @waiting(회계사) @since({d(-3).isoformat()})\n"
+                                    f"- [x] 온보딩 메일 3일 차 발송 여부 확인 @due({d(-1).isoformat()})\n", encoding="utf-8")
+    demo = vault / "_demo"
+    demo.mkdir(exist_ok=True)
+    def dt(k, h, m):
+        return f"{d(k).strftime('%Y%m%d')}T{h:02d}{m:02d}00"
+    ev = lambda uid, title, a, b, loc="", desc="": (f"BEGIN:VEVENT\nUID:{uid}\nDTSTART;TZID=Asia/Seoul:{a}\nDTEND;TZID=Asia/Seoul:{b}\nSUMMARY:{title}\n"
+                                                   + (f"LOCATION:{loc}\n" if loc else "") + (f"DESCRIPTION:{desc}\n" if desc else "") + "END:VEVENT\n")
+    ics = "BEGIN:VCALENDAR\nVERSION:2.0\nX-WR-CALNAME:데모 캘린더\n"
+    ics += ev("demo-1", "팀 주간회의", dt(0, 10, 0), dt(0, 11, 0), "회의실 A", "안건: 로그 저장소 전환 진행 상황")
+    ics += ev("demo-2", "치과", dt(0, 15, 0), dt(0, 16, 0), "강남 스마일치과")
+    ics += ev("demo-3", "저녁 약속 (대학 동기)", dt(0, 19, 0), dt(0, 21, 0), "판교")
+    ics += ev("demo-4", "1:1 면담", dt(1, 14, 0), dt(1, 14, 30), "온라인")
+    ics += f"BEGIN:VEVENT\nUID:demo-5\nDTSTART;VALUE=DATE:{d(3).strftime('%Y%m%d')}\nDTEND;VALUE=DATE:{d(5).strftime('%Y%m%d')}\nSUMMARY:제주 출장\nEND:VEVENT\n"
+    ics += ev("demo-6", "KE1201 김포 출발", dt(3, 9, 25), dt(3, 10, 35), "김포공항")
+    ics += "END:VCALENDAR\n"
+    (demo / "calendar.ics").write_text(ics, encoding="utf-8")
+    # 일정 노트: 주간회의(준비·메모) · 제주 출장(여러 날, 동선)
+    key_meet = f"{today.isoformat()}|팀 주간회의"
+    event_note_action(vault, {"action": "todo", "key": key_meet, "text": "Loki 전환 비용표 출력"})
+    event_note_action(vault, {"action": "todo", "key": key_meet, "text": "지난주 결정 3건 요약"})
+    event_note_action(vault, {"action": "memo", "key": key_meet, "text": "지난 회의에서 OpenSearch 잔여 비용 정리 요청받음"})
+    key_trip = f"{d(3).isoformat()}|제주 출장"
+    event_note_action(vault, {"action": "todo", "key": key_trip, "text": "렌터카 예약 확인", "end": d(4).isoformat()})
+    event_note_action(vault, {"action": "todo", "key": key_trip, "text": "고객사 방문 자료 인쇄"})
+    event_note_action(vault, {"action": "step", "key": key_trip, "text": "07:20 집 출발 (자가용 50분)"})
+    event_note_action(vault, {"action": "step", "key": key_trip, "text": "09:25 KE1201 김포 출발 (70분)"})
+    event_note_action(vault, {"action": "step", "key": key_trip, "text": "13:00 고객사 미팅 (2시간)", "day": d(3).isoformat()})
+    event_note_action(vault, {"action": "step", "key": key_trip, "text": "10:00 공항 이동 (40분)", "day": d(4).isoformat()})
+    # 데모 위젯 로그 3개 (정상 2 · 실패 1) + widgets.json
+    now = datetime.now()
+    (demo / "backup.log").write_text(f"{now:%F %T} rsync ok 12.4GB\n{now:%F %T} done len: 3\n", encoding="utf-8")
+    (demo / "price.log").write_text(f"{now:%F %T} 항공권 최저가 312,000원 (목표 300,000)\nlen: 1\n", encoding="utf-8")
+    (demo / "scrape.log").write_text(f"{now:%F %T} Traceback (most recent call last):\n  HTTPError 502: Bad Gateway\n", encoding="utf-8")
+    (demo / "growth.csv").write_text("date,members\n" + "\n".join(f"{d(-13 + i).isoformat()},{120 + i * 3 + (i % 3)}" for i in range(14)) + "\n", encoding="utf-8")
+    (demo / "widgets.json").write_text(json.dumps({"allow_commands": False, "allow_run": False, "widgets": [
+        {"id": "backup", "title": "NAS 백업 (매일 3시)", "kind": "log", "source": str(demo / "backup.log"), "team": "운영팀", "status": {"ok_pattern": "len:", "fail_pattern": "Traceback|Error", "stale_minutes": 1560}, "lines": 3},
+        {"id": "price", "title": "항공권 최저가 (매일 9시)", "kind": "log", "source": str(demo / "price.log"), "team": "생활팀", "status": {"ok_pattern": "len:", "fail_pattern": "Traceback|Error"}, "lines": 3},
+        {"id": "scrape", "title": "채용 공고 수집 (월·목)", "kind": "log", "source": str(demo / "scrape.log"), "team": "커리어팀", "status": {"ok_pattern": "len:", "fail_pattern": "Traceback|Error"}, "lines": 4},
+        {"id": "growth", "title": "카페 회원 추이", "kind": "csv", "source": str(demo / "growth.csv"), "team": "콘텐츠팀", "x": "date", "y": "members", "last": 14},
+    ]}, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def demo_overrides(vault):
+    """데모 서버용 설정 덧씌우기: 데모 캘린더·위젯·이름. 파일 설정은 건드리지 않는다."""
+    demo = Path(vault) / "_demo"
+    return {"calendar": {"sources": [{"kind": "ics", "name": "데모 캘린더", "path": str(demo / "calendar.ics")}]},
+            "widgets_path": str(demo / "widgets.json"), "assistant_name": "데모 비서", "mail": None}
 
 
 # ---------------------------------------------------------------------------
@@ -1554,6 +1617,8 @@ EXAMPLE_WIDGETS = {
 
 
 def widgets_config_path():
+    if CONFIG_OVERRIDES.get("widgets_path"):
+        return Path(CONFIG_OVERRIDES["widgets_path"])
     return home_dir() / ".config" / "second-brain" / "widgets.json"
 
 
@@ -2532,7 +2597,8 @@ def _open_browser(url):
 def cmd_serve(args):
     if args.demo:
         v = build_demo_vault()
-        log(f"데모 볼트(가공 샘플 데이터): {v}")
+        CONFIG_OVERRIDES.update(demo_overrides(v))
+        log(f"데모 볼트(가공 샘플 데이터): {v} — 데모 캘린더·위젯·할 일 포함")
     else:
         v = require_vault()
     if not 0 <= args.port <= 65535:

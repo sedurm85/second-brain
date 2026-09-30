@@ -225,3 +225,10 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 설정 `config.json mail {host, port, user, password_file, folder, sent_folder, days, max, aliases, web}`. 비밀번호는 별도 파일(앱 비밀번호, 600). CLI `mail add <주소> --password-file F [--host] [--sent-folder]`(gmail/naver 호스트 자동) · `test` · `list` · `remove`
 - `/api/mail`, `/api/today`에 `mail{configured,status,counts,reply[3],waiting[3],sentence,web}`. 보고 문장 "답장할 메일 N통, 먼저 …", 카톡 조각 "메일 답장 N·대기 M". 보드 「메일」 3열(설정됐을 때만 표시, 클릭 시 웹메일 rfc822msgid 검색으로 열기). 코어 "메일" 질문 답변
 - Mail.app(JXA) 방식은 사장님 환경에 Mail.app이 없어 보류. 테스트 +3, 총 145(가짜 비밀번호로 실접속 실패 → status fail 경로 포함)
+
+## v0.16 데모 모드 비서 샘플 · 코어 선제 알림 (2026-09-30)
+
+- `serve --demo`가 비서 기능까지 보여준다: `build_demo_assistant`가 inbox 할 일 5개(오늘·내일·언젠가·기다림·완료), 일정 노트 2개(팀 주간회의 준비·메모, 제주 출장 여러 날 동선 4단계), 데모 캘린더 ICS(오늘 3·내일 1·3일 뒤 출장+항공), 데모 위젯 로그 4개(정상 2·실패 1·CSV 1)를 `볼트/_demo/`에 만든다. `CONFIG_OVERRIDES`(파일 설정 위 덧씌우기, 저장 안 함)로 서버가 데모 캘린더·위젯·이름(데모 비서)을 쓴다. `_demo`는 SKIP_DIRS. 데모 노트 수 29→31(일정 노트 2)
+- 코어 선제 알림 `proactive(t)`: 60초 갱신마다 새로 실패한 자동화, 15분 안 시작하는 일정, 10분 안 동선 단계를 말한다(한 번씩). 브라우저 자동재생 정책 때문에 첫 포인터·키 입력 뒤부터 소리, 그 전엔 자막만. 힌트 문구로 안내
+- 코어 명령 추가: "내일 뭐 있어"(내일 일정), "다음 일정"
+- 테스트 +2, 총 147
