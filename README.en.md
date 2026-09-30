@@ -147,6 +147,8 @@ Every file is front matter (title, type, created, tags …) plus free markdown a
 
 Obsidian → **Open folder as vault** → pick `~/brain`. Graph view, backlinks and search work as-is. Notes written directly in Obsidian are searched by Claude too, as long as they have front matter. An existing Obsidian vault can be copied in with `/second-brain:brain-import <vault path>` without touching the original.
 
+Run `brain.py obsidian init` once before that first open to get per-type graph colors (decision, project, person, event, journal, …), a daily-notes link (`_templates/일지`), and journal/decision/event/person templates (`_templates/`) already in place. Check status with `brain.py obsidian status`, or add `--force` to rewrite an existing setup.
+
 ## FAQ
 
 **Where is my data?**

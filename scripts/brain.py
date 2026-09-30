@@ -40,7 +40,7 @@ NOTE_TYPES = ("note", "idea", "source", "meeting", "event", "journal")
 ALL_TYPES = NOTE_TYPES + ("decision", "project", "person")
 DECISION_STATUSES = ("open", "decided", "superseded")
 SKIP_FILES = {"BRAIN.md", "inbox.md"}
-SKIP_DIRS = {".git", ".obsidian", ".trash", "node_modules", "_demo"}
+SKIP_DIRS = {".git", ".obsidian", ".trash", "node_modules", "_demo", "_templates", "_attachments"}
 
 DEFAULT_CONFIG = {"vault": "~/brain", "git_autocommit": False, "index_head": 40}
 
@@ -1704,6 +1704,186 @@ def init_vault(vault, git=False):
     build_index(vault)
     created.append("BRAIN.md")
     return created
+
+
+# ---------------------------------------------------------------------------
+# Obsidian 볼트 초기 설정 (v0.30) — 볼트를 처음 Obsidian에서 열었을 때 바로
+# 그래프 색·데일리노트·템플릿이 갖춰져 있도록 .obsidian/*.json + _templates/*.md 작성.
+# ---------------------------------------------------------------------------
+
+# board(web/index.html)의 라이트 테마 --t-* 값과 동일한 hex(그래프 색상 일치).
+OBSIDIAN_TYPE_COLORS = {
+    "note": "#2a6fd0", "idea": "#a97a0a", "source": "#1f8f68", "meeting": "#c34f7c",
+    "event": "#3b5b8f", "journal": "#b2691a", "decision": "#cf5526",
+    "project": "#6a5ed0", "person": "#2f7f2f",
+}
+
+# _templates/<이름>.md ↔ 노트 타입. 파일명은 daily-notes.json의 template 값과도 맞춰야 한다.
+OBSIDIAN_TEMPLATE_SPECS = (("일지", "journal"), ("결정", "decision"), ("일정", "event"), ("사람", "person"))
+
+
+def _hex_to_obsidian_rgb(hex_color):
+    """'#2a6fd0' → graph.json의 color.rgb(10진수)."""
+    return int(hex_color.lstrip("#"), 16)
+
+
+def _obsidian_color_group(query, type_key):
+    return {"query": query, "color": {"a": 1, "rgb": _hex_to_obsidian_rgb(OBSIDIAN_TYPE_COLORS[type_key])}}
+
+
+def obsidian_config(vault):
+    """.obsidian/*.json 경로(볼트 기준 상대) → 값(dict/list). json.dumps만으로 직렬화 가능.
+
+    vault 인자는 현재 값을 만드는 데 쓰이지 않지만, 향후 볼트별 커스터마이즈(예: 기존
+    .obsidian/app.json의 다른 키 보존)를 붙일 자리를 남겨 두기 위해 시그니처에 유지한다.
+    """
+    del vault  # 현재는 미사용(자리 예약)
+    app = {
+        "newFileLocation": "folder",
+        "newFileFolderPath": "notes",
+        "attachmentFolderPath": "_attachments",
+        "useMarkdownLinks": False,
+        "showFrontmatter": True,
+        "strictLineBreaks": False,
+        "readableLineLength": True,
+    }
+    # 배열 형식(최근 Obsidian이 core-plugins-migration.json 없이도 받아들이는 형식)만 사용.
+    core_plugins = [
+        "file-explorer", "global-search", "switcher", "graph", "backlink",
+        "outgoing-link", "tag-pane", "page-preview", "daily-notes", "templates",
+        "command-palette", "bookmarks",
+    ]
+    # daily-notes.json의 folder는 moment 토큰(예: {{date:YYYY}})을 지원하지 않는다 —
+    # 값은 "journal" 루트로 두고, 실제 날짜별 하위폴더(journal/YYYY/)는 템플릿
+    # 프론트매터의 type: journal로 dash_journals·load_notes가 재귀 탐색해 잡아낸다.
+    daily_notes = {
+        "folder": "journal",
+        "format": "YYYY-MM-DD",
+        "template": "_templates/일지",
+        "autorun": False,
+    }
+    templates_cfg = {"folder": "_templates"}
+    graph = {
+        "collapse-filter": True,
+        "search": "",
+        "showTags": False,
+        "showAttachments": False,
+        "hideUnresolved": False,
+        "showOrphans": True,
+        "collapse-color-groups": False,
+        "colorGroups": [
+            _obsidian_color_group("path:decisions", "decision"),
+            _obsidian_color_group("path:projects", "project"),
+            _obsidian_color_group("path:people", "person"),
+            _obsidian_color_group("path:events", "event"),
+            _obsidian_color_group("path:journal", "journal"),
+            _obsidian_color_group("tag:#idea", "idea"),
+            _obsidian_color_group("path:notes", "note"),
+        ],
+        "collapse-display": True,
+        "showArrow": False,
+        "textFadeMultiplier": 0,
+        "nodeSizeMultiplier": 1,
+        "lineSizeMultiplier": 1,
+        "collapse-forces": True,
+        "centerStrength": 0.5,
+        "repelStrength": 10,
+        "linkStrength": 1,
+        "linkDistance": 250,
+        "scale": 1,
+        "close": False,
+    }
+    return {
+        ".obsidian/app.json": app,
+        ".obsidian/core-plugins.json": core_plugins,
+        ".obsidian/daily-notes.json": daily_notes,
+        ".obsidian/templates.json": templates_cfg,
+        ".obsidian/graph.json": graph,
+    }
+
+
+def obsidian_templates():
+    """_templates/<이름>.md 경로(볼트 기준 상대) → 마크다운 텍스트.
+
+    default_body(타입, 제목)와 같은 섹션 구조를 쓰고, 프론트매터는 type·created(플레이스홀더)·tags만.
+    """
+    out = {}
+    for name, ntype in OBSIDIAN_TEMPLATE_SPECS:
+        meta = {"type": ntype, "created": "{{date:YYYY-MM-DD}}", "tags": []}
+        body = default_body(ntype, "{{title}}")
+        out[f"_templates/{name}.md"] = dump_frontmatter(meta, body)
+    return out
+
+
+def _obsidian_all_files(vault):
+    """obsidian init/status가 다루는 모든 파일의 상대경로 → 직렬화된 텍스트."""
+    out = {}
+    for rel, data in obsidian_config(vault).items():
+        out[rel] = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+    out.update(obsidian_templates())
+    return out
+
+
+def _obsidian_gitignored(vault):
+    gi = vault / ".gitignore"
+    if not gi.exists():
+        return False
+    try:
+        return ".obsidian" in gi.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
+def _obsidian_ensure_gitignore(vault, force=False):
+    """볼트가 git 저장소면 .gitignore에 워크스페이스 캐시 무시 규칙을 추가한다.
+
+    새 .gitignore를 만들지는 않는다(init_vault --git이 이미 만든다) — 이미 있을 때,
+    또는 --force일 때만 줄을 보탠다. 반환값: 실제로 파일을 바꿨으면 True.
+    """
+    if not (vault / ".git").is_dir():
+        return False
+    gi = vault / ".gitignore"
+    line = ".obsidian/workspace*.json"
+    if not gi.exists():
+        if not force:
+            return False
+        gi.write_text(line + "\n", encoding="utf-8")
+        return True
+    content = gi.read_text(encoding="utf-8")
+    if line in content:
+        return False
+    if content and not content.endswith("\n"):
+        content += "\n"
+    gi.write_text(content + line + "\n", encoding="utf-8")
+    return True
+
+
+def obsidian_setup(vault, force=False):
+    """.obsidian/*.json + _templates/*.md를 쓴다. 이미 있으면 --force가 아닌 한 건너뜀.
+
+    반환값: (written, skipped) — 둘 다 볼트 기준 상대경로 리스트.
+    """
+    written, skipped = [], []
+    for rel, text in _obsidian_all_files(vault).items():
+        p = vault / rel
+        if p.exists() and not force:
+            skipped.append(rel)
+            continue
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+        written.append(rel)
+    if _obsidian_ensure_gitignore(vault, force=force):
+        written.append(".gitignore")
+    return written, skipped
+
+
+def obsidian_status(vault):
+    files = {rel: (vault / rel).exists() for rel in _obsidian_all_files(vault)}
+    return {
+        "files": files,
+        "is_git": (vault / ".git").is_dir(),
+        "gitignored": _obsidian_gitignored(vault),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -3746,6 +3926,30 @@ def cmd_init(args):
     emit(args, {"vault": str(v), "created": created},
          f"볼트 준비 완료: {v}\n생성/갱신: " + ", ".join(created) + "\n\n" + hint)
     return EXIT_OK
+
+
+def cmd_obsidian(args):
+    v = require_vault()
+    if args.action == "init":
+        written, skipped = obsidian_setup(v, force=args.force)
+        lines = []
+        if written:
+            lines.append("Obsidian 설정 작성: " + ", ".join(written))
+        if skipped:
+            lines.append("이미 있어 건너뜀(--force로 덮어쓰기 가능): " + ", ".join(skipped))
+        if not lines:
+            lines.append("쓸 파일이 없어요.")
+        human = "\n".join(lines) + "\n\nObsidian에서 이 볼트를 열면 그래프 색·데일리노트·템플릿이 바로 적용돼요."
+        emit(args, {"written": written, "skipped": skipped}, human)
+        return EXIT_OK
+    if args.action == "status":
+        data = obsidian_status(v)
+        lines = [("OK " if exists else "!! ") + rel for rel, exists in data["files"].items()]
+        lines.append("git 저장소: " + ("예" if data["is_git"] else "아니오"))
+        lines.append(".obsidian git-ignore 처리: " + ("예" if data["gitignored"] else "아니오"))
+        emit(args, data, "\n".join(lines))
+        return EXIT_OK
+    raise BrainError("action은 init · status 중 하나")
 
 
 def _read_body(args):
@@ -7870,6 +8074,10 @@ def build_parser():
     s = add("reminders", "맥 미리알림(읽기 전용): on [--lists A,B] · off · list · test", cmd_reminders)
     s.add_argument("action", choices=("on", "off", "list", "test"))
     s.add_argument("--lists", help="읽을 미리알림 목록 이름(쉼표). 비우면 전부")
+
+    s = add("obsidian", "Obsidian 볼트 설정: init(그래프 색·데일리노트·템플릿 작성) · status(설정 파일 상태)", cmd_obsidian)
+    s.add_argument("action", choices=("init", "status"))
+    s.add_argument("--force", action="store_true", help="init: 이미 있는 설정 파일도 덮어쓰기")
     return p
 
 

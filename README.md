@@ -143,6 +143,8 @@ Claude: 신규 노트 6개(아이디어 3 · 자료 2 · 회의 1)
 
 Obsidian → **Open folder as vault** → `~/brain` 선택. 그래프 뷰·백링크·검색이 그대로 동작합니다. Obsidian에서 직접 쓴 노트도 프론트매터만 있으면 Claude가 함께 검색합니다. 기존 Obsidian 볼트가 있다면 `/second-brain:brain-import <볼트경로>`로 원본을 건드리지 않고 복사해 올 수 있습니다.
 
+처음 열기 전에 `brain.py obsidian init`을 한 번 돌려두면 타입별 그래프 색(결정·프로젝트·사람·일정·일지 등), 데일리노트 연결(`_templates/일지`), 일지·결정·일정·사람 템플릿(`_templates/`)까지 미리 갖춰진 채로 열립니다. 상태만 보려면 `brain.py obsidian status`, 이미 만든 설정을 다시 밀어쓰려면 `--force`를 붙이세요.
+
 ## FAQ
 
 **데이터는 어디에 저장되나요?**

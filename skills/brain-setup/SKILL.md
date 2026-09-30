@@ -15,7 +15,7 @@ allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py *) Read
    - 인덱스 줄 수: `config set index_head <N>` (세션 시작 시 BRAIN.md 상단 N줄 주입, 기본 40).
 3. 볼트가 없고 사용자가 원하면 `init` (기본 `~/brain/`).
 4. 마지막에 안내 3줄:
-   - Obsidian에서 보기: Obsidian → "Open folder as vault" → 볼트 폴더 선택. [[링크]]와 그래프 뷰가 그대로 동작한다.
+   - Obsidian에서 보기: Obsidian → "Open folder as vault" → 볼트 폴더 선택. [[링크]]와 그래프 뷰가 그대로 동작한다. 열기 전에 `obsidian init`을 돌리면 타입별 그래프 색·데일리노트·템플릿(`_templates/`)까지 미리 갖춰진다(`obsidian status`로 확인, `--force`로 다시 씀).
    - 데이터는 이 컴퓨터의 볼트 폴더에만 있고 외부 서버로 보내지 않는다.
    - 플러그인을 지워도 볼트는 남는다(볼트는 플러그인 밖에 있음).
 

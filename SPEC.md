@@ -526,3 +526,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 보드 「개요」를 실제 대시보드로 다시 그렸다: 통계 타일 5개(노트/결정(열림·도래)/일지 연속 N일/링크·고아/요약 커버리지 %), 12주 활동 스택 바 차트(막대마다 `<title>` 툴팁, 인라인 SVG), 타입 분포 가로 바, 태그 top10 칩(클릭하면 검색창에 `tag:x`를 넣고 입력 이벤트를 발생시켜 검색 실행). 섹션 머리말에 "이번 주 노트 N개, 지난주보다 +M개예요" 같은 해요체 한 줄을 매 로드마다 채운다
 - 모바일에서 타일은 2열로 줍고(기존 1000px 분기 재사용), 차트/타입-태그 카드는 한 열로 쌓인다(`ov-grid` 신규 분기). 색상은 전부 기존 토큰(`var(--accent)`, `var(--t-<type>)`)만 쓰고 새 색은 추가하지 않았다
 - 테스트 `tests/test_summary_stats.py` 11건(임시 HOME, 노트 19개 구성): 스트릭 3/5, 결정 open/decided/superseded/due, top_tags, by_type, links/orphans/평균, summary_coverage, 12주 버킷 합, `/api/summary`의 `stats` 응답까지 확인. 전체 스위트 504 통과(기존 493 + 신규 11). `node --check`로 `<script>` 문법 확인, 신규 렌더 함수(`ovBarChart`/`ovTypeBars`/`ovTagChips`)와 타일 템플릿을 Node로 발췌 실행해 `<svg>`·`<title>`·`.stat-tile` 5개가 실제로 나오는지 확인
+## v0.30 Obsidian 설정 초기화
+
+- 새 CLI `brain.py obsidian init [--force]` / `obsidian status`: 볼트를 처음 Obsidian에서 열어도 그래프 색·데일리노트·템플릿이 갖춰져 있도록 `.obsidian/app.json`·`core-plugins.json`(배열 형식)·`daily-notes.json`·`templates.json`·`graph.json`과 `_templates/{일지,결정,일정,사람}.md`를 작성. `obsidian_config(vault)`가 JSON 5종, `obsidian_templates()`가 템플릿 4종을 순수 함수로 만들고 `obsidian_setup()`이 실제 쓰기(없을 때만, `--force`면 덮어씀)를 맡는다
+- 그래프 색은 `web/index.html` 라이트 테마 `--t-*` 값과 동일한 hex를 `path:decisions`·`path:projects`·`path:people`·`path:events`·`path:journal`·`path:notes`·`tag:#idea` 7개 `colorGroups`에 매칭. daily-notes의 `folder`는 moment 토큰을 못 받아 `journal` 루트로 두지만, 실제 파일은 `journal/YYYY/`에 만들어져도 프론트매터 `type: journal`로 `load_notes`가 재귀 탐색해 잡아내므로 대시보드 집계는 영향 없음
+- `SKIP_DIRS`에 `_templates`·`_attachments` 추가(템플릿·첨부파일이 노트로 집계되지 않게). 볼트가 git 저장소면 `.gitignore`에 `.obsidian/workspace*.json`을 추가(`--force` 또는 `.gitignore`가 이미 있을 때만, 새로 만들지는 않음)
+- 신규 테스트 `tests/test_obsidian.py` 15건(파일 작성·JSON 파싱·colorGroups 5개 이상·템플릿 프론트매터·`load_notes` 제외·재실행 시 건너뜀·`--force` 덮어쓰기·status 출력·gitignore). 전체 스위트 526 통과(기존 511 + 신규 15)

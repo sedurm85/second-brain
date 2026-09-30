@@ -183,11 +183,12 @@ location: 김포공항
 
 ## Obsidian에서 열기
 
+0. 열기 전에 `brain.py obsidian init`을 돌리면 타입별 그래프 색, 데일리노트 폴더/템플릿 연결, 일지·결정·일정·사람 템플릿(`_templates/`)이 미리 갖춰져요(`brain.py obsidian status`로 확인, `--force`로 다시 씀).
 1. Obsidian → "Open folder as vault" → `~/brain` 선택.
 2. `[[위키링크]]`, 태그, 프로퍼티(프론트매터)가 그대로 인식돼요. 그래프 뷰로 연결 상태를 볼 수 있어요.
 3. 설정 → 파일 및 링크 → "새 링크 형식"을 "가장 짧은 경로"로 두면 세컨드브레인 규칙(파일명만으로 링크)과 맞아요.
 4. Obsidian에서 직접 만든 노트도 검색·인덱스에 잡혀요. 프론트매터가 없으면 파일명이 제목, 타입은 `note`로 취급해요.
-5. `.obsidian/`, `.git/`, `.trash/` 폴더는 무시해요. `BRAIN.md`는 자동 생성이니 Obsidian에서 고치지 마세요.
+5. `.obsidian/`, `.git/`, `.trash/`, `_templates/`, `_attachments/` 폴더는 무시해요(`_templates/`는 Obsidian 템플릿, `_attachments/`는 첨부파일용). `BRAIN.md`는 자동 생성이니 Obsidian에서 고치지 마세요.
 
 ## 가져오기 매핑 (`brain.py import`)
 
