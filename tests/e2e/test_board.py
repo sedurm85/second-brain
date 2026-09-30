@@ -128,3 +128,25 @@ class BoardTest(E2ETestCase):
         scroll_width = pg.evaluate("document.documentElement.scrollWidth")
         self.assertLessEqual(scroll_width, 390)
         self.assert_no_js_errors()
+
+    def test_09_mobile_nav_scrolls_and_tasks_stack(self):
+        """v0.31: 390px 폭에서 상단 nav는 가로 스크롤 스트립으로, 할 일 4열은 1열로 쌓여야 한다."""
+        pg = self.page("/", width=390, height=844)
+        pg.wait_for_selector("#tasksGrid .tcol", timeout=8000)
+        # nav는 줄바꿈 없이 가로 스크롤(overflow-x)로 넘치는 항목을 흘려보내야 페이지 자체가 넓어지지 않는다
+        nav_overflow_x = pg.evaluate(
+            "getComputedStyle(document.querySelector('.nav')).overflowX"
+        )
+        self.assertIn(nav_overflow_x, ("auto", "scroll"))
+        nav_wraps = pg.evaluate(
+            "getComputedStyle(document.querySelector('.nav ul')).flexWrap"
+        )
+        self.assertEqual("nowrap", nav_wraps)
+        # 할 일 4열(.tasks)은 좁은 화면에서 그리드 트랙이 1개(1열)로 쌓여야 한다
+        tasks_columns = pg.evaluate(
+            "getComputedStyle(document.querySelector('.tasks')).gridTemplateColumns"
+        )
+        self.assertEqual(1, len(tasks_columns.split()), f"tasks columns: {tasks_columns!r}")
+        scroll_width = pg.evaluate("document.documentElement.scrollWidth")
+        self.assertLessEqual(scroll_width, 390)
+        self.assert_no_js_errors()

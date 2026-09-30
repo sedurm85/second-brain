@@ -589,3 +589,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 보드: 「되돌아볼 결정」 카드와 「결정」 섹션의 임박한(7일 이내) open 항목 각각에 유지·종결·변경 작은 버튼을 붙이고, 유지·종결은 그 자리 인라인 폼(일수 선택 30/90/180 + 메모)으로, 변경은 노트 패널을 열어 본문 아래 제목·결정·이유 인라인 폼으로 처리해 성공 시 새 결정을 바로 연다. 노트 패널도 결정 타입(open)이면 같은 유지·종결·변경 폼을 제공. 처리 후 매번 `refreshLive(true)` + 토스트
 - 코어: 음성 규칙 "결정 유지해/종결해 <제목 일부>" 1개(`checkDecisionReview`) 추가 — `t.revisit` 제목 부분일치로 첫 매치를 확인 없이 바로 처리하고 결과를 말해 준다
 - 신규 테스트 `tests/test_decision_review.py` 13건(keep/close/change 각 동작·검증 5종·HTTP·CLI 왕복) + e2e 1건(데모의 임박 결정에서 유지 클릭 → 토스트 → revisit 이동). 전체 스위트 626 통과(기존 612 + 신규 14, 회귀 없음)
+## v0.31 보드 모바일 폴리시
+
+- 390×844 실측: 상단 검색창이 브랜드+아이콘 4개와 한 줄에 끼어 폭 70px로 줄어 placeholder("기억 검색")가 "기" 한 글자만 보이던 문제, 이번 주(7일) 그리드가 2열로 접혀 일정 제목이 조기 말줄임되던 문제, 노트/일정 패널의 메모·태그·제안(무시/채택) 폼이 select+input+button 한 줄에 끼던 문제, 아이콘 버튼(닫기·테마·도움말)·그래프 타입 칩·토스트 확인 버튼이 40px 미만 탭 타깃이던 문제를 확인
+- `@media (max-width: 560px)`에 툴바를 별도 줄로 내리는 `.header-tools { flex-basis: 100% }`, 이번 주 그리드를 1열로 접는 `.week` 규칙 교체, `.ev-form`/`.ev-sug .row`에 `flex-wrap: wrap`(입력은 `flex:1 1 100%`로 줄바꿈), `.icon-btn`(40×40)·`.chip`/`.s-chip`·`.text-btn`·토스트 버튼·체크박스 탭 타깃 확대를 추가. `.ev-status`에는 미디어 쿼리 밖에서 `min-width:0`(공용 안전장치)만 보탰다. 데스크톱 CSS는 손대지 않음
+- 지식 그래프·자동화·개요·결정 보드·타임라인·일지·사람·프로젝트 섹션은 기존에 이미 1열 반응형·`text-overflow`·`columns` 다단으로 잘 대응돼 있어 추가 수정 없이 확인만 함
+- 검증: 재스크린샷으로 검색창 70px→194px, 닫기 버튼 36→40px 확인. `document.documentElement.scrollWidth`가 `/`·노트 패널 열림·일정 패널 열림 모두 390 이하. `node -e "new Function(...)"`로 인라인 스크립트 문법 확인. `tests/e2e/test_board.py`에 `test_09_mobile_nav_scrolls_and_tasks_stack` 추가(390px에서 `.nav`가 `overflow-x:auto`+`nowrap`으로 가로 스크롤, `.tasks`의 `grid-template-columns`가 트랙 1개). 전체 스위트 613 통과(기존 612 + 신규 1)

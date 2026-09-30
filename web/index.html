@@ -287,7 +287,7 @@ h1, h2, h3 { text-wrap: balance; }
 .trip-day-list .t { color: var(--t-event); font-weight: 600; flex: none; width: 48px; }
 .ev-parent-trip { margin: 0 0 10px; font-size: 13px; color: var(--ink-2); }
 .ev-parent-trip button { background: transparent; border: 0; color: var(--accent); font: inherit; cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 2px; }
-.ev-status { font-size: 12.5px; color: var(--muted); }
+.ev-status { font-size: 12.5px; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
 .ev-memo { font-size: 14px; }
 .ev-note-link { margin: 10px 0 0; font-size: 13px; }
 .note-actions { margin: 16px 0; padding-top: 14px; border-top: 1px solid var(--rule); display: flex; flex-direction: column; gap: 8px; }
@@ -370,7 +370,7 @@ h1, h2, h3 { text-wrap: balance; }
 .week .wsteps li .t { color: var(--t-event); }
 .week .wsteps li .n { color: var(--ink-2); }
 @media (max-width: 1000px) { .week { grid-template-columns: repeat(4, minmax(0, 1fr)); } .week .wd:nth-child(5) { border-left: 0; } }
-@media (max-width: 560px) { .week { grid-template-columns: repeat(2, minmax(0, 1fr)); } .week .wd:nth-child(odd) { border-left: 0; } .db-list .t { width: 84px; } }
+@media (max-width: 560px) { .week { grid-template-columns: minmax(0, 1fr); } .week .wd { border-left: 0; border-top: 1px solid var(--rule); } .week .wd:first-child { border-top: 0; } .db-list .t { width: 84px; } }
 .hero-text.glass { position: relative; overflow: hidden; }
 .hero-text.glass::after { content: ""; position: absolute; right: -80px; top: -80px; width: 260px; height: 260px; border-radius: 50%; background: radial-gradient(circle, var(--accent-soft), transparent 70%); pointer-events: none; }
 .header { margin-bottom: 18px; }
@@ -761,6 +761,21 @@ h1, h2, h3 { text-wrap: balance; }
   .top-w .t { max-width: 60%; }
   .sc-list { grid-template-columns: minmax(0, 1fr); }
   .sc-list dt { white-space: normal; }
+  /* v0.31: 헤더 검색창이 브랜드+아이콘 4개와 한 줄에 끼어 "기"자만 보이던 문제 → 툴바를 별도 줄로 */
+  .header-tools { flex-basis: 100%; margin-left: 0; }
+  /* v0.31: 탭 대상 40px 미만 아이콘·칩 버튼 확대 */
+  .icon-btn { width: 40px; height: 40px; }
+  .icon-btn svg { width: 20px; height: 20px; }
+  .chip, .s-chip { min-height: 32px; }
+  .text-btn { padding: 8px 14px; }
+  .remind-toast button { padding: 8px 14px; }
+  .ev-people .lnk { padding: 6px 12px; }
+  .task input[type="checkbox"], .ev-todo input[type="checkbox"], .rq input[type="checkbox"] { width: 18px; height: 18px; }
+  /* v0.31: 노트/일정 패널의 메모·태그·제안 폼이 좁은 화면에서 한 줄에 안 맞으면 줄바꿈되도록 (겹침·잘림 방지) */
+  .ev-form { flex-wrap: wrap; }
+  .ev-form input[type="text"], .ev-form textarea { flex: 1 1 100%; }
+  .ev-form .row, .ev-sug .row { flex-wrap: wrap; }
+  .ev-form .row .ev-status, .ev-sug .row .ev-status { flex: 1 1 100%; margin-right: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
