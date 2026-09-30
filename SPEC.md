@@ -417,3 +417,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 실버그 1건 발견·수정: `scripts/brain.py`의 `_tail_lines`가 "잘린 첫 줄 버림" 로직 때문에 창(max_bytes) 전체가 개행 없는 초대형 한 줄로 채워지면 그 유일한 줄까지 버려 빈 리스트를 반환하던 문제. 뒤에 완전한 줄이 남아 있을 때만 첫 줄을 버리도록 최소 수정(정상적인 다줄 로그의 동작은 그대로)
 - 나머지는 모두 의도된 동작으로 확인: int/bool 값을 넣으면 quoting 규칙상 문자열로 고정되는 것(타입 보존은 애초에 계약 아님), `@due()` 빈 문자열이 None 대신 `""`로 남는 것(둘 다 falsy라 하위 로직엔 영향 없음), DTSTART가 DTEND보다 나중이어도 보정 없이 그대로 반영, BYDAY의 서열(`2MO`) 접두사는 WEEKLY가 아니면 조용히 무시
 - 전체 스위트 328 통과(기존 274 + 신규 54)
+## v0.29 사무실 오늘 근무표 (2026-09-30)
+
+- `schedule_for(cron_line, today)`: 크론 5필드(분·시·일·월·요일)를 오늘 날짜로 펼쳐 `["HH:MM", ...]`를 계산. `*`·리스트(`a,b`)·범위(`a-b`)·스텝(`*/n`, `a-b/n`)을 지원하고 요일은 0·7 모두 일요일. 일/요일 둘 다 와일드카드가 아니면 크론 규칙대로 OR 판정. `_launchd_calendar_times`는 launchd `StartCalendarInterval`(dict 또는 list)을 같은 방식으로 펼침(Weekday 0·7=일요일)
+- `office_schedule(widgets, cron_lines, plist_dir, today, now)`: 위젯의 source를 크론 로그경로/launchd `StandardOutPath`와 매칭(`widget_commands`와 같은 규칙)해 오늘 슬롯을 만들고, 위젯당 하나뿐인 `updated_at`/`status`로 상태를 근사(과거 슬롯은 `updated_at`이 그 시각 이후면 done, 가장 최근 지난 슬롯이고 status가 fail이면 failed, 그 외엔 due, 미래는 upcoming). `StartInterval`은 슬롯이 아니라 `intervals`(연속 근무 배지)로, 멈춘 위젯은 제외. `next`는 가장 빨리 오는 upcoming 슬롯. `/api/office` 응답에 `schedule` 키로 추가(`dash_office`)
+- `web/office.html`: 팀장의 한마디 아래 `#shiftStrip` — 24시간 타임라인(0/6/12/18/24시 눈금 + 지금 위치 표시선), 슬롯은 상태별 색 점(완료=accent·실패=crit·놓침=warn·예정=muted), 인터벌 직원은 하단에 "N분마다 계속 근무" 띠로. hover/focus 시 `data-label`로 "07:00 아침 브리핑 카톡 · 완료" 툴팁. 모바일(≤720px)은 12시간 압축 뷰(평소 6~18시, 그 밖 시간엔 지금을 중심으로 클램프). `schedule.next`가 있으면 팀장 한마디에 "다음 근무는 …분 뒤예요" 한 줄 추가(없으면 기존 `nextShift` 제목 파싱 폴백 유지)
+- `tests/test_office_schedule.py` 17건: 크론 필드 파싱(범위·스텝·리스트·요일 0/7), launchd calendar dict/list/Weekday, 요일별 오늘 필터(월/일 고정), 슬롯 상태(done/failed/due/upcoming), next 선정, `/api/office`의 `schedule` 키. 전체 스위트 324 통과

@@ -3970,8 +3970,208 @@ def office_kpis(widgets, today=None, days=OFFICE_KPI_DAYS):
     return {"teams": {name: finalize(t) for name, t in teams.items()}, "total": finalize(total)}
 
 
+# ───────────────────────── 오늘 근무표: 크론·launchd 스케줄을 오늘 시각으로 펼치기 ─────────────────────────
+
+def _cron_field_values(field, lo, hi):
+    """크론 필드(*, 5, 1,4, 1-5, */10, 1-5/2)를 허용값 집합으로. dow는 0-7(7=일요일 별칭)까지 lo/hi로 받는다."""
+    out = set()
+    for part in field.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        base, step = part, 1
+        if "/" in base:
+            base, step_s = base.split("/", 1)
+            step = int(step_s)
+        if base == "*":
+            start, end = lo, hi
+        elif "-" in base:
+            a, b = base.split("-")
+            start, end = int(a), int(b)
+        else:
+            start = end = int(base)
+        v = start
+        while v <= end:
+            out.add(v)
+            v += step
+    return out
+
+
+def schedule_for(cron_line, today=None):
+    """크론 줄(분 시 일 월 요일 + 명령) → 오늘 실행 시각 목록 ["HH:MM", ...] 정렬.
+
+    *, a,b, a-b, */n, a-b/n 지원. 요일은 0-7(0·7 모두 일요일). dom·dow 둘 다 와일드카드가 아니면
+    크론 규칙대로 OR(둘 중 하나만 맞아도 실행)로 판정한다."""
+    today = today or date.today()
+    parts = (cron_line or "").strip().split(None, 5)
+    if len(parts) < 5:
+        return []
+    minute_f, hour_f, dom_f, month_f, dow_f = parts[:5]
+    try:
+        minutes = _cron_field_values(minute_f, 0, 59)
+        hours = _cron_field_values(hour_f, 0, 23)
+        doms = _cron_field_values(dom_f, 1, 31)
+        months = _cron_field_values(month_f, 1, 12)
+        dows = _cron_field_values(dow_f, 0, 7)
+    except ValueError:
+        return []
+    if today.month not in months:
+        return []
+    dom_wild, dow_wild = dom_f.strip() == "*", dow_f.strip() == "*"
+    py_wd = today.weekday()  # 월=0 … 일=6
+    dow_hit = any((c + 6) % 7 == py_wd for c in dows)
+    dom_hit = today.day in doms
+    if dom_wild and dow_wild:
+        day_ok = True
+    elif dom_wild:
+        day_ok = dow_hit
+    elif dow_wild:
+        day_ok = dom_hit
+    else:
+        day_ok = dom_hit or dow_hit
+    if not day_ok:
+        return []
+    return sorted(f"{h:02d}:{m:02d}" for h in hours for m in minutes)
+
+
+def _launchd_calendar_times(cal, today=None):
+    """launchd StartCalendarInterval(dict 또는 list[dict]) → 오늘 실행 시각 목록. Weekday 0·7 모두 일요일."""
+    today = today or date.today()
+    entries = cal if isinstance(cal, list) else [cal]
+    py_wd = today.weekday()
+    out = set()
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        wd = e.get("Weekday")
+        if wd is not None:
+            wds = wd if isinstance(wd, list) else [wd]
+            if not any((int(w) + 6) % 7 == py_wd for w in wds):
+                continue
+        day = e.get("Day")
+        if day is not None and int(day) != today.day:
+            continue
+        month = e.get("Month")
+        if month is not None and int(month) != today.month:
+            continue
+        out.add(f"{int(e.get('Hour', 0)):02d}:{int(e.get('Minute', 0)):02d}")
+    return sorted(out)
+
+
+def _cron_schedule_lines(cron_lines):
+    """크론 줄 → {로그 절대경로 또는 스크립트 stem: 원본 크론 줄 전체(스케줄 필드 포함)}.
+
+    widget_commands가 쓰는 _cron_commands는 명령부만 돌려줘 스케줄 필드가 없어서, schedule_for에 넘길
+    원본 줄을 따로 인덱싱한다. 매칭 순서(로그 절대경로 우선, 그다음 스크립트 stem)는 _cron_commands와 맞춘다."""
+    out = {}
+    for line in cron_lines:
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        parts = s.split(None, 5)
+        if len(parts) < 6:
+            continue
+        cmd = parts[5]
+        m = re.search(r">>?\s*(\S+\.log)", cmd)
+        if m:
+            out[os.path.expanduser(m.group(1))] = s
+        else:
+            script = next((c for c in cmd.split() if c.endswith((".py", ".sh"))), None)
+            if script:
+                out[Path(script).stem] = s
+    return out
+
+
+def _widget_schedule_plists(plist_dir=None):
+    """~/Library/LaunchAgents/*.plist → {StandardOutPath 절대경로: {label, calendar, interval}}.
+
+    _launchd_commands와 같은 파일을 읽지만 라벨만이 아니라 StartCalendarInterval·StartInterval도 함께
+    돌려준다(스케줄 계산에 필요)."""
+    import plistlib
+    d = plist_dir or launch_agents_dir()
+    out = {}
+    if not d.is_dir():
+        return out
+    for pl in d.glob("*.plist"):
+        try:
+            data = plistlib.loads(pl.read_bytes())
+        except Exception:  # noqa: BLE001 - 깨진 plist는 건너뜀
+            continue
+        log_path = data.get("StandardOutPath")
+        if not log_path:
+            continue
+        out[os.path.expanduser(str(log_path))] = {
+            "label": data.get("Label"), "calendar": data.get("StartCalendarInterval"), "interval": data.get("StartInterval"),
+        }
+    return out
+
+
+def office_schedule(widgets, cron_lines=None, plist_dir=None, today=None, now=None):
+    """오늘 근무표: {slots:[{id,title,team,time,state}], intervals:[{id,title,every_min}], next:{id,title,time,in_min}|None}.
+
+    상태는 근사치다(위젯당 하나의 updated_at만 있어 슬롯별 실행 기록은 없음): 미래 슬롯은 upcoming, 과거
+    슬롯은 updated_at이 그 슬롯 시각 이후면 done, 아니면 그 위젯의 '가장 최근 지난 슬롯'이고 status가
+    fail이면 failed, 그 외에는 due(놓침)로 본다. 멈춘(state=paused) 위젯은 뺀다."""
+    now = now or datetime.now().astimezone()
+    today = today or now.date()
+    now_hm = now.strftime("%H:%M")
+    cron_raw = _cron_schedule_lines(_crontab_lines() if cron_lines is None else cron_lines)
+    plists = _widget_schedule_plists(plist_dir)
+    slots, intervals, upcoming = [], [], []
+    for w in widgets:
+        if w.get("state") == "paused":
+            continue
+        src = os.path.expanduser(str(w.get("source") or ""))
+        if not src:
+            continue
+        title = w.get("title") or w["id"]
+        times = None
+        if src in plists:
+            info = plists[src]
+            if info.get("calendar"):
+                times = _launchd_calendar_times(info["calendar"], today)
+            elif info.get("interval"):
+                every = max(1, int(info["interval"]) // 60)
+                intervals.append({"id": w["id"], "title": title, "every_min": every})
+                continue
+        if times is None:
+            line = cron_raw.get(src) or cron_raw.get(Path(src).stem)
+            if line:
+                times = schedule_for(line, today)
+        if not times:
+            continue
+        past = [t for t in times if t <= now_hm]
+        latest_past = max(past) if past else None
+        updated_at = None
+        if w.get("updated_at"):
+            try:
+                updated_at = datetime.fromisoformat(w["updated_at"])
+            except ValueError:
+                updated_at = None
+        for t in times:
+            hh, mm = t.split(":")
+            slot_dt = datetime(today.year, today.month, today.day, int(hh), int(mm), tzinfo=now.tzinfo)
+            if t > now_hm:
+                state = "upcoming"
+                upcoming.append((slot_dt, w["id"], title, t))
+            elif updated_at and updated_at >= slot_dt:
+                state = "done"
+            elif w.get("status") == "fail" and t == latest_past:
+                state = "failed"
+            else:
+                state = "due"
+            slots.append({"id": w["id"], "title": title, "team": team_for(w), "time": t, "state": state})
+    slots.sort(key=lambda s: s["time"])
+    nxt = None
+    if upcoming:
+        upcoming.sort(key=lambda u: u[0])
+        slot_dt, wid, title, t = upcoming[0]
+        nxt = {"id": wid, "title": title, "time": t, "in_min": max(0, round((slot_dt - now).total_seconds() / 60))}
+    return {"slots": slots, "intervals": intervals, "next": nxt}
+
+
 def dash_office(widgets, ps_lines=None, cron_lines=None, now=None):
-    """/api/office 응답: teams, widgets(요약), running, jobs, events, assistant_name, kpis."""
+    """/api/office 응답: teams, widgets(요약), running, jobs, events, assistant_name, kpis, schedule."""
     cfg = load_config()
     teams = {}
     order = []
@@ -3990,6 +4190,7 @@ def dash_office(widgets, ps_lines=None, cron_lines=None, now=None):
         "events": office_events(widgets, jobs, now),
         "assistant_name": str(cfg.get("assistant_name") or "브레인"),
         "kpis": office_kpis(widgets, today=(now.date() if now else None)),
+        "schedule": office_schedule(widgets, cron_lines=cron_lines, now=now),
     }
 
 
