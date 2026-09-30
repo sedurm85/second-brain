@@ -333,3 +333,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 보드: 내비 「일지」 + `#journals` 섹션, 두 열(하루 일지 / 주간 회고). 하루 일지는 요약 한 줄 + 펼치기로 불릿, 회고는 요약·불릿·질문 체크박스(기존 `event-note check`로 토글 후 재조회). 제목을 누르면 기존 노트 패널이 열림. 빈 상태는 「아직 일지가 없어요. 21:30 저녁 마감이 첫 일지를 써요.」
 - 데모(`serve --demo`): 어제 하루 일지(4줄)·오늘 주간 회고(미체크 질문 3개)를 볼트에 추가. 데모 제안(suggestions)은 캐시 디렉터리가 볼트별로 격리되지 않아(`agenda.cache_dir()`가 실제 `~/.cache`를 씀) 생략
 - 테스트 184
+## v0.27 날씨 모듈 (2026-09-30)
+
+- 새 독립 모듈 `scripts/weather.py`(stdlib, API 키 불필요): Open-Meteo 지오코딩+예보. `geocode`(장소명 정규화·KR 우선·구어체 실패 시 접미사/2어절 fallback, 미스 포함 영구 캐시·7일 재시도), `forecast`(3시간 캐시), `describe`(WMO 코드→한글), `weather_for`(요약+우산/추움/더움 플래그), `weather_sentence`(카톡 한 줄). `SECOND_BRAIN_OFFLINE=1`로 네트워크 차단, 모든 예외는 삼켜 None/빈 값. CLI `weather.py <장소> [날짜] [--json]`
+- 이번 워크트리(`wt/weather`)에서는 `brain.py`를 건드리지 않았다(병합 충돌 방지) — 연결 지점은 `docs/weather-integration.md`에 정리(attach_event_notes/kakao_brief/today_human/prepare_prompt/보드 이벤트 패널)
+- 실네트워크 확인: 정식 지명("김포국제공항","서울특별시")은 조회되나 구어체("서울","제주도","김포공항")는 Open-Meteo 지오코딩 데이터에 없어 못 찾음 — 모듈 로직 문제 아닌 API 데이터 한계, 필요 시 별칭 테이블은 후속 과제로 문서에 남김
+- 테스트 +24, 총 204
