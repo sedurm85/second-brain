@@ -73,3 +73,4 @@
 - 워커 추가: wt/people-link(참석자 ↔ people/ 노트, 사람 노트 만들기, 브리핑에 이름), wt/office-schedule(크론·launchd 파싱 → 오늘 근무표 띠·다음 근무)
 - 가동 중: edge-tests, demo-rich, people-link, office-schedule
 - 다음 후보: 여행 모드(여러 날 일정 → 짐 목록·일자별 동선), 보드 단축키(Cmd+K), 21:30 저녁 마감 실행 검증
+- 18:14 wt/edge-tests 머지(경계 테스트 54개, `_tail_lines` 초대형 한 줄 버그 수정, 테스트 361). 워커 추가: wt/widget-cli(widget add/list/… CLI + brain-office 스킬)
