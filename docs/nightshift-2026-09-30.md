@@ -100,3 +100,4 @@
 - 19:16 wt/overview-stats 머지(테스트 533, 실볼트: 링크 194·고아 6·요약 94%). 워커 추가: wt/agenda-gaps(일정 사이 여유·이동 경고). 가동 중: widget-edit, obsidian-init, inpage-remind, agenda-gaps
 - 19:22 wt/widget-edit 머지(직원 설정 편집·패턴 시험, 테스트 556). v0.30.0 태그·릴리스
 - 19:30 wt/obsidian-init 머지(테스트 571) → 실볼트에 `obsidian init` 적용(.obsidian 설정·템플릿 4개, 노트 무변경). 워커 추가: wt/perf-bench(1000노트 벤치·느린 API 캐시)
+- 19:35 wt/inpage-remind 머지(테스트 573, /api/remind-peek). 워커 추가: wt/e2e-suite(Playwright 회귀 스위트, 없으면 skip), wt/monthly-retro(월간 회고·매월 1일 에이전트). 가동 중: agenda-gaps, onboarding-qa, perf-bench, e2e-suite, monthly-retro
