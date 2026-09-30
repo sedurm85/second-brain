@@ -23,7 +23,7 @@ import re
 import ssl
 import time
 from datetime import datetime, timedelta, timezone
-from email.header import decode_header, make_header
+from email.header import Header, decode_header, make_header
 from pathlib import Path
 
 CACHE_SEC = 10 * 60
@@ -39,13 +39,32 @@ def cache_path():
     return d / "mail.json"
 
 
+def _fix_8bit(s):
+    """message_from_bytes가 인코딩 안 된 8비트 헤더를 surrogateescape로 넘겨준 경우 UTF-8로 복원."""
+    if any(0xDC80 <= ord(ch) <= 0xDCFF for ch in s):
+        try:
+            return s.encode("ascii", "surrogateescape").decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001
+            return s.encode("utf-8", "replace").decode("utf-8", "replace")
+    return s
+
+
 def _dec(s):
     if not s:
         return ""
+    if isinstance(s, Header):  # compat32: 인코딩 안 된 8비트 헤더는 unknown-8bit Header 객체로 옴 → 바이트를 UTF-8로
+        parts = []
+        for b, cs in decode_header(s):
+            if isinstance(b, bytes):
+                parts.append(b.decode("utf-8" if not cs or cs == "unknown-8bit" else cs, "replace"))
+            else:
+                parts.append(b)
+        return "".join(parts).strip()
+    s = _fix_8bit(str(s))
     try:
-        return str(make_header(decode_header(s))).strip()
+        return _fix_8bit(str(make_header(decode_header(s)))).strip()
     except Exception:  # noqa: BLE001 - 깨진 인코딩은 원문
-        return str(s).strip()
+        return s.strip()
 
 
 def _parse_date(s):
@@ -73,8 +92,8 @@ def parse_header_block(raw: bytes, flags: str = "", folder: str = "INBOX"):
         "subject": _dec(msg.get("Subject")) or "(제목 없음)",
         "date": d.isoformat(timespec="minutes") if d else "",
         "_dt": d,
-        "unread": "\\\\Seen" not in flags,
-        "flagged": "\\\\Flagged" in flags,
+        "unread": "\\Seen" not in flags,
+        "flagged": "\\Flagged" in flags,
         "in_reply_to": refs,
         "list": bool(msg.get("List-Id") or msg.get("List-Unsubscribe")),
         "auto": bool(msg.get("Auto-Submitted") and msg.get("Auto-Submitted").lower() != "no") or (msg.get("Precedence") or "").lower() in ("bulk", "list", "junk"),
@@ -83,7 +102,7 @@ def parse_header_block(raw: bytes, flags: str = "", folder: str = "INBOX"):
 
 
 def _flags_from_meta(meta: bytes):
-    m = re.search(rb"FLAGS \\(([^)]*)\\)", meta or b"")
+    m = re.search(rb"FLAGS \(([^)]*)\)", meta or b"")
     return m.group(1).decode("ascii", "ignore") if m else ""
 
 
