@@ -458,6 +458,71 @@ class InitTest(BrainTestCase):
         self.assertEqual(self.run_cli("init", "--git")[0], 0)
         self.assertTrue((self.vault / ".git").is_dir())
 
+    def test_init_next_steps_hint(self):
+        code, out, _ = self.run_cli("init")
+        self.assertEqual(code, 0)
+        self.assertIn("다음:", out)
+        self.assertIn("doctor", out)
+        self.assertIn("calendar add ics", out)
+        self.assertIn("serve", out)
+
+    def test_init_json_has_no_hint(self):
+        code, out, _ = self.run_cli("init", "--json")
+        self.assertEqual(code, 0)
+        data = json.loads(out)
+        self.assertEqual(set(data.keys()), {"vault", "created"})
+
+
+def _fake_today_t(**over):
+    """today_human 단위 테스트용 최소 t dict."""
+    base = {
+        "greeting": "좋은 아침이에요", "date": "2026-09-30", "weekday": "수",
+        "agenda": {}, "mail": {}, "revisit": [],
+        "suggestions": {"count": 0}, "retro_questions": [], "week_plan": [],
+        "widgets_summary": {s: 0 for s in brain.SUMMARY_STATUSES}, "widgets_total": 0, "top_widgets": [],
+        "inbox": [], "this_week": {"new_notes": 0, "new_decisions": 0}, "kakao": "카톡",
+    }
+    base.update(over)
+    return base
+
+
+class TodayHumanExtraLinesTest(unittest.TestCase):
+    def test_suggestions_and_retro_questions_line(self):
+        t = _fake_today_t(suggestions={"count": 2}, retro_questions=[{"text": "질문1"}])
+        out = brain.today_human(t)
+        self.assertIn("준비 제안 2건 대기 · 회고 질문 1개", out)
+
+    def test_line_absent_when_both_zero(self):
+        t = _fake_today_t(suggestions={"count": 0}, retro_questions=[])
+        out = brain.today_human(t)
+        self.assertNotIn("준비 제안", out)
+
+    def test_week_plan_line_capped_at_two(self):
+        t = _fake_today_t(week_plan=[{"text": "a"}, {"text": "b"}, {"text": "c"}])
+        out = brain.today_human(t)
+        self.assertIn("이번 주 계획: a, b", out)
+        self.assertNotIn("이번 주 계획: a, b, c", out)
+
+    def test_week_plan_line_absent_when_empty(self):
+        t = _fake_today_t(week_plan=[])
+        out = brain.today_human(t)
+        self.assertNotIn("이번 주 계획", out)
+
+    def test_output_cap_raised_to_eight_lines(self):
+        t = _fake_today_t(
+            agenda={"sentence": "일정 있음"},
+            mail={"sentence": "메일 있음"},
+            revisit=[{"title": "결정1", "days_left": 1}],
+            suggestions={"count": 1}, retro_questions=[{"text": "q"}],
+            week_plan=[{"text": "다음 우선순위"}],
+            inbox=["할 일1"],
+        )
+        out = brain.today_human(t)
+        human_part = out.split("\n\n카톡용")[0]
+        self.assertEqual(len(human_part.split("\n")), 8)
+        self.assertIn("준비 제안 1건 대기 · 회고 질문 1개", human_part)
+        self.assertIn("이번 주 계획: 다음 우선순위", human_part)
+
 
 if __name__ == "__main__":
     unittest.main()

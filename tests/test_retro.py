@@ -82,6 +82,36 @@ print("```json\\n" + json.dumps(out, ensure_ascii=False) + "\\n```")
         self.assertEqual(mat["counts"]["journals"], 1)
         self.assertIn("1인칭", brain.retro_prompt(mat))
 
+    def test_automation_kpi(self):
+        """widgets가 있으면 retro_material에 automation_kpi(runs/fails/rate/worst_team)가 실린다."""
+        cfgdir = self.home / ".config" / "second-brain"
+        logs = self.home / ".local"
+        logs.mkdir(exist_ok=True)
+        (logs / "alpha1.log").write_text(
+            "\n".join([f"{self.today.isoformat()} 10:00 run ok", f"{self.today.isoformat()} 11:00 run ok"]) + "\n",
+            encoding="utf-8")
+        (logs / "alpha2.log").write_text(f"{self.today.isoformat()} 22:00 Traceback boom\n", encoding="utf-8")
+        (logs / "beta1.log").write_text(f"{self.today.isoformat()} 08:00 run ok\n", encoding="utf-8")
+        (cfgdir / "widgets.json").write_text(json.dumps({"widgets": [
+            {"id": "alpha-1", "title": "알파1", "kind": "log", "source": "~/.local/alpha1.log", "team": "알파팀"},
+            {"id": "alpha-2", "title": "알파2", "kind": "log", "source": "~/.local/alpha2.log", "team": "알파팀", "status": {"fail_pattern": "Traceback"}},
+            {"id": "beta-1", "title": "베타1", "kind": "log", "source": "~/.local/beta1.log", "team": "베타팀"},
+        ]}, ensure_ascii=False), encoding="utf-8")
+        widgets = brain.collect_widgets()
+        mat = brain.retro_material(self.vault, 7, self.today, widgets=widgets)
+        kpi = mat["automation_kpi"]
+        self.assertEqual(kpi["runs"], 4)
+        self.assertEqual(kpi["fails"], 1)
+        self.assertEqual(kpi["rate"], round(100 * 3 / 4))
+        self.assertEqual(kpi["worst_team"], {"team": "알파팀", "fails": 1})
+        self.assertIn("automation_kpi", brain.retro_prompt(mat))
+
+    def test_automation_kpi_no_fails_is_none(self):
+        mat = brain.retro_material(self.vault, 7, self.today, widgets=[])
+        kpi = mat["automation_kpi"]
+        self.assertEqual(kpi["fails"], 0)
+        self.assertIsNone(kpi["worst_team"])
+
     def test_cli_and_force(self):
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):

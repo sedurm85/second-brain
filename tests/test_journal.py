@@ -67,6 +67,17 @@ print("결과:\\n```json\\n" + json.dumps(out, ensure_ascii=False) + "\\n```")
         self.assertIn("[재료]", p)
         self.assertIn("1인칭", p)
 
+    def test_weather_today(self):
+        ag = {"today": [{"title": "산책", "all_day": False, "start": f"{self.today.isoformat()}T09:00",
+                          "weather": {"place": "서울", "summary": "비 · 18~22°", "umbrella": True, "cold": False, "hot": False}}]}
+        mat = brain.journal_material(self.vault, self.today, widgets=[], agenda=ag)
+        self.assertEqual(mat["weather_today"], "비 · 18~22°")
+
+    def test_weather_today_none_when_absent(self):
+        ag = {"today": [{"title": "산책", "all_day": False, "start": f"{self.today.isoformat()}T09:00", "weather": None}]}
+        mat = brain.journal_material(self.vault, self.today, widgets=[], agenda=ag)
+        self.assertIsNone(mat["weather_today"])
+
     def test_cli_write_and_force(self):
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):

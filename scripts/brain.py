@@ -2755,7 +2755,7 @@ def dash_today(vault, today=None, now=None, widgets=None, agenda=None):
 
 
 def today_human(t):
-    """사람용 브리핑(6줄 이내) + 카톡용 블록."""
+    """사람용 브리핑(8줄 이내) + 카톡용 블록."""
     out = [f"{t['greeting']}! {t['date']} {t['weekday']}"]
     ag = t.get("agenda") or {}
     if ag.get("sentence"):
@@ -2773,6 +2773,13 @@ def today_human(t):
     if t["revisit"]:
         out.append(f"되돌아볼 결정 {len(t['revisit'])}: " +
                    ", ".join(f"{d['title']}({_dleft(d)})" for d in t["revisit"][:3]))
+    sugg_count = (t.get("suggestions") or {}).get("count") or 0
+    retro_q = t.get("retro_questions") or []
+    if sugg_count or retro_q:
+        out.append(f"준비 제안 {sugg_count}건 대기 · 회고 질문 {len(retro_q)}개")
+    week_plan_items = t.get("week_plan") or []
+    if week_plan_items:
+        out.append("이번 주 계획: " + ", ".join(x["text"] for x in week_plan_items[:2]))
     s = t["widgets_summary"]
     if t["widgets_total"]:
         bad = [w["title"] for w in t["top_widgets"] if w["status"] in ("fail", "stale")]
@@ -2787,7 +2794,7 @@ def today_human(t):
                    (" 외" if len(t["inbox"]) > 3 else ""))
     w = t["this_week"]
     out.append(f"이번 주 신규: 노트 {w['new_notes']} · 결정 {w['new_decisions']}")
-    return "\n".join(out[:6]) + "\n\n카톡용(200자)\n" + t["kakao"]
+    return "\n".join(out[:8]) + "\n\n카톡용(200자)\n" + t["kakao"]
 
 
 # ---------------------------------------------------------------------------
@@ -3105,8 +3112,9 @@ def cmd_init(args):
         cfg["vault"] = str(v)
         save_config(cfg)
     created = init_vault(v, git=args.git)
+    hint = "다음: `brain.py doctor`로 점검 → 캘린더 연결(`calendar add ics …`) → 대시보드(`serve`)"
     emit(args, {"vault": str(v), "created": created},
-         f"볼트 준비 완료: {v}\n생성/갱신: " + ", ".join(created))
+         f"볼트 준비 완료: {v}\n생성/갱신: " + ", ".join(created) + "\n\n" + hint)
     return EXIT_OK
 
 
@@ -4935,6 +4943,11 @@ def evening_brief(t, tomorrow_events):
     if tomorrow_events:
         e = tomorrow_events[0]
         parts.append("내일 " + ("종일 " if e["all_day"] else e["start"][11:16] + " ") + e["title"] + (f" 외 {len(tomorrow_events) - 1}" if len(tomorrow_events) > 1 else ""))
+        w = e.get("weather")
+        if w and (w.get("umbrella") or w.get("cold") or w.get("hot")):
+            # weather_mod.weather_sentence는 우산 문구만 다루고 형식도 달라 재사용하지 않고 직접 구성한다.
+            word = "우산" if w.get("umbrella") else ("겉옷" if w.get("cold") else "더위")
+            parts.append(f"내일 {w.get('place')} {w.get('summary')}, {word}")
     else:
         parts.append("내일 일정 없음")
     return _clip(" / ".join(parts), KAKAO_MAX)
@@ -4951,6 +4964,8 @@ def cmd_brief(args):
     t = dash_today(v)
     if getattr(args, "evening", False):
         ag = collect_agenda_safe(2)
+        if v:
+            attach_event_notes(v, ag)  # 날씨(umbrella/cold/hot) 필드가 있어야 evening_brief가 옷차림을 알려줄 수 있다
         tomorrow = [e for e in ag.get("upcoming") or [] if e.get("days_left") == 1]
         t["kakao"] = evening_brief(t, tomorrow)
         t["evening"] = True
@@ -5263,6 +5278,7 @@ def journal_material(vault, today, widgets=None, agenda=None):
                 memos.append(f"{n.title}: {m.group(2)[:120]}")
     ag = dict(agenda if agenda is not None else collect_agenda_safe(1, now=datetime.combine(today, datetime.min.time()).astimezone()))
     events = [(("종일 " if e.get("all_day") else e["start"][11:16] + " ") + e["title"]) for e in (ag.get("today") or [])][:8]
+    weather_today = next((e["weather"]["summary"] for e in (ag.get("today") or []) if e.get("weather")), None)
     tb = dash_tasks(vault, today, widgets or [], ag) if vault else {"done_recent": [], "today": []}
     is_today = today == date.today()
     done = [x["text"] for x in tb.get("done_recent") or []][-6:] if is_today else []  # 완료 시각이 없어 오늘 일지에만 넣는다
@@ -5275,7 +5291,8 @@ def journal_material(vault, today, widgets=None, agenda=None):
             jobs.append((j.get("title") or "") + (" — " + j["detail"][:80] if j.get("detail") else ""))
     chat = [{"q": c["q"][:120], "a": c["a"][:160]} for c in core_chat_today(today)][-6:]
     mat = {"date": day, "weekday": WEEKDAYS_KO[today.weekday()], "new_notes": new_notes, "event_memos": memos[:8],
-           "events": events, "tasks_done": done, "tasks_left": left, "automation_issues": bad, "claude_jobs": jobs[:6], "core_chat": chat}
+           "events": events, "tasks_done": done, "tasks_left": left, "automation_issues": bad, "claude_jobs": jobs[:6], "core_chat": chat,
+           "weather_today": weather_today}
     mat["empty"] = not (new_notes or memos or events or done or jobs or chat)
     return mat
 
@@ -5392,8 +5409,17 @@ def retro_material(vault, days, today, widgets=None):
             continue
         if h.get("total_fails"):
             issues.append(f"{w['title']}: {days}일 중 실패 {h['total_fails']}회")
+    kpi = office_kpis(widgets or [], today=today, days=days)
+    kpi_total = kpi["total"]
+    worst_team = None
+    teams_with_fails = [(name, tm["fails"]) for name, tm in kpi["teams"].items() if tm.get("fails")]
+    if teams_with_fails:
+        wname, wfails = max(teams_with_fails, key=lambda kv: kv[1])
+        worst_team = {"team": wname, "fails": wfails}
+    automation_kpi = {"runs": kpi_total["runs"], "fails": kpi_total["fails"], "rate": kpi_total["rate"], "worst_team": worst_team}
     mat = {"since": since, "until": t, "days": days, "new_notes": new_notes, "decisions": decisions, "revisit_due": revisit, "journals": journals[-7:],
            "projects": sorted(projects.items(), key=lambda kv: -kv[1])[:6], "orphans": orphans, "automation_issues": issues[:6],
+           "automation_kpi": automation_kpi,
            "counts": {"notes": len(new_notes), "decisions": len(decisions), "journals": len(journals)}}
     mat["empty"] = not (new_notes or decisions or journals)
     return mat
@@ -5406,7 +5432,9 @@ def retro_prompt(mat):
             '"questions": ["되돌아볼 질문" 정확히 3개, 각 60자 이내. revisit_due·decisions가 있으면 그 결정을 지목해 유지/변경을 묻고, 없으면 patterns에서 뽑는다. 예/아니오로 끝나지 않는 열린 질문], '
             '"next_week": ["다음 주 우선순위" 1~3개, 각 40자 이내, 재료의 미결·revisit에서], '
             '"kakao": "카톡용 한 줄 80자 이내"}\n'
-            "규칙: 재료에 없는 사실을 만들지 마라. 칭찬·감탄사·이모지 없이 담담하게.\n\n[재료]\n" + json.dumps(mat, ensure_ascii=False))
+            "규칙: 재료에 없는 사실을 만들지 마라. 칭찬·감탄사·이모지 없이 담담하게. "
+            "automation_kpi.fails가 0보다 크면 patterns에 자동화 안정성(실패 건수·worst_team)을 한 문장 언급하고, 0이면 automation_kpi를 언급하지 마라.\n\n[재료]\n"
+            + json.dumps(mat, ensure_ascii=False))
 
 
 def write_retro(vault, today, raw, mat, force=False):

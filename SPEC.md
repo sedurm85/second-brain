@@ -434,6 +434,13 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `widget_action(body, widgets, cli=False)`에 `cli` 매개변수 추가: `cli=True`면 `run`/`add`/`move`/`rename`/`remove`의 `allow_run`·`allow_hire` 게이트만 건너뛰고, 홈 경로 규칙·kind 허용 목록·정규식 검사·`brain-` 접두 퇴사 거부 등 나머지 검증은 그대로 유지. 웹 API(`/api/widget`)는 `cli` 없이 그대로 호출해 기존 게이트가 유지됨
 - 새 CLI `brain.py widget <action>` (`add · move · rename · remove · pause · resume · run · brief · show · list`): 사용자 자신의 터미널이라 widgets.json의 `allow_hire`/`allow_run` 설정 없이도 바로 채용·이동·퇴사·실행할 수 있다. `show`/`list`는 평가된 상태(`collect_widgets`)와 원본 설정을 함께 보여줌
 - 새 스킬 `skills/brain-office/SKILL.md`: "채용 스카우트 로그를 직원으로 등록해줘" 같은 대화로 로그 경로 확인(`test -f`)·ok/fail 패턴 제안(`Read`로 최근 줄 확인)·등록·조회까지 안내, 퇴사 전 한 줄 확인, 끝난 자동화는 삭제 대신 `pause` 권장
+## v0.29 브리핑 다듬기
+
+- `evening_brief`: 내일 첫 일정에 붙은 날씨(`attach_event_notes`가 채우는 `weather.umbrella/cold/hot`)가 눈에 띄면 " / 내일 {place} {summary}, 우산"(또는 겉옷/더위) 한 조각을 덧붙인다. `weather_mod.weather_sentence`는 형식이 다르고 cold/hot 문구가 없어 재사용 대신 직접 구성. `cmd_brief --evening`이 쓰던 `ag`엔 이 필드가 없었어서 `attach_event_notes(v, ag)` 호출을 한 줄 추가
+- `retro_material`에 `automation_kpi`(`office_kpis`에서 뽑은 전체 runs/fails/rate + 가장 실패가 많은 `worst_team`) 추가, `retro_prompt`엔 fails>0일 때만 patterns에서 안정성을 언급하라는 조건절 추가. `journal_material`엔 오늘 첫 일정의 날씨 요약을 `weather_today`로 얹어 일지가 "비 오는 날"을 말할 재료를 갖게 함
+- `today_human`: `suggestions.count`/`retro_questions` 중 하나라도 있으면 "준비 제안 N건 대기 · 회고 질문 M개" 한 줄, `week_plan`이 있으면 최대 2개까지 "이번 주 계획: a, b" 한 줄을 추가하고 출력 줄 수 캡을 6→8로 올림
+- `cmd_init`: 사람용 출력에만 "다음: `brain.py doctor`로 점검 → 캘린더 연결(`calendar add ics …`) → 대시보드(`serve`)" 안내 한 줄 추가(`--json`은 그대로 `vault`/`created`만)
+- 신규 테스트 19건(`test_evening`+4, `test_retro`+2×3클래스, `test_journal`+2, `test_brain`+7). 전체 스위트 410 통과
 - `tests/test_widget_cli.py` 10건: CLI 우회 vs API 게이트 유지, add/move/rename/remove/pause/resume/run --dry, brain-* 퇴사 거부, 홈 밖 경로 거부, `--json` 파싱. 전체 스위트 371 통과(기존 361 + 신규 10)
 ## v0.29 참석자 → 사람 노트
 

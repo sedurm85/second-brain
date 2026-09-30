@@ -69,6 +69,54 @@ class EveningTest(unittest.TestCase):
             self.assertEqual(brain.main(["task", "carry"]), 0)
         self.assertIn("옮길 것이 없어요", buf.getvalue())
 
+    def test_evening_weather_umbrella(self):
+        t = brain.dash_today(self.vault, today=TODAY, widgets=[], agenda={"today": [], "upcoming": []})
+        tomorrow = [{"title": "엄마생일", "all_day": True, "start": "2026-10-01",
+                     "weather": {"place": "제주", "summary": "비 80% · 18~22°", "umbrella": True, "cold": False, "hot": False}}]
+        msg = brain.evening_brief(t, tomorrow)
+        self.assertIn("우산", msg)
+        self.assertIn("제주 비 80%", msg)
+        self.assertLessEqual(len(msg), 200)
+
+    def test_evening_weather_cold_wording(self):
+        t = brain.dash_today(self.vault, today=TODAY, widgets=[], agenda={"today": [], "upcoming": []})
+        tomorrow = [{"title": "출근", "all_day": False, "start": "2026-10-01T09:00",
+                     "weather": {"place": "서울", "summary": "맑음 · -2~3°", "umbrella": False, "cold": True, "hot": False}}]
+        msg = brain.evening_brief(t, tomorrow)
+        self.assertIn("겉옷", msg)
+        self.assertNotIn("우산", msg)
+
+    def test_evening_no_weather_when_not_notable(self):
+        t = brain.dash_today(self.vault, today=TODAY, widgets=[], agenda={"today": [], "upcoming": []})
+        tomorrow = [{"title": "산책", "all_day": False, "start": "2026-10-01T09:00",
+                     "weather": {"place": "서울", "summary": "맑음 · 18~22°", "umbrella": False, "cold": False, "hot": False}}]
+        msg = brain.evening_brief(t, tomorrow)
+        self.assertNotIn("우산", msg)
+        self.assertNotIn("겉옷", msg)
+        self.assertNotIn("더위", msg)
+
+    def test_cmd_brief_evening_calls_attach_event_notes(self):
+        """cmd_brief --evening은 attach_event_notes를 적용해 내일 일정에 weather/note 필드를 붙여야 한다."""
+        calls = []
+        orig = brain.attach_event_notes
+
+        def spy(vault, ag):
+            calls.append(vault)
+            return orig(vault, ag)
+
+        brain.attach_event_notes = spy
+        try:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                code = brain.main(["brief", "--evening", "--json"])
+            self.assertEqual(code, 0)
+        finally:
+            brain.attach_event_notes = orig
+        # dash_today가 오늘 agenda(7일)에 한 번, --evening 분기가 내일 agenda(2일)에 한 번 더 호출한다.
+        self.assertEqual(len(calls), 2)
+        for c in calls:
+            self.assertEqual(os.path.realpath(c), os.path.realpath(self.vault))
+
     def test_related_and_ask_context(self):
         from datetime import datetime
         from zoneinfo import ZoneInfo
