@@ -51,3 +51,5 @@
 ### 사이클 4 (18:15~)
 - 워커 추가: wt/weather-integration(일정·브리핑·준비 제안에 날씨 붙이기 + 지명 정규화), wt/board-plan(회고 「다음 주」 체크박스 카드 + 검색 결과 요약 스니펫)
 - 가동 중: notify-fallback, report-page, office-kpi
+- 18:35 wt/report-page 머지(brain.py 라우트 충돌은 양쪽 유지로 해소, 테스트 226), wt/notify-fallback 머지(notify() 통합·macOS 알림 센터 폴백·`notify test`, 테스트 239). 서버 재시작
+- 가동 중: office-kpi, weather-integration, board-plan, reminders
