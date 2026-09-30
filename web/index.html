@@ -217,6 +217,16 @@ h1, h2, h3 { text-wrap: balance; }
 .ev-todo label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
 .ev-todo input { margin-top: 4px; accent-color: var(--accent); }
 .ev-todo .done { color: var(--muted); text-decoration: line-through; }
+.prep-list { list-style: none; margin: 0; padding: 0; }
+.prep-list > li { padding: 4px 0; }
+.prep-list .rel { list-style: none; margin: 2px 0 0 62px; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.prep-list .rel button { background: none; border: 0; padding: 0; color: var(--ink-2); font-size: 12.5px; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--rule-strong); cursor: pointer; }
+.prep-list .rel button:hover { color: var(--ink); }
+.ev-rel { list-style: none; margin: 0; padding: 0; }
+.ev-rel li { padding: 5px 0; border-top: 1px solid var(--rule); font-size: 14px; }
+.ev-rel li:first-child { border-top: 0; }
+.ev-rel .lnk { background: none; border: 0; padding: 0; color: var(--ink); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.ev-rel small { display: block; color: var(--muted); font-size: 12.5px; }
 .ev-steps { list-style: none; margin: 0 0 6px; padding: 0; }
 .ev-steps li { display: flex; gap: 8px; font-size: 14px; padding: 4px 0; border-top: 1px solid var(--rule); }
 .ev-steps li:first-child { border-top: 0; }
@@ -1377,7 +1387,10 @@ h1, h2, h3 { text-wrap: balance; }
         return '<li><label><input type="checkbox" data-line="' + c.line + '"' + (c.done ? " checked" : "") + '> <span' + (c.done ? ' class="done"' : "") + ">" + esc(c.text) + "</span></label></li>";
       }).join("") + "</ul>" : '<p class="t-empty">준비할 것을 적어 두면 당일 아침 브리핑에 함께 나와요.</p>') +
       '<form class="ev-form" data-act="todo"><input type="text" name="text" maxlength="200" placeholder="준비 항목 추가" autocomplete="off"><button type="submit" class="text-btn">추가</button></form>';
-    var stepsHtml = '<h3 class="ev-h">동선 ' + (n && n.steps && n.steps.length ? '<span class="count">' + n.steps.length + "단계</span>" : "") + "</h3>" +
+    var relHtml = e.related && e.related.length ? '<h3 class="ev-h">관련 기록</h3><ul class="ev-rel">' + e.related.map(function (r) {
+      return '<li><button type="button" class="lnk" data-path="' + esc(r.path) + '">' + esc(r.title) + '</button><small>' + esc(r.snippet || "") + "</small></li>";
+    }).join("") + "</ul>" : "";
+    var stepsHtml = relHtml + '<h3 class="ev-h">동선 ' + (n && n.steps && n.steps.length ? '<span class="count">' + n.steps.length + "단계</span>" : "") + "</h3>" +
       (n && n.steps && n.steps.length ? '<ul class="ev-steps">' + n.steps.map(function (s) { return "<li><span class=\"d\">" + (s.day !== e.start.slice(0, 10) ? esc(s.day.slice(5)) + " " : "") + '</span><span class="t">' + esc(s.time) + '</span><span class="n">' + esc(s.text) + "</span></li>"; }).join("") + "</ul>" : '<p class="t-empty">출발 시각과 이동을 적어 두면 그날 시간표에 겹쳐 보이고, 시각 10분 전에 카톡으로 알려요.</p>') +
       '<form class="ev-form" data-act="step"><input type="text" name="text" maxlength="200" placeholder="14:00 집 출발 (자가용 50분)" autocomplete="off"><button type="submit" class="text-btn">추가</button></form>';
     var memo = stepsHtml + '<h3 class="ev-h">메모</h3>' + (n && n.memo ? '<div class="md ev-memo">' + renderMd(n.memo) + "</div>" : '<p class="t-empty">아직 메모가 없어요.</p>') +
@@ -1573,11 +1586,17 @@ h1, h2, h3 { text-wrap: balance; }
     renderDaybar(t.agenda || {}, t.now);
     var up = (t.agenda && t.agenda.upcoming) || [];
     up.forEach(function (e) { S.events[e.id] = e; });
+    var prepEv = ((t.agenda && t.agenda.today) || []).concat(up).filter(function (e) { return e.prep && (e.related && e.related.length); }).slice(0, 2);
+    var prepHtml = prepEv.length ? '<h3 style="margin-top:12px">준비할 일정</h3><ul class="prep-list">' + prepEv.map(function (e) {
+      return '<li><button type="button" class="ev" data-eid="' + esc(e.id) + '"><span class="d">' + esc(dLeft(e.days_left)) + '</span><span class="n">' + esc(e.title) + '</span></button><ul class="rel">' + e.related.slice(0, 3).map(function (r) {
+        return '<li><button type="button" data-path="' + esc(r.path) + '">' + esc(r.title) + "</button></li>";
+      }).join("") + "</ul></li>";
+    }).join("") + "</ul>" : "";
     var upHtml = up.length ? '<ul class="up-list">' + up.slice(0, 4).map(function (e) {
       return '<li><button type="button" class="ev up" data-eid="' + esc(e.id) + '"><span class="d">' + esc(dLeft(e.days_left)) + '</span><span class="n">' + esc(e.title) + (e.all_day ? "" : " <small>" + esc(hm(e.start)) + "</small>") + "</span>" + noteMark(e) + "</button></li>";
     }).join("") + "</ul>" : "";
     $("todayGrid").innerHTML =
-      '<div class="tcard wide"><h3>지금 볼 것</h3>' + auHtml + (upHtml ? '<h3 style="margin-top:12px">다가오는 일정 <span class="count">' + up.length + "</span></h3>" + upHtml : "") + "</div>" +
+      '<div class="tcard wide"><h3>지금 볼 것</h3>' + auHtml + prepHtml + (upHtml ? '<h3 style="margin-top:12px">다가오는 일정 <span class="count">' + up.length + "</span></h3>" + upHtml : "") + "</div>" +
       '<div class="tcard"><h3>되돌아볼 결정 <span class="count">' + rv.length + "</span></h3>" + rvHtml + "</div>" +
       '<div class="tcard"><h3>할 일 <span class="count">' + inboxCount + "</span></h3>" + ibHtml + "</div>";
   }

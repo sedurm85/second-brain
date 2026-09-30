@@ -277,6 +277,24 @@ button { cursor: pointer; }
     q = q.trim(); if (!q) return;
     caption("“" + q + "”", false);
     if (/보드|대시보드|자세히/.test(q)) { speak(["보드를 열어요."]); setTimeout(function () { location.href = "/"; }, 900); return; }
+    if (/사무실|직원/.test(q)) { speak(["사무실을 열어요."]); setTimeout(function () { location.href = "/office"; }, 900); return; }
+    var nm = /(?:이름은|이름을|너를|널)\s*(\S+?)\s*(?:으로|로|라고|이라고)?\s*(?:부를|불러|바꿔|해|할게|하자|정해)/.exec(q);
+    if (nm && nm[1].length <= 24) {
+      return fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify({ assistant_name: nm[1] }) })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
+        .then(function () { S.name = nm[1]; $("name").textContent = S.name; document.title = S.name + " · 세컨드브레인"; speak(["네, 이제부터 " + S.name + "이에요."]); })
+        .catch(function (err) { speak(["이름을 바꾸지 못했어요. " + (err.message || "")]); });
+    }
+    if (/(남은|오늘)\s*할\s*일.*(내일|옮겨|넘겨)|내일로\s*(옮겨|넘겨)/.test(q)) {
+      return fetch("/api/task", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify({ action: "carry" }) })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
+        .then(function (j) { load(); speak([j.moved ? "남은 할 일 " + j.moved + "개를 내일로 옮겼어요. 오늘은 여기까지." : "옮길 할 일이 없어요. 오늘 다 하셨네요."]); })
+        .catch(function (err) { speak(["옮기지 못했어요. " + (err.message || "")]); });
+    }
+    if (/준비|미팅|회의|면접/.test(q) && !/추가|등록|넣어/.test(q)) {
+      var evs = ((t.agenda && t.agenda.today) || []).concat((t.agenda && t.agenda.upcoming) || []).filter(function (e) { return e.prep; });
+      if (evs.length) { var e0 = evs[0]; return speak([dLeftKo(e0.days_left) + " " + e0.title + (e0.related && e0.related.length ? ". 관련 기록은 " + e0.related.map(function (r) { return r.title; }).join(", ") + "이에요." : ".") + (e0.note && e0.note.total ? " 준비 " + e0.note.done + "/" + e0.note.total + "." : "")]); }
+    }
     if (/^(안녕|하이|헬로|있어\?|거기)/.test(q)) return speak(["네, 여기 있어요."]);
     if (/이번\s*주|다가오는|앞으로/.test(q)) return speak(weekLines(ag));
     if (/오늘|일정|스케줄|뭐\s*있/.test(q)) return speak((t.agenda && t.agenda.sentence) ? [t.agenda.sentence].concat(nextLine(ag)) : briefLines(t));
@@ -297,9 +315,10 @@ button { cursor: pointer; }
     S.thinking = true; setState("think"); S.target = .45; caption("생각하고 있어요…", false);
     fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify({ text: q }) })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
-      .then(function (j) { S.thinking = false; speak([j.answer || "답을 만들지 못했어요."]); })
+      .then(function (j) { S.thinking = false; speak([j.answer || "답을 만들지 못했어요."]); if (j.memory_used && j.memory_used.length) $("hint").textContent = "참고한 기록: " + j.memory_used.slice(0, 3).join(", "); })
       .catch(function (err) { S.thinking = false; setState("idle"); S.target = 0; speak(["지금은 답하기 어려워요. " + (err.message || "")]); });
   }
+  function dLeftKo(n) { return n === 0 ? "오늘" : n === 1 ? "내일" : n == null ? "" : n + "일 뒤"; }
   function nextLine(ag) { var nx = ag && ag.next; return nx ? ["다음 일정은 " + hm(nx.start) + " " + nx.title + (nx.location ? ", " + nx.location : "") + "이에요."] : []; }
 
   /* ───────── 듣기(STT): 있으면 마이크, 없으면 입력창 ───────── */

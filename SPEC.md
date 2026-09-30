@@ -191,3 +191,11 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 보드: 시간표 트랙 아래 동선 마커(가는 막대), 목록 아래 「오늘 동선」 줄, 상세 패널에 「동선」 절(날짜 접두어)과 추가 폼. 코어 브리핑에 "오늘 동선은 …" 문장
 - `brain.py remind [--kakao] [--steps-before 10] [--events-before 30]`: 오늘 동선 단계(기본 10분 전)와 시간 일정(30분 전)을 카톡으로. 같은 알림은 `~/.cache/second-brain/reminded.json`으로 하루 한 번. launchd `com.secondbrain.remind`(600초 주기). 위젯 brain-remind(운영팀)
 - 테스트 +3, 총 133
+
+## v0.12 미팅 준비·두뇌 강화·저녁 마감 (2026-09-30)
+
+- 관련 기록(미팅 준비): 오늘·3일 안 일정마다 제목+참석자+장소로 볼트 검색(`dash_search`) 상위 3건 → `event.related[{path,title,type,snippet}]`, `event.prep`(관련 기록·노트·참석자·회의/미팅/면접/상담/발표/인터뷰 제목). 보드 「지금 볼 것」에 「준비할 일정」 카드(관련 기록 링크), 상세 패널 「관련 기록」 절. 코어 "준비/미팅/면접" 질문에 관련 기록 이름으로 답
+- `ask_assistant(question, today, vault)`: [오늘 상태] + [기억](볼트 검색 상위 5 발췌 220자)로 헤드리스 Claude에 묻고, 근거 기록 제목을 밝히도록 지시. 응답에 `memory_used`. 코어 힌트 줄에 "참고한 기록"
+- `POST /api/config`(토큰, 화이트리스트 assistant_name 1~24자). 코어에서 "이름은 자비스로 해/너를 자비스라고 부를게"로 즉시 변경
+- 저녁 마감: `task_action carry`(오늘 묶음 미완료를 전부 내일 마감으로, 기다림 제외), CLI `task carry`, 코어 "남은 할 일 내일로". `brief --evening [--kakao]` = "[날짜 저녁 마감] 남은 할 일 N: … → 내일로 옮길까요? / 내일 첫 일정". launchd `com.secondbrain.evening` 21:30. 위젯 brain-evening
+- 테스트 +3, 총 136

@@ -2058,6 +2058,26 @@ def task_action(vault, body, today=None):
         p.write_text("\n".join(lines) + "\n", encoding="utf-8")
         git_commit(vault, "brain: task add")
         return {"ok": True, "line": len(lines) - 1, "text": line}
+    if action == "carry":
+        # 오늘 묶음(마감 지났거나 오늘, 기다림 제외)의 미완료 항목을 전부 내일로
+        moved = 0
+        tomorrow = (today + timedelta(days=1)).isoformat()
+        for i2, ln in enumerate(lines):
+            m2 = TASK_LINE_RE.match(ln)
+            if not m2 or m2.group(2).lower() == "x":
+                continue
+            _, tags = parse_task_line(m2.group(4))
+            due = tags["due"]
+            if due == "today":
+                due = today.isoformat()
+            if tags["waiting"] or not due or not DATE_RE.match(due) or due > today.isoformat():
+                continue
+            rest = " ".join(TAG_RE.sub(lambda mm: "" if mm.group(1) == "due" or mm.group(3) in ("today", "tomorrow") else mm.group(0), m2.group(4)).split())
+            lines[i2] = f"{m2.group(1)}{m2.group(2)}{m2.group(3)}{rest} @due({tomorrow})"
+            moved += 1
+        p.write_text("\n".join(lines), encoding="utf-8")
+        git_commit(vault, "brain: task carry")
+        return {"ok": True, "moved": moved, "to": tomorrow}
     i = int(body.get("line", -1))
     if not (0 <= i < len(lines)) or not TASK_LINE_RE.match(lines[i]):
         raise BrainError("할 일 줄이 아니에요(inbox.md가 바뀌었을 수 있어요. 새로 고쳐 주세요)")
@@ -2086,7 +2106,7 @@ def task_action(vault, body, today=None):
     elif action == "remove":
         del lines[i]
     else:
-        raise BrainError("action은 add · check · move · remove 중 하나")
+        raise BrainError("action은 add · check · move · remove · carry 중 하나")
     p.write_text("\n".join(lines), encoding="utf-8")
     git_commit(vault, f"brain: task {action}")
     return {"ok": True}
@@ -2304,10 +2324,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if route == "/api/task":
                 res = task_action(vault, body, self.server.today or date.today())
                 return self._json(200, res)
+            if route == "/api/config":
+                allowed = {"assistant_name": (str, 24)}
+                cfg = load_config()
+                changed = {}
+                for k, v in body.items():
+                    if k not in allowed:
+                        raise BrainError(f"바꿀 수 없는 설정: {k}")
+                    typ, mx = allowed[k]
+                    v = typ(v).strip()
+                    if not v or len(v) > mx:
+                        raise BrainError(f"{k}는 1~{mx}자")
+                    cfg[k] = v
+                    changed[k] = v
+                save_config(cfg)
+                return self._json(200, {"ok": True, "changed": changed})
             if route == "/api/ask":
                 widgets = collect_widgets(self.server.widget_cache)
                 t = dash_today(vault, self.server.today, widgets=widgets, agenda=self.server.agenda_cache.get())
-                return self._json(200, ask_assistant(str(body.get("text") or ""), t))
+                return self._json(200, ask_assistant(str(body.get("text") or ""), t, vault))
             return self._json(404, {"error": f"없는 경로입니다: {route}"})
         except BrainError as e:
             return self._json(400, {"error": str(e)})
@@ -2782,6 +2817,16 @@ def attach_event_notes(vault, ag):
     if ag.get("next"):
         k = ag["next"].get("key")
         ag["next"]["note"] = _event_note_payload(exact[k]) if k in exact else None
+    # 관련 기록(미팅 준비): 3일 안 일정마다 제목·장소·참석자로 볼트 검색 상위 3건
+    for e in (ag.get("today") or []) + [x for x in (ag.get("upcoming") or []) if (x.get("days_left") or 0) <= 3]:
+        q = " ".join([e.get("title") or ""] + (e.get("attendees") or [])[:3] + ([e["location"]] if e.get("location") else []))
+        try:
+            hits = dash_search(Path(vault), q, 3)
+        except Exception:  # noqa: BLE001 - 검색 실패는 준비 카드만 비운다
+            hits = []
+        e["related"] = [{"path": h["path"], "title": h["title"], "type": h["type"], "snippet": (h.get("snippets") or [""])[0][:120]}
+                        for h in hits if h.get("score", 0) > 0 and not h["path"].startswith("events/")][:3]
+        e["prep"] = bool(e["related"]) or bool(e.get("note")) or bool(e.get("attendees")) or bool(re.search(r"회의|미팅|면접|상담|발표|인터뷰|meeting", e.get("title") or "", re.I))
     # 동선: 오늘과 다가오는 날의 단계들(같은 노트가 여러 일정에 붙어도 한 번만)
     today_iso = str(ag.get("now") or datetime.now().isoformat())[:10]
     seen, steps = set(), []
@@ -3091,8 +3136,8 @@ def dash_office(widgets, ps_lines=None, cron_lines=None, now=None):
 ASK_TIMEOUT_SEC = 120
 
 
-def ask_assistant(question, today):
-    """코어 화면의 자유 질문. 로컬 데이터(오늘 브리핑 JSON)를 붙여 헤드리스 Claude에 묻는다.
+def ask_assistant(question, today, vault=None):
+    """코어 화면의 자유 질문. 오늘 상태 JSON + 볼트 검색 상위 5건(제목·발췌)을 붙여 헤드리스 Claude에 묻는다.
     명령은 config `ask_cmd`(기본 `claude -p`), 테스트·오프라인은 환경변수 SECOND_BRAIN_ASK_CMD로 대체."""
     q = " ".join(question.split())
     if not q:
@@ -3102,10 +3147,20 @@ def ask_assistant(question, today):
     cfg = load_config()
     cmd = os.environ.get("SECOND_BRAIN_ASK_CMD") or cfg.get("ask_cmd") or "claude -p --output-format text"
     name = str(cfg.get("assistant_name") or "브레인")
-    ctx = {k: today.get(k) for k in ("date", "weekday", "agenda", "revisit", "inbox", "widgets_summary", "top_widgets", "this_week") if k in today}
-    prompt = (f"너는 사용자의 개인 비서 「{name}」이다. 아래 JSON은 오늘 상태(일정·할 일·되돌아볼 결정·자동화)다. "
-              f"이 데이터와 상식으로 질문에 한국어 해요체로 2~3문장, 200자 안에서 답한다. 모르면 모른다고 말한다. 목록·마크다운 없이 말로.\n\n"
-              f"[오늘 상태]\n{json.dumps(ctx, ensure_ascii=False)}\n\n[질문]\n{q}")
+    ctx = {k: today.get(k) for k in ("date", "weekday", "agenda", "revisit", "inbox", "tasks", "widgets_summary", "top_widgets", "this_week") if k in today}
+    if ctx.get("agenda"):
+        ctx["agenda"] = {k: v for k, v in ctx["agenda"].items() if k in ("today", "next", "upcoming", "steps_today", "sentence")}
+    memory = []
+    if vault and vault_exists(Path(vault)):
+        try:
+            for h in dash_search(Path(vault), q, 5):
+                if h.get("score", 0) > 0:
+                    memory.append({"title": h["title"], "type": h["type"], "created": h.get("created"), "snippet": " ".join((h.get("snippets") or [""])[0].split())[:220]})
+        except Exception as e:  # noqa: BLE001
+            log(f"경고: 볼트 검색 실패({e})")
+    prompt = (f"너는 사용자의 개인 비서 「{name}」이다. 아래 [오늘 상태]는 일정·할 일·되돌아볼 결정·자동화, [기억]은 사용자의 노트 창고에서 질문과 관련 있어 보이는 기록 발췌다. "
+              f"이 자료와 상식으로 질문에 한국어 해요체로 2~3문장, 220자 안에서 답한다. 기억에 근거하면 어느 기록인지 제목을 짧게 밝힌다. 자료에 없으면 모른다고 말한다. 목록·마크다운 없이 말로.\n\n"
+              f"[오늘 상태]\n{json.dumps(ctx, ensure_ascii=False)}\n\n[기억]\n{json.dumps(memory, ensure_ascii=False)}\n\n[질문]\n{q}")
     import shlex
     argv = shlex.split(cmd)
     try:
@@ -3118,7 +3173,7 @@ def ask_assistant(question, today):
     if r.returncode != 0:
         raise BrainError(f"답변 실패: {(r.stderr or r.stdout).strip()[:160]}")
     ans = " ".join(r.stdout.split())
-    return {"answer": ans[:600], "via": argv[0]}
+    return {"answer": ans[:600], "via": argv[0], "memory_used": [m["title"] for m in memory]}
 
 
 def cmd_task(args):
@@ -3147,6 +3202,10 @@ def cmd_task(args):
         res = task_action(v, {"action": "add", "text": args.arg1, "due": args.due or ("tomorrow" if args.tomorrow else None),
                               "someday": args.someday, "waiting": args.waiting, "project": args.project}, today)
         emit(args, res, f"추가: {res['text']}  (#{res['line']})")
+        return EXIT_OK
+    if args.action == "carry":
+        res = task_action(v, {"action": "carry"}, today)
+        emit(args, res, f"오늘 남은 할 일 {res['moved']}개를 {res['to']}로 옮겼어요" if res["moved"] else "옮길 것이 없어요")
         return EXIT_OK
     if args.arg1 is None or not str(args.arg1).lstrip("#").isdigit():
         raise BrainError("줄 번호가 필요해요(task list의 # 값)")
@@ -3271,8 +3330,25 @@ def kakao_helper_path(cfg=None):
     return p if p.is_file() else None
 
 
+def evening_brief(t, tomorrow_events):
+    """저녁 마감 문장(≤200자): 오늘 남은 할 일, 내일 첫 일정·동선, 되돌아볼 결정."""
+    tk = t.get("tasks") or {}
+    left = [x for x in (tk.get("today") or []) if x.get("kind") == "task" and not x.get("done")]
+    parts = [f"[{t['date']} 저녁 마감]"]
+    if left:
+        parts.append(f"남은 할 일 {len(left)}: " + ", ".join(x["text"] for x in left[:3]) + (" 등" if len(left) > 3 else "") + " → 내일로 옮길까요? (코어에 '남은 할 일 내일로')")
+    else:
+        parts.append("오늘 할 일은 다 끝났어요")
+    if tomorrow_events:
+        e = tomorrow_events[0]
+        parts.append("내일 " + ("종일 " if e["all_day"] else e["start"][11:16] + " ") + e["title"] + (f" 외 {len(tomorrow_events) - 1}" if len(tomorrow_events) > 1 else ""))
+    else:
+        parts.append("내일 일정 없음")
+    return _clip(" / ".join(parts), KAKAO_MAX)
+
+
 def cmd_brief(args):
-    """아침 브리핑: today와 같은 내용. --kakao면 200자 카톡 발송(헬퍼 있을 때)."""
+    """아침 브리핑: today와 같은 내용. --evening이면 저녁 마감 문장. --kakao면 200자 카톡 발송(헬퍼 있을 때)."""
     try:
         v = vault_path()
         if not vault_exists(v):
@@ -3280,6 +3356,11 @@ def cmd_brief(args):
     except BrainError:
         v = None
     t = dash_today(v)
+    if getattr(args, "evening", False):
+        ag = collect_agenda_safe(2)
+        tomorrow = [e for e in ag.get("upcoming") or [] if e.get("days_left") == 1]
+        t["kakao"] = evening_brief(t, tomorrow)
+        t["evening"] = True
     if args.kakao:
         helper = kakao_helper_path()
         if not helper:
@@ -3290,9 +3371,9 @@ def cmd_brief(args):
         t["sent"] = r.returncode == 0
         if r.returncode != 0:
             log(f"카톡 발송 실패: {(r.stderr or r.stdout).strip()[:200]}")
-        emit(args, t, today_human(t) + ("\n\n카톡 발송 완료" if t["sent"] else "\n\n카톡 발송 실패"))
+        emit(args, t, (t["kakao"] if t.get("evening") else today_human(t)) + ("\n\n카톡 발송 완료" if t["sent"] else "\n\n카톡 발송 실패"))
         return EXIT_OK if t["sent"] else EXIT_INPUT
-    emit(args, t, today_human(t))
+    emit(args, t, (t["kakao"] if t.get("evening") else today_human(t)))
     return EXIT_OK
 
 
@@ -3489,10 +3570,11 @@ def build_parser():
 
     s = add("brief", "아침 브리핑(today와 같음). --kakao면 카톡으로 200자 발송", cmd_brief)
     s.add_argument("--kakao", action="store_true", help="카톡 나에게 보내기(헬퍼 필요)")
+    s.add_argument("--evening", action="store_true", help="저녁 마감: 남은 할 일·내일 첫 일정")
 
     s = add("task", "할 일: add <내용> [--due D|--tomorrow|--someday|--waiting 누구] · list · done <줄> · move <줄> <today|tomorrow|week|someday|clear|날짜> · remove <줄>", cmd_task)
-    s.add_argument("action", choices=("add", "list", "done", "undo", "move", "remove"))
-    s.add_argument("arg1", nargs="?", help="add: 내용 · done/undo/move/remove: 줄 번호(list의 #)")
+    s.add_argument("action", choices=("add", "list", "done", "undo", "move", "remove", "carry"))
+    s.add_argument("arg1", nargs="?", help="add: 내용 · done/undo/move/remove: 줄 번호(list의 #) · carry: 없음(오늘 남은 것 전부 내일로)")
     s.add_argument("arg2", nargs="?", help="move: 목적지")
     s.add_argument("--due", help="마감 YYYY-MM-DD")
     s.add_argument("--tomorrow", action="store_true", help="마감 내일")
