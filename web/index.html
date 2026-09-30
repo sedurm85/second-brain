@@ -127,6 +127,8 @@ h1, h2, h3 { text-wrap: balance; }
 .topbar { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter: blur(14px); border-bottom: 1px solid var(--rule-strong); }
 .brand-mark { filter: drop-shadow(0 0 6px var(--accent-soft)); }
 .nav a.active { color: var(--accent); }
+.nav a.core-link { color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); }
+.nav a.core-link:hover { background: var(--accent-soft); }
 .bar { height: 56px; display: flex; align-items: center; gap: 20px; }
 .brand { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; display: flex; align-items: center; gap: 9px; flex: none; }
 .brand-mark { width: 22px; height: 22px; flex: none; }
@@ -544,6 +546,7 @@ h1, h2, h3 { text-wrap: balance; }
     </div>
     <nav class="nav" aria-label="섹션 이동">
       <ul>
+      <li><a href="/core" class="core-link" title="코어 화면 (존재·음성)"><span class="dot"></span>코어</a></li>
       <li><a href="#today-section" class="active"><span class="dot"></span>오늘</a></li>
       <li><a href="#week"><span class="dot"></span>이번 주</a></li>
       <li><a href="#graph-section"><span class="dot"></span>지식 그래프</a></li>

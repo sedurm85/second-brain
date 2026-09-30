@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>세컨드브레인 코어</title>
+<meta name="description" content="세컨드브레인 비서의 존재 화면. 살아 있는 코어와 최소 HUD, 음성 브리핑과 질문">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #050810; --ink: #e8f1f8; --ink-2: #a9bccb; --muted: #6f8394;
+  --font: "IBM Plex Sans KR", "Apple SD Gothic Neo", system-ui, -apple-system, sans-serif;
+  /* 상태 색: 대기(청록) · 말하기(보라) · 생각(호박) · 경고(붉음) */
+  --c-idle: #4fd1ff; --c-idle2: #3fe0a8;
+  --c-talk: #b48cf0; --c-talk2: #ff9ecf;
+  --c-think: #ffb84d; --c-think2: #ffd166;
+  --c-alert: #ff5d6c; --c-alert2: #ff8a5b;
+  --accent: var(--c-idle);
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 15px/1.5 var(--font); overflow: hidden; -webkit-font-smoothing: antialiased; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+#stage { position: fixed; inset: 0; display: block; width: 100%; height: 100%; }
+/* HUD */
+.hud { position: fixed; inset: 0; pointer-events: none; display: grid; grid-template-rows: auto 1fr auto; padding: 28px 32px; }
+.hud > * { pointer-events: auto; }
+.top { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
+.clock { font-size: 40px; font-weight: 500; letter-spacing: -0.02em; line-height: 1; color: var(--ink); text-shadow: 0 0 24px rgba(79, 209, 255, .25); }
+.clock small { display: block; font-size: 13px; color: var(--muted); margin-top: 8px; letter-spacing: 0; font-weight: 400; }
+.status { text-align: right; font-size: 13px; color: var(--ink-2); display: grid; gap: 4px; max-width: 42ch; }
+.status b { color: var(--ink); font-weight: 600; }
+.status .bad { color: var(--c-alert); }
+.status .line { border-right: 2px solid var(--accent); padding-right: 12px; box-shadow: 12px 0 24px -12px var(--accent); }
+.mid { align-self: end; justify-self: center; text-align: center; max-width: 60ch; margin-bottom: 8px; }
+.caption { min-height: 2.6em; font-size: clamp(17px, 2vw, 22px); font-weight: 500; color: var(--ink); text-shadow: 0 2px 20px rgba(0, 0, 0, .6); word-break: keep-all; }
+.caption .cursor { display: inline-block; width: .5em; border-bottom: 2px solid var(--accent); margin-left: 2px; animation: blink 1s steps(2) infinite; vertical-align: baseline; }
+@keyframes blink { 50% { opacity: 0; } }
+.name { font-size: 12.5px; color: var(--muted); letter-spacing: .04em; margin-bottom: 8px; }
+.bottom { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+.rail { display: grid; gap: 8px; }
+.rail button, .talk button { width: 40px; height: 40px; border-radius: 8px; border: 1px solid rgba(160, 200, 230, .18); background: rgba(10, 16, 26, .55); backdrop-filter: blur(10px); color: var(--ink-2); display: grid; place-items: center; }
+.rail button:hover, .talk button:hover { color: var(--ink); border-color: var(--accent); }
+.rail button svg, .talk button svg { width: 18px; height: 18px; }
+.rail a { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 8px; border: 1px solid rgba(160, 200, 230, .18); background: rgba(10, 16, 26, .55); color: var(--ink-2); text-decoration: none; font-size: 12px; }
+.rail a:hover { color: var(--ink); border-color: var(--accent); }
+.talk { display: flex; gap: 8px; align-items: center; width: min(560px, 60vw); }
+.talk form { flex: 1; display: flex; gap: 8px; }
+.talk input { flex: 1; height: 40px; padding: 0 14px; border-radius: 8px; border: 1px solid rgba(160, 200, 230, .18); background: rgba(10, 16, 26, .55); backdrop-filter: blur(10px); color: var(--ink); }
+.talk input::placeholder { color: var(--muted); }
+.talk input:focus { border-color: var(--accent); outline: none; }
+.talk button.mic.on { color: var(--c-talk); border-color: var(--c-talk); box-shadow: 0 0 18px rgba(180, 140, 240, .35); }
+.talk button.primary { color: var(--bg); background: var(--accent); border-color: var(--accent); width: auto; padding: 0 14px; font-weight: 600; }
+.hint { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); font-size: 12.5px; color: var(--muted); pointer-events: none; }
+.next { font-size: 13px; color: var(--ink-2); margin-top: 10px; }
+.next b { color: var(--ink); font-weight: 600; }
+@media (max-width: 720px) {
+  .hud { padding: 18px 16px; }
+  .clock { font-size: 30px; }
+  .status { display: none; }
+  .talk { width: 100%; }
+  .bottom { flex-direction: column; align-items: stretch; }
+  .rail { grid-auto-flow: column; }
+}
+@media (prefers-reduced-motion: reduce) { .caption .cursor { animation: none; } }
+</style>
+</head>
+<body>
+<canvas id="stage" aria-hidden="true"></canvas>
+<div class="hud">
+  <div class="top">
+    <div class="clock" id="clock">--:--<small id="date"></small><div class="next" id="next"></div></div>
+    <div class="status line" id="status" aria-live="polite"></div>
+  </div>
+  <div class="mid">
+    <div class="name" id="name"></div>
+    <div class="caption" id="caption" aria-live="polite"></div>
+  </div>
+  <div class="bottom">
+    <div class="rail">
+      <a href="/" title="보드로 (자세한 화면)" aria-label="보드로">보드</a>
+      <button type="button" id="speakBtn" title="브리핑 읽기" aria-label="브리핑 읽기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg></button>
+      <button type="button" id="muteBtn" title="소리 끄기/켜기" aria-label="소리 끄기/켜기" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="m16 9 5 5M21 9l-5 5"/></svg></button>
+    </div>
+    <div class="talk">
+      <button type="button" class="mic" id="micBtn" title="말하기" aria-label="말하기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+      <form id="askForm"><input id="ask" type="text" placeholder="오늘 뭐 있어? / 이번 주 / 자동화 / 보드 열어" autocomplete="off" aria-label="비서에게 묻기"><button type="submit" class="primary">묻기</button></form>
+    </div>
+  </div>
+</div>
+<div class="hint" id="hint"></div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var params = new URLSearchParams(location.search);
+
+  /* ───────── 상태 ───────── */
+  var S = { state: "idle", level: 0, target: 0, today: null, agenda: null, token: null, name: "브레인",
+            muted: false, speaking: false, listening: false, thinking: false, lastLine: "" };
+  var COLORS = {
+    idle: ["#4fd1ff", "#3fe0a8", "#0b3a5c"], talk: ["#b48cf0", "#ff9ecf", "#2a1547"],
+    think: ["#ffb84d", "#ffd166", "#3a2a0a"], alert: ["#ff5d6c", "#ff8a5b", "#3a0f18"]
+  };
+  function setState(st) {
+    if (S.state === st) return;
+    S.state = st;
+    document.documentElement.style.setProperty("--accent", COLORS[st][0]);
+  }
+
+  /* ───────── 코어 그리기 (Canvas 2D, 가산 합성) ─────────
+     구체 + 빛의 띠 7개(회전하는 타원 호) + 먼지. level(0~1)이 크기·밝기·흔들림을 키운다. */
+  var cv = $("stage"), ctx = cv.getContext("2d"), W = 0, H = 0, DPR = 1;
+  var ribbons = [], dust = [], t0 = performance.now(), cur = hexToRgb(COLORS.idle[0]), cur2 = hexToRgb(COLORS.idle[1]), cur3 = hexToRgb(COLORS.idle[2]);
+  function hexToRgb(h) { var n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+  function lerp(a, b, k) { return a + (b - a) * k; }
+  function rgba(c, a) { return "rgba(" + (c[0] | 0) + "," + (c[1] | 0) + "," + (c[2] | 0) + "," + a + ")"; }
+  function resize() {
+    DPR = Math.min(2, window.devicePixelRatio || 1); W = innerWidth; H = innerHeight;
+    cv.width = W * DPR; cv.height = H * DPR; ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  for (var i = 0; i < 7; i++) ribbons.push({ a: 1.5 + Math.random() * 1.2, b: .45 + Math.random() * .7, rot: Math.random() * Math.PI * 2, w: (Math.random() - .5) * .35, tilt: (Math.random() - .5) * .8, phase: Math.random() * Math.PI * 2, len: .55 + Math.random() * .35 });
+  for (i = 0; i < 140; i++) dust.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.4 + .3, s: Math.random() * .00006 + .00002, o: Math.random() * .5 + .2 });
+  function draw(now) {
+    var t = (now - t0) / 1000;
+    var tc = COLORS[S.state]; var c1 = hexToRgb(tc[0]), c2 = hexToRgb(tc[1]), c3 = hexToRgb(tc[2]);
+    for (var k = 0; k < 3; k++) { cur[k] = lerp(cur[k], c1[k], .04); cur2[k] = lerp(cur2[k], c2[k], .04); cur3[k] = lerp(cur3[k], c3[k], .04); }
+    S.level = lerp(S.level, S.target, .08);
+    var cx = W / 2, cy = H * .5, R = Math.min(W, H) * .13, L = S.level;
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = "#050810"; ctx.fillRect(0, 0, W, H);
+    // 성운: 큰 라디얼 두 점, 아주 천천히 이동
+    var n1 = ctx.createRadialGradient(cx + Math.sin(t * .07) * W * .18, cy + Math.cos(t * .05) * H * .12, 0, cx, cy, Math.max(W, H) * .55);
+    n1.addColorStop(0, rgba(cur3, .55)); n1.addColorStop(1, "rgba(5,8,16,0)");
+    ctx.fillStyle = n1; ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = "lighter";
+    // 먼지
+    for (var d = 0; d < dust.length; d++) {
+      var p = dust[d]; p.y -= p.s * (1 + L * 2); if (p.y < -0.02) { p.y = 1.02; p.x = Math.random(); }
+      ctx.fillStyle = rgba(cur, p.o * (.35 + L * .5)); ctx.beginPath(); ctx.arc(p.x * W, p.y * H, p.r, 0, Math.PI * 2); ctx.fill();
+    }
+    // 빛의 띠
+    ctx.lineCap = "round";
+    for (var r = 0; r < ribbons.length; r++) {
+      var rb = ribbons[r], rot = rb.rot + t * rb.w * (1 + L * 1.5), amp = 1 + L * .35 + Math.sin(t * 1.7 + rb.phase) * .04 * (1 + L * 3);
+      var A = R * rb.a * amp, B = R * rb.b * amp, start = t * .6 + rb.phase, span = Math.PI * 2 * rb.len;
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot); ctx.transform(1, rb.tilt * .5, 0, 1, 0, 0);
+      var grad = ctx.createLinearGradient(-A, 0, A, 0);
+      grad.addColorStop(0, rgba(cur, .12)); grad.addColorStop(.5, rgba(cur2, .6 + L * .35)); grad.addColorStop(1, rgba(cur, .12));
+      ctx.strokeStyle = grad; ctx.lineWidth = 1.2 + L * 1.6; ctx.shadowColor = rgba(cur, .9); ctx.shadowBlur = 14 + L * 18;
+      ctx.beginPath(); ctx.ellipse(0, 0, A, B, 0, start, start + span); ctx.stroke();
+      // 밝은 머리
+      var hg = ctx.createLinearGradient(-A, 0, A, 0); hg.addColorStop(0, rgba([255, 255, 255], .05)); hg.addColorStop(1, rgba([255, 255, 255], .55 + L * .35));
+      ctx.strokeStyle = hg; ctx.lineWidth = 1.6 + L * 1.2; ctx.shadowBlur = 20;
+      ctx.beginPath(); ctx.ellipse(0, 0, A, B, 0, start + span - .6, start + span); ctx.stroke();
+      ctx.restore();
+    }
+    ctx.shadowBlur = 0;
+    // 코어 구체
+    var pulse = 1 + Math.sin(t * 2.2) * .015 + L * .12;
+    var g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * pulse);
+    g.addColorStop(0, "rgba(255,255,255,.95)"); g.addColorStop(.35, rgba(cur2, .85)); g.addColorStop(.8, rgba(cur, .35)); g.addColorStop(1, rgba(cur, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R * pulse, 0, Math.PI * 2); ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = "rgba(5,8,16,.92)"; ctx.beginPath(); ctx.arc(cx, cy, R * .78 * pulse, 0, Math.PI * 2); ctx.fill();
+    // 안쪽 별먼지
+    ctx.globalCompositeOperation = "lighter";
+    for (var s = 0; s < 40; s++) {
+      var ang = s * 2.399 + t * .15, rr = R * .78 * pulse * Math.sqrt(((s * 37) % 100) / 100);
+      ctx.fillStyle = rgba(cur2, .35 + ((s * 13) % 7) / 14); ctx.beginPath(); ctx.arc(cx + Math.cos(ang) * rr, cy + Math.sin(ang) * rr * .9, .8, 0, Math.PI * 2); ctx.fill();
+    }
+    var core = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * .5);
+    core.addColorStop(0, "rgba(255,255,255,.85)"); core.addColorStop(1, rgba(cur, 0));
+    ctx.fillStyle = core; ctx.beginPath(); ctx.arc(cx, cy, R * .5, 0, Math.PI * 2); ctx.fill();
+    // 테두리 링
+    ctx.strokeStyle = rgba(cur2, .9); ctx.lineWidth = 1.5; ctx.shadowColor = rgba(cur, 1); ctx.shadowBlur = 18 + L * 20;
+    ctx.beginPath(); ctx.arc(cx, cy, R * .8 * pulse, 0, Math.PI * 2); ctx.stroke();
+    // 주의 링: 자동화 실패가 있으면 바깥에 붉은 링이 천천히 숨 쉰다
+    if (S.alert) {
+      var ap = (Math.sin(t * 1.4) + 1) / 2;
+      ctx.globalCompositeOperation = "lighter"; ctx.strokeStyle = rgba([255, 93, 108], .25 + ap * .45); ctx.lineWidth = 1; ctx.shadowColor = "rgba(255,93,108,.9)"; ctx.shadowBlur = 10 + ap * 14;
+      ctx.beginPath(); ctx.arc(cx, cy, R * (1.05 + ap * .03), 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.shadowBlur = 0; ctx.globalCompositeOperation = "source-over";
+    if (!reduceMotion) requestAnimationFrame(draw);
+  }
+  resize(); addEventListener("resize", resize);
+  requestAnimationFrame(draw);
+  if (reduceMotion) setInterval(function () { draw(performance.now()); }, 2000);
+
+  /* ───────── 시계·HUD ───────── */
+  var WD = ["일", "월", "화", "수", "목", "금", "토"];
+  function tick() {
+    var d = new Date();
+    $("clock").firstChild.textContent = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    $("date").textContent = d.getFullYear() + "년 " + (d.getMonth() + 1) + "월 " + d.getDate() + "일 " + WD[d.getDay()] + "요일";
+  }
+  tick(); setInterval(tick, 10000);
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function hm(iso) { return iso && iso.length >= 16 ? iso.slice(11, 16) : ""; }
+  function renderHud(t) {
+    var ws = t.widgets_summary || {}, ag = t.agenda || {}, today = ag.today || [];
+    var fail = (ws.fail || 0) + (ws.stale || 0);
+    $("status").innerHTML =
+      "<div>일정 <b>" + today.length + "</b>" + (ag.upcoming_count ? " · 다가오는 <b>" + ag.upcoming_count + "</b>" : "") + "</div>" +
+      "<div>자동화 정상 <b>" + (ws.ok || 0) + "</b>" + (fail ? ' · <span class="bad">주의 <b>' + fail + "</b></span>" : "") + "</div>" +
+      "<div>할 일 <b>" + (t.inbox || []).length + "</b> · 되돌아볼 결정 <b>" + (t.revisit || []).length + "</b></div>";
+    var nx = ag.next || (ag.upcoming && ag.upcoming[0]);
+    $("next").innerHTML = nx ? "다음 " + (nx.days_left === 0 || ag.next ? "" : (nx.days_left === 1 ? "내일 " : "D-" + nx.days_left + " ")) + (nx.all_day ? "종일 " : esc(hm(nx.start)) + " ") + "<b>" + esc(nx.title) + "</b>" : "";
+    S.alert = fail > 0; // 코어는 대기색(청록) 유지, 실패는 바깥 링 펄스와 HUD 글자로만
+    setState(S.speaking ? "talk" : S.thinking ? "think" : "idle");
+  }
+
+  /* ───────── 말하기(TTS)·자막 ───────── */
+  var synth = window.speechSynthesis, koVoice = null;
+  function pickVoice() { if (!synth) return; var vs = synth.getVoices(); koVoice = vs.find(function (v) { return /ko/i.test(v.lang) && /Yuna|Siri|Google/i.test(v.name); }) || vs.find(function (v) { return /ko/i.test(v.lang); }) || null; }
+  if (synth) { pickVoice(); synth.onvoiceschanged = pickVoice; }
+  var typeTimer = 0;
+  function caption(text, typed) {
+    clearTimeout(typeTimer); S.lastLine = text;
+    var el = $("caption");
+    if (!typed || reduceMotion) { el.textContent = text; return; }
+    var i = 0; el.innerHTML = '<span class="cursor"></span>';
+    (function step() { i += 2; el.innerHTML = esc(text.slice(0, i)) + (i < text.length ? '<span class="cursor"></span>' : ""); if (i < text.length) typeTimer = setTimeout(step, 28); })();
+  }
+  function speak(lines) {
+    lines = Array.isArray(lines) ? lines.filter(Boolean) : [lines];
+    if (!lines.length) return;
+    caption(lines.join(" "), true);
+    if (S.muted || !synth) return;
+    synth.cancel();
+    lines.forEach(function (line, idx) {
+      var u = new SpeechSynthesisUtterance(line);
+      u.lang = "ko-KR"; if (koVoice) u.voice = koVoice; u.rate = 1.02; u.pitch = 1.0;
+      u.onstart = function () { S.speaking = true; setState("talk"); S.target = .9; };
+      u.onboundary = function () { S.target = .6 + Math.random() * .4; };
+      u.onend = function () { if (idx === lines.length - 1) { S.speaking = false; S.target = 0; setState(S.thinking ? "think" : "idle"); renderHud(S.today || {}); } };
+      u.onerror = u.onend;
+      synth.speak(u);
+    });
+  }
+
+  /* ───────── 브리핑 문장(보드와 같은 규칙, 코어용으로 짧게) ───────── */
+  function shortTitle(s) { return String(s || "").replace(/\s*\(.*\)\s*$/, ""); }
+  function briefLines(t) {
+    var out = [t.greeting ? t.greeting + "." : "안녕하세요."], ws = t.widgets_summary || {}, ag = t.agenda || {};
+    if (ag.sentence) out.push(ag.sentence);
+    var bad = (t.top_widgets || []).filter(function (w) { return w.status === "fail" || w.status === "stale"; });
+    if (bad.length) out.push(shortTitle(bad[0].title) + (bad.length > 1 ? " 외 " + (bad.length - 1) + "개" : "") + "가 " + (bad[0].status === "fail" ? "실패" : "오래된") + " 상태예요.");
+    else if (ws.ok) out.push("자동화 " + ws.ok + "개는 모두 정상이에요.");
+    if ((t.revisit || []).length) out.push("되돌아볼 결정이 " + t.revisit.length + "건 있어요. " + t.revisit[0].title + ".");
+    if ((t.inbox || []).length) out.push("할 일 " + t.inbox.length + "건. " + (typeof t.inbox[0] === "string" ? t.inbox[0] : (t.inbox[0].text || "")) + (t.inbox.length > 1 ? " 등." : "."));
+    return out;
+  }
+  function weekLines(ag) {
+    var up = (ag && ag.upcoming) || [];
+    if (!up.length) return ["이번 주에 다른 일정은 없어요."];
+    var byDay = {}; up.forEach(function (e) { (byDay[e.start.slice(0, 10)] = byDay[e.start.slice(0, 10)] || []).push(e); });
+    return Object.keys(byDay).sort().slice(0, 5).map(function (k) {
+      var d = new Date(k + "T00:00:00"), items = byDay[k];
+      return (d.getMonth() + 1) + "월 " + d.getDate() + "일 " + WD[d.getDay()] + "요일, " + items.slice(0, 3).map(function (e) { return (e.all_day ? "" : hm(e.start) + " ") + e.title; }).join(", ") + (items.length > 3 ? " 등" : "") + ".";
+    });
+  }
+
+  /* ───────── 묻기: 로컬 규칙 → 그 밖은 /api/ask(헤드리스 Claude) ───────── */
+  function answer(q) {
+    var t = S.today || {}, ag = S.agenda || t.agenda || {};
+    q = q.trim(); if (!q) return;
+    caption("“" + q + "”", false);
+    if (/보드|대시보드|자세히/.test(q)) { speak(["보드를 열어요."]); setTimeout(function () { location.href = "/"; }, 900); return; }
+    if (/^(안녕|하이|헬로|있어\?|거기)/.test(q)) return speak(["네, 여기 있어요."]);
+    if (/이번\s*주|다가오는|앞으로/.test(q)) return speak(weekLines(ag));
+    if (/오늘|일정|스케줄|뭐\s*있/.test(q)) return speak((t.agenda && t.agenda.sentence) ? [t.agenda.sentence].concat(nextLine(ag)) : briefLines(t));
+    if (/자동화|크론|상태|고장|실패/.test(q)) { var ws = t.widgets_summary || {}, bad = (t.top_widgets || []).filter(function (w) { return w.status !== "ok" && w.status !== "paused"; }); return speak([bad.length ? bad.map(function (w) { return shortTitle(w.title) + " " + (w.status === "fail" ? "실패" : w.status) + ". " + (w.summary || ""); }).join(" ") : "자동화 " + (ws.ok || 0) + "개 모두 정상이에요."]); }
+    if (/할\s*일|인박스|투두/.test(q)) return speak([(t.inbox || []).length ? "할 일 " + t.inbox.length + "건. " + t.inbox.map(function (x) { return typeof x === "string" ? x : x.text; }).slice(0, 4).join(", ") + "." : "남은 할 일이 없어요."]);
+    if (/결정|되돌아/.test(q)) return speak([(t.revisit || []).length ? "되돌아볼 결정 " + t.revisit.length + "건. " + t.revisit.map(function (d) { return d.title; }).slice(0, 3).join(", ") + "." : "이번 주에 되돌아볼 결정은 없어요."]);
+    if (/브리핑|요약|보고/.test(q)) return speak(briefLines(t));
+    // 그 밖: 헤드리스 Claude에게 (생각 중 상태)
+    S.thinking = true; setState("think"); S.target = .45; caption("생각하고 있어요…", false);
+    fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify({ text: q }) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
+      .then(function (j) { S.thinking = false; speak([j.answer || "답을 만들지 못했어요."]); })
+      .catch(function (err) { S.thinking = false; setState("idle"); S.target = 0; speak(["지금은 답하기 어려워요. " + (err.message || "")]); });
+  }
+  function nextLine(ag) { var nx = ag && ag.next; return nx ? ["다음 일정은 " + hm(nx.start) + " " + nx.title + (nx.location ? ", " + nx.location : "") + "이에요."] : []; }
+
+  /* ───────── 듣기(STT): 있으면 마이크, 없으면 입력창 ───────── */
+  var Rec = window.SpeechRecognition || window.webkitSpeechRecognition, rec = null;
+  if (Rec) {
+    rec = new Rec(); rec.lang = "ko-KR"; rec.interimResults = true; rec.maxAlternatives = 1;
+    rec.onresult = function (ev) { var txt = ""; for (var i = ev.resultIndex; i < ev.results.length; i++) txt += ev.results[i][0].transcript; caption(txt, false); S.target = .5; if (ev.results[ev.results.length - 1].isFinal) { stopListen(); answer(txt); } };
+    rec.onerror = function (ev) { stopListen(); if (ev.error === "not-allowed") caption("마이크 권한이 없어요. 아래 입력창으로 물어봐 주세요.", false); else if (ev.error !== "aborted") caption("음성 인식이 이 브라우저에서 동작하지 않아요. 입력창을 써 주세요.", false); };
+    rec.onend = stopListen;
+  } else { $("micBtn").title = "이 브라우저는 음성 인식을 지원하지 않아요. 입력창을 써 주세요."; $("micBtn").style.opacity = .5; }
+  function startListen() { if (!rec || S.listening) return; try { synth && synth.cancel(); S.speaking = false; rec.start(); S.listening = true; $("micBtn").classList.add("on"); setState("talk"); S.target = .35; caption("듣고 있어요…", false); } catch (e) { console.error(e); } }
+  function stopListen() { if (!S.listening) return; S.listening = false; $("micBtn").classList.remove("on"); try { rec && rec.stop(); } catch (e) { /* 이미 멈춤 */ } if (!S.speaking && !S.thinking) { setState("idle"); S.target = 0; } }
+  $("micBtn").addEventListener("click", function () { S.listening ? stopListen() : startListen(); });
+  $("askForm").addEventListener("submit", function (ev) { ev.preventDefault(); var v = $("ask").value; $("ask").value = ""; answer(v); });
+  $("speakBtn").addEventListener("click", function () { speak(briefLines(S.today || {})); });
+  $("muteBtn").addEventListener("click", function () { S.muted = !S.muted; $("muteBtn").setAttribute("aria-pressed", String(S.muted)); if (S.muted && synth) synth.cancel(); caption(S.muted ? "소리를 껐어요. 자막으로만 답해요." : "소리를 켰어요.", false); });
+  addEventListener("keydown", function (ev) { if (ev.code === "Space" && document.activeElement === document.body) { ev.preventDefault(); S.listening ? stopListen() : startListen(); } if (ev.key === "Escape") { synth && synth.cancel(); stopListen(); } });
+
+  /* ───────── 데이터 ───────── */
+  function load() {
+    return fetch("/api/today").then(function (r) { return r.json(); }).then(function (t) { S.today = t; renderHud(t); return t; });
+  }
+  fetch("/api/session").then(function (r) { return r.json(); }).then(function (s) { S.token = s.token; S.name = s.assistant_name || S.name; $("name").textContent = S.name; document.title = S.name + " · 세컨드브레인"; }).catch(function () { $("name").textContent = S.name; });
+  load().then(function (t) {
+    var first = briefLines(t);
+    caption(first.slice(0, 2).join(" "), true);
+    $("hint").textContent = "스페이스나 마이크로 말하기 · 아래 입력창으로 묻기 · 「보드」로 자세히";
+    if (params.get("speak") === "1") setTimeout(function () { speak(first); }, 600); // 자동 재생은 브라우저가 막을 수 있어 옵션
+  }).catch(function (err) { caption("보드 서버에 연결하지 못했어요. brain.py serve가 켜져 있는지 봐 주세요.", false); console.error(err); });
+  fetch("/api/agenda?days=7").then(function (r) { return r.json(); }).then(function (ag) { S.agenda = ag; }).catch(function () {});
+  setInterval(function () { if (!document.hidden) load(); }, 60000);
+})();
+</script>
+</body>
+</html>

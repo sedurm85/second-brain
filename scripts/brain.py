@@ -2101,13 +2101,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if not ok:
                 return resp
             vault = self.server.vault
-            if not vault_exists(vault):
+            if not vault_exists(vault) and route != "/api/ask":
                 return self._json(400, {"error": "볼트가 없어요. brain-setup으로 먼저 만들어 주세요"})
             body = self._read_json()
             if route == "/api/event-note":
                 res = event_note_action(vault, body)
                 self.server.agenda_cache.invalidate()
                 return self._json(200, res)
+            if route == "/api/ask":
+                widgets = collect_widgets(self.server.widget_cache)
+                t = dash_today(vault, self.server.today, widgets=widgets, agenda=self.server.agenda_cache.get())
+                return self._json(200, ask_assistant(str(body.get("text") or ""), t))
             return self._json(404, {"error": f"없는 경로입니다: {route}"})
         except BrainError as e:
             return self._json(400, {"error": str(e)})
@@ -2143,6 +2147,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             vault, today = self.server.vault, self.server.today or date.today()
             if route in ("/", "/index.html"):
                 return self._static("index.html")
+            if route in ("/core", "/core.html"):
+                return self._static("core.html")
             if route.startswith("/web/"):
                 return self._static(urllib.parse.unquote(route[len("/web/"):]))
             if route == "/api/summary":
@@ -2171,7 +2177,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 attach_event_notes(vault, ag)
                 return self._json(200, ag)
             if route == "/api/session":
-                return self._json(200, {"token": self.server.token, "writable": vault_exists(vault)})
+                cfg = load_config()
+                return self._json(200, {"token": self.server.token, "writable": vault_exists(vault),
+                                        "assistant_name": str(cfg.get("assistant_name") or "브레인")})
             return self._json(404, {"error": f"없는 경로입니다: {u.path}"})
         except BrainError as e:
             return self._json(400, {"error": str(e)})
@@ -2599,6 +2607,39 @@ def event_note_action(vault, body):
     raise BrainError("action은 memo · todo · check 중 하나")
 
 
+ASK_TIMEOUT_SEC = 120
+
+
+def ask_assistant(question, today):
+    """코어 화면의 자유 질문. 로컬 데이터(오늘 브리핑 JSON)를 붙여 헤드리스 Claude에 묻는다.
+    명령은 config `ask_cmd`(기본 `claude -p`), 테스트·오프라인은 환경변수 SECOND_BRAIN_ASK_CMD로 대체."""
+    q = " ".join(question.split())
+    if not q:
+        raise BrainError("질문이 비었어요")
+    if len(q) > 1000:
+        raise BrainError("질문은 1000자까지")
+    cfg = load_config()
+    cmd = os.environ.get("SECOND_BRAIN_ASK_CMD") or cfg.get("ask_cmd") or "claude -p --output-format text"
+    name = str(cfg.get("assistant_name") or "브레인")
+    ctx = {k: today.get(k) for k in ("date", "weekday", "agenda", "revisit", "inbox", "widgets_summary", "top_widgets", "this_week") if k in today}
+    prompt = (f"너는 사용자의 개인 비서 「{name}」이다. 아래 JSON은 오늘 상태(일정·할 일·되돌아볼 결정·자동화)다. "
+              f"이 데이터와 상식으로 질문에 한국어 해요체로 2~3문장, 200자 안에서 답한다. 모르면 모른다고 말한다. 목록·마크다운 없이 말로.\n\n"
+              f"[오늘 상태]\n{json.dumps(ctx, ensure_ascii=False)}\n\n[질문]\n{q}")
+    import shlex
+    argv = shlex.split(cmd)
+    try:
+        r = subprocess.run(argv, input=prompt, capture_output=True, text=True, timeout=ASK_TIMEOUT_SEC,
+                           env=dict(os.environ, CLAUDE_CONFIG_DIR=os.environ.get("CLAUDE_CONFIG_DIR", "")) if os.environ.get("CLAUDE_CONFIG_DIR") else None)
+    except FileNotFoundError:
+        raise BrainError(f"답변 명령을 찾을 수 없어요: {argv[0]}")
+    except subprocess.TimeoutExpired:
+        raise BrainError("답이 늦어요. 잠시 뒤 다시 물어봐 주세요")
+    if r.returncode != 0:
+        raise BrainError(f"답변 실패: {(r.stderr or r.stdout).strip()[:160]}")
+    ans = " ".join(r.stdout.split())
+    return {"answer": ans[:600], "via": argv[0]}
+
+
 def cmd_event(args):
     v = require_vault()
     if args.action == "show":
@@ -2832,7 +2873,7 @@ def build_parser():
     s = add("config", "설정 조회/변경", cmd_config)
     s.add_argument("action", choices=("get", "set", "init-widgets"),
                    help="get · set · init-widgets(예시 widgets.json 생성, 기존 파일 보존)")
-    s.add_argument("key", nargs="?", help="vault | git_autocommit | index_head")
+    s.add_argument("key", nargs="?", help="vault | git_autocommit | index_head | assistant_name | ask_cmd | kakao_cmd")
     s.add_argument("value", nargs="?", help="set할 값")
 
     s = add("serve", "로컬 대시보드 서버(127.0.0.1 전용)", cmd_serve)

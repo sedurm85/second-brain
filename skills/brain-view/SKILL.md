@@ -1,6 +1,6 @@
 ---
 name: brain-view
-description: 사용자가 '대시보드 보여줘', '브레인 열어', '그래프로 보고 싶어', '뷰어' 라고 하거나 `/second-brain:brain-view`를 치면 로컬 대시보드 서버를 띄우고 URL을 안내
+description: 사용자가 '대시보드 보여줘', '브레인 열어', '코어 화면', '자비스 켜줘', '그래프로 보고 싶어', '뷰어' 라고 하거나 `/second-brain:brain-view`를 치면 로컬 대시보드 서버를 띄우고 URL을 안내
 when_to_use: 볼트를 한눈에(요약·링크 그래프·타임라인·결정·프로젝트) 보고 싶을 때. /second-brain:brain-view 호출 시.
 argument-hint: "[--port N] [--demo]"
 allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py *) Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/brain.py" *) Bash(test *) Bash(lsof -ti tcp:*) Bash(kill *)
@@ -8,7 +8,9 @@ allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py *) Bash(pytho
 
 # 대시보드 열기
 
-서버는 127.0.0.1 에만 바인딩되는 읽기 전용 로컬 서버다. 볼트 파일을 수정하지 않는다.
+서버는 127.0.0.1 에만 바인딩되는 로컬 서버다. 볼트 쓰기는 일정 노트(메모·준비 체크)만, 페이지 세션 토큰이 있어야 한다.
+
+화면은 둘이다. `/`는 **보드**(오늘 보고·시간표·이번 주·그래프·자동화·결정·타임라인·프로젝트), `/core`는 **코어**(살아 있는 구체 + 최소 HUD, 브리핑을 음성으로 읽고 마이크·입력창으로 질문). 사용자가 '코어', '자비스', '말하는 화면'이라고 하면 `http://127.0.0.1:7777/core`를 안내한다. 비서 이름은 `brain.py config set assistant_name 이름`.
 
 1. 볼트 확인: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/brain.py" index --head 1` 의 stdout 이 비어 있으면 볼트가 없는 것이다.
 2. 서버 실행 — 반드시 Bash `run_in_background: true` 로 실행한다(포그라운드로 돌리면 대화가 멈춘다).
