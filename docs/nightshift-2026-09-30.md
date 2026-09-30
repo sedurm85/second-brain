@@ -108,3 +108,13 @@
 - 19:33 wt/board-staff-brief 머지(보드 자동화 행 「왜 실패했어?」). 가동 중: perf-bench, ask-guard, decision-review, board-mobile. 21:30 저녁 마감 에이전트 실행 로그 확인 예정
 - 19:52 wt/perf-bench 머지(검색 236→26ms, office 24→0.5ms @1000노트, 테스트 621). 워커 추가: wt/office-mobile-2(사무실 390px 재점검), wt/kakao-budget(200자 카톡 우선순위·잘림 보장). 가동 중: ask-guard, decision-review, board-mobile, office-mobile-2, kakao-budget
 - 20:00 wt/ask-guard 머지(시간당 40회 상한·동시성 락·사용량 로그, retro 호출부 충돌은 두 변경 합성). 가동 중: decision-review, board-mobile, office-mobile-2, kakao-budget
+- 20:05 wt/decision-review 머지(유지/종결/변경, 테스트 642). 이후 조직 월 지출 한도로 워커 3명(kakao-budget·office-mobile-2·board-mobile) 중단 → 관리자가 작업 회수·커밋·머지. 자정 넘김으로 날짜 민감 테스트 3건(test_demo.test_server_uses_overrides, test_evening.test_carry_and_evening, test_serve.test_demo_vault_counts)이 main에서 실패 — 코드 결함 아님, 10/1 첫 과제로 날짜 고정(today 주입) 필요
+- 마감: v0.31.0 태그. 총 사이클 13, 워커 42명 투입, 머지 39건, 테스트 180 → 642, 릴리스 v0.27~v0.31
+
+## 내일(10/1) 사장님 결정·확인 목록
+1. 보드 「준비할 일정」 제안 6건(제주도 여행 10개 포함) 채택/무시
+2. 의미 링크 제안 10쌍(`brain.py review --semantic`) — 적용은 `link A B`
+3. 미리알림 연동: 터미널에서 `python3 scripts/brain.py reminders test` 1회(권한 창)
+4. 09:10 월간 회고 에이전트 첫 실행 확인(오늘 밤 9월 회고는 이미 생성됨), 07:00 아침 브리핑에 날씨·제안 줄 확인
+5. 날짜 민감 테스트 3건 고정(CI 빨간불 해소)
+6. Apple Notes 14건이 볼트에 들어옴(태그 apple-notes) — 필요 없으면 `lint`/검색 `tag:apple-notes`로 확인 후 정리
