@@ -66,3 +66,4 @@
 ### 사이클 6 (17:50~)
 - 워커 추가: wt/core-voice(회사 현황·누가 일해·미리알림·선제 알림), wt/edge-tests(파서 경계 테스트·버그 사냥), wt/demo-rich(데모 캐시 격리·전 기능 데이터)
 - 가동 중: weather-integration(장기), core-voice, edge-tests, demo-rich
+- 18:05 wt/weather-integration 머지(import 충돌 양쪽 유지, 지명 정규화·일정 카드 날씨·브리핑 우산, 테스트 307), wt/core-voice 머지(회사 현황·누가 일해·선제 알림). v0.28.0 태그

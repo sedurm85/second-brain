@@ -4,12 +4,12 @@
     "name": "sedurm85",
     "url": "https://github.com/sedurm85"
   },
-  "description": "세컨드브레인 플러그인 마켓플레이스 — Claude Code용 개인 지식 창고",
+  "description": "세컨드브레인 — 대화에서 쌓이는 개인 지식 창고 + 살아 움직이는 비서(캘린더·할 일·일지·회고·사무실)",
   "plugins": [
     {
       "name": "second-brain",
       "source": "./",
-      "description": "대화에서 바로 쌓고 의사결정 맥락까지 찾아주는 개인 지식 창고 (Obsidian 호환 마크다운)"
+      "description": "「기억해둬」가 마크다운 노트가 되고, 캘린더·할 일·날씨·일지·주간 회고·픽셀 사무실까지 갖춘 로컬 비서 (Obsidian 호환, 키 0개)"
     }
   ]
 }
