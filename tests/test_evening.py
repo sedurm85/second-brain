@@ -23,10 +23,11 @@ class EveningTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
-        self._old = {k: os.environ.get(k) for k in ("HOME", "XDG_CACHE_HOME", "SECOND_BRAIN_VAULT", "SECOND_BRAIN_ASK_CMD")}
+        self._old = {k: os.environ.get(k) for k in ("HOME", "XDG_CACHE_HOME", "SECOND_BRAIN_VAULT", "SECOND_BRAIN_ASK_CMD", "SECOND_BRAIN_OFFLINE")}
         os.environ["HOME"] = str(self.home)
         os.environ["XDG_CACHE_HOME"] = str(self.home / ".cache")
         os.environ.pop("SECOND_BRAIN_VAULT", None)
+        os.environ["SECOND_BRAIN_OFFLINE"] = "1"  # 저녁 마감 테스트는 날씨와 무관 - 실제 네트워크 금지
         ics = ("BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:i1\nDTSTART;TZID=Asia/Seoul:20261002T140000\nDTEND;TZID=Asia/Seoul:20261002T153000\nSUMMARY:CJ 면접 준비\nLOCATION:온라인\nEND:VEVENT\n"
                "BEGIN:VEVENT\nUID:t1\nDTSTART;VALUE=DATE:20261001\nDTEND;VALUE=DATE:20261002\nSUMMARY:엄마생일\nEND:VEVENT\nEND:VCALENDAR\n")
         (self.home / "cal.ics").write_text(ics, encoding="utf-8")

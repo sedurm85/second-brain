@@ -33,7 +33,20 @@ FORECAST_URL = (
 GEOCODE_MISS_RETRY_SECONDS = 7 * 86400  # 미스는 7일 후 재시도
 FORECAST_TTL_SECONDS = 3 * 3600  # 예보는 3시간 캐시
 
-_SUFFIXES = ("공항", "터미널", "본점", "지점", "시청", "구청", "역", "점")
+# 구어체 지명 -> 정식 지오코딩 검색어. 일반 규칙(candidates())으로 못 커버하는
+# 잘 알려진 공항/섬 이름만 최소로 등록한다(임의 지명 매핑 금지).
+_ALIASES = {
+    "김포공항": "김포국제공항",
+    "인천공항": "인천국제공항",
+    "제주공항": "제주국제공항",
+    "김해공항": "김해국제공항",
+    "제주도": "제주",
+}
+
+# "X역/X터미널/..." 처럼 시설명을 떼어내면 지오코딩이 아는 동네 이름이 남는 접미사들.
+_LOCALITY_SUFFIXES = ("역", "터미널", "점", "본점", "지점", "캠퍼스", "병원", "호텔", "리조트", "공항")
+_ADMIN_SUFFIXES = ("시", "군", "구")
+_HANGUL_ONLY_RE = re.compile(r"^[가-힣]+$")
 
 _WEATHER_CODES = {
     0: "맑음",
@@ -105,21 +118,80 @@ def _normalize_place(place: str) -> str:
     return s
 
 
-def _fallback_queries(q: str) -> list:
-    """전체 쿼리로 못 찾았을 때 재시도할 후보들. 예: 김포공항 -> 김포."""
-    out = []
+def _candidates_meta(q: str) -> list:
+    """정규화된 쿼리 -> [(후보 검색어, approx 여부), ...]. 순서=시도 우선순위.
+
+    구어체 지명("김포공항", "제주도", "인천공항 T2")을 지오코딩이 아는 정식 명칭으로
+    바꿔볼 후보들을 만든다. 규칙:
+    - 원문은 항상 1순위.
+    - 잘 알려진 공항/섬은 별칭 사전으로 정식명 추가("김포공항"->"김포국제공항").
+    - "X공항" -> "X국제공항"(별칭에 없는 공항도 커버).
+    - "X도" -> "X", "X시"("제주도"->"제주", "제주시").
+    - "X시"/"X군"/"X구" -> "X".
+    - "X역"/"X터미널"/"X점"/... -> "X"(시설명을 떼면 남는 동네 이름).
+    - 위 규칙이 하나도 안 맞고 한글 3자 이상이면 최후 수단으로 앞 2글자를
+      approx=True로 추가한다(UI에서 "근처" 표시용).
+    """
+    out = []  # [(cand, approx)]
+    seen = set()
+
+    def _add(cand: str, approx: bool = False) -> None:
+        cand = (cand or "").strip()
+        if cand and cand not in seen:
+            seen.add(cand)
+            out.append((cand, approx))
+
+    _add(q)
+    if not q:
+        return out
+
+    first_tok = q.split(" ")[0]
+    tokens_to_check = (q,) if first_tok == q else (q, first_tok)
+
+    for tok in tokens_to_check:
+        if tok in _ALIASES:
+            _add(_ALIASES[tok])
+
+    for tok in tokens_to_check:
+        if tok.endswith("공항") and len(tok) > 2 and not tok.endswith("국제공항"):
+            _add(tok[:-2] + "국제공항")
+
+    for tok in tokens_to_check:
+        if tok.endswith("도") and len(tok) > 1:
+            base = tok[:-1]
+            _add(base)
+            _add(base + "시")
+
+    for tok in tokens_to_check:
+        for suf in _ADMIN_SUFFIXES:
+            if tok.endswith(suf) and len(tok) > len(suf):
+                _add(tok[: -len(suf)])
+
+    for tok in tokens_to_check:
+        for suf in _LOCALITY_SUFFIXES:
+            if tok.endswith(suf) and len(tok) > len(suf):
+                _add(tok[: -len(suf)])
+                break
+
     tokens = q.split(" ")
     if len(tokens) >= 2:
-        cand = " ".join(tokens[:2])
-        if cand != q:
-            out.append(cand)
-    for suf in _SUFFIXES:
-        if q.endswith(suf) and len(q) > len(suf):
-            cand = q[: -len(suf)].strip()
-            if cand and cand != q and cand not in out:
-                out.append(cand)
-            break
+        _add(" ".join(tokens[:2]))
+
+    if len(out) == 1 and len(q) >= 3 and _HANGUL_ONLY_RE.match(q):
+        _add(q[:2], approx=True)
+
     return out
+
+
+def candidates(place: str) -> list:
+    """장소명 -> 지오코딩에 시도해 볼 검색어 후보 목록(순서=우선순위).
+
+    "김포공항" -> ["김포공항", "김포국제공항", "김포"],
+    "제주도" -> ["제주도", "제주", "제주시"] 같은 식으로, 원문 먼저 시도하고
+    실패할 때만 정규화된 후보로 넘어가도록 순서를 유지한다.
+    """
+    q = _normalize_place(place)
+    return [cand for cand, _approx in _candidates_meta(q)]
 
 
 def _geocode_lookup(q: str) -> dict | None:
@@ -170,12 +242,14 @@ def geocode(place: str, cache_dir) -> dict | None:
     if _offline():
         return None
     result = None
-    for candidate in [q] + _fallback_queries(q):
+    for candidate, approx in _candidates_meta(q):
         try:
             result = _geocode_lookup(candidate)
         except Exception:  # noqa: BLE001 - 방어적: 절대 호출자에게 예외를 던지지 않는다
             result = None
         if result:
+            if approx:
+                result["approx"] = True
             break
     cache[q] = {"result": result, "ts": now}
     _save_json_cache(cache_path, cache)
@@ -280,6 +354,7 @@ def weather_for(place: str, date_iso: str, cache_dir) -> dict | None:
         "umbrella": umbrella,
         "cold": cold,
         "hot": hot,
+        "approx": bool(loc.get("approx")),
     }
 
 

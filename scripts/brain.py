@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import agenda as agenda_mod  # noqa: E402 - 일정 어댑터(같은 폴더)
 import mailer as mail_mod  # noqa: E402 - 메일 어댑터(IMAP 읽기 전용, 기본 꺼짐)
 import reminders as reminders_mod  # noqa: E402 - 미리알림 어댑터(맥 미리알림, 읽기 전용, 기본 꺼짐)
+import weather as weather_mod  # noqa: E402 - 날씨 어댑터(읽기 전용, 실패해도 일정 표시는 막지 않음)
 
 VERSION = "0.1.0"
 
@@ -2507,6 +2508,12 @@ def kakao_brief(t):
     else:
         tomorrow = [e for e in (ag.get("upcoming") or []) if e.get("days_left") == 1]
         parts.append("오늘 일정 없음" + (", 내일 " + ", ".join((("종일 " if e["all_day"] else e["start"][11:16] + " ") + e["title"]) for e in tomorrow[:2]) if tomorrow else ""))
+    # 날씨: 내일(없으면 오늘) 일정 중 날씨가 붙은 첫 건이 우산/추위/더위처럼 눈에 띌 때만 한 줄 추가(200자 예산 절약)
+    tomorrow_all = [e for e in (ag.get("upcoming") or []) if e.get("days_left") == 1]
+    weather_source = [e for e in tomorrow_all if e.get("weather")] or [e for e in (ag.get("today") or []) if e.get("weather")]
+    weather_notable = [e["weather"] for e in weather_source if e["weather"].get("umbrella") or e["weather"].get("cold") or e["weather"].get("hot")]
+    if weather_notable:
+        parts.append(weather_mod.weather_sentence(weather_notable))
     if ag.get("steps_today"):
         _strip_paren = lambda x: re.sub(r"\s*\(.*\)\s*$", "", x)  # 3.9~3.11은 f-string 식 안에 백슬래시 불가
         parts.append("동선 " + ", ".join(f"{s_['time']} {_strip_paren(s_['text'])}" for s_ in ag["steps_today"][:2]))
@@ -2664,6 +2671,11 @@ def today_human(t):
     ag = t.get("agenda") or {}
     if ag.get("sentence"):
         out.append(ag["sentence"])
+    weather_lines = [f"{e['weather']['place']} {e['weather']['summary']}"
+                      for e in ((ag.get("today") or []) + [x for x in (ag.get("upcoming") or []) if x.get("days_left") == 1])
+                      if e.get("weather")][:2]
+    if weather_lines:
+        out.append("날씨: " + " / ".join(weather_lines))
     if (t.get("mail") or {}).get("sentence"):
         out.append(t["mail"]["sentence"])
     bad_src = [s_ for s_ in (ag.get("sources") or []) if s_.get("status") != "ok"]
@@ -3284,6 +3296,14 @@ def event_notes_index(vault):
     return exact, ranged
 
 
+_PLACE_TITLE_RE = re.compile(r"^[가-힣]{2,10}(도|시|군|구|공항)$")
+
+
+def _looks_like_place_title(title):
+    """종일 일정 제목이 "제주도"처럼 장소 이름 그 자체로 보이는지(오탐 줄이려 보수적으로)."""
+    return bool(_PLACE_TITLE_RE.match(str(title or "").strip()))
+
+
 def attach_event_notes(vault, ag):
     """agenda(dict)의 today/upcoming 각 일정에 note 필드 부착(없으면 None)."""
     if not vault or not vault_exists(Path(vault)):
@@ -3317,6 +3337,16 @@ def attach_event_notes(vault, ag):
         e["related"] = [{"path": h["path"], "title": h["title"], "type": h["type"], "snippet": (h.get("snippets") or [""])[0][:120]}
                         for h in hits if h.get("score", 0) > 0 and not h["path"].startswith("events/") and _relevant(h)][:3]
         e["prep"] = bool(e["related"]) or bool(e.get("note")) or bool(e.get("attendees")) or bool(re.search(r"회의|미팅|면접|상담|발표|인터뷰|meeting", e.get("title") or "", re.I))
+    # 날씨: location이 있거나(없으면 "제주도"처럼 장소 이름인 종일 일정 제목) 7일 이내인 일정에 한 줄 부착
+    weather_cache_dir = agenda_mod.cache_dir() / "weather"
+    for e in (ag.get("today") or []) + [x for x in (ag.get("upcoming") or []) if (x.get("days_left") or 0) <= 7]:
+        e["weather"] = None
+        place = e.get("location") or (e["title"] if e.get("all_day") and _looks_like_place_title(e.get("title")) else None)
+        if place:
+            try:
+                e["weather"] = weather_mod.weather_for(place, e["start"][:10], weather_cache_dir)
+            except Exception:  # noqa: BLE001 - 날씨는 읽기 전용 보조 정보, 실패해도 일정 표시는 막지 않는다
+                e["weather"] = None
     # 동선: 오늘과 다가오는 날의 단계들(같은 노트가 여러 일정에 붙어도 한 번만)
     today_iso = str(ag.get("now") or datetime.now().isoformat())[:10]
     seen, steps = set(), []
@@ -5002,13 +5032,16 @@ def prepare_prompt(e, note, related):
     when = e["start"][:10] + (" 종일" if e.get("all_day") else " " + e["start"][11:16] + "–" + str(e.get("end") or "")[11:16])
     ctx = {"title": e["title"], "when": when, "location": e.get("location") or "", "description": (e.get("description") or "")[:600],
            "attendees": (e.get("attendees") or [])[:5], "already_prep": have, "already_steps": steps,
+           "weather": e.get("weather"),
            "related_notes": [{"title": r["title"], "snippet": (r.get("snippet") or "")[:200]} for r in (related or [])[:3]]}
     return ("너는 꼼꼼한 개인 비서다. 아래 일정 하나를 보고 JSON 객체 하나로만 답한다(설명·마크다운 금지). 형식:\n"
             '{"prep": ["준비 항목" 3~6개, 각 20자 이내 명사구, already_prep와 겹치지 않게], '
             '"steps": ["HH:MM 내용" 0~4개, 그 날의 이동·출발 동선. 시각을 합리적으로 추정할 수 없으면 빈 배열], '
             '"memo": "한 줄 조언 60자 이내(없으면 빈 문자열)"}\n'
             "규칙: 일정·설명·관련 노트에 없는 고유 사실(예약번호·전화번호 등)을 만들지 마라. 항공·기차·병원·면접·회의 같은 일반 상식 준비물은 허용. "
-            "공항은 출발 2시간 전 도착 기준으로 동선을 잡는다. 이미 있는 항목(already_*)은 다시 내지 마라.\n\n[일정]\n" + json.dumps(ctx, ensure_ascii=False))
+            "공항은 출발 2시간 전 도착 기준으로 동선을 잡는다. 이미 있는 항목(already_*)은 다시 내지 마라. "
+            "날씨가 궂으면(weather.umbrella=true) 우산을, cold/hot이면 겉옷/무더위 대비를 준비 항목에 넣어도 된다.\n\n[일정]\n"
+            + json.dumps(ctx, ensure_ascii=False))
 
 
 def _norm_suggestion(raw, e):

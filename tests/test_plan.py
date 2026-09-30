@@ -47,10 +47,11 @@ class PlanTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
-        self._old = {k: os.environ.get(k) for k in ("HOME", "XDG_CACHE_HOME", "SECOND_BRAIN_VAULT")}
+        self._old = {k: os.environ.get(k) for k in ("HOME", "XDG_CACHE_HOME", "SECOND_BRAIN_VAULT", "SECOND_BRAIN_OFFLINE")}
         os.environ["HOME"] = str(self.home)
         os.environ["XDG_CACHE_HOME"] = str(self.home / ".cache")
         os.environ.pop("SECOND_BRAIN_VAULT", None)
+        os.environ["SECOND_BRAIN_OFFLINE"] = "1"  # 동선 테스트는 날씨와 무관 - 실제 네트워크 금지
         ics = ("BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:j1\nDTSTART;VALUE=DATE:20261003\nDTEND;VALUE=DATE:20261004\nSUMMARY:제주도\nEND:VEVENT\n"
                "BEGIN:VEVENT\nUID:m1\nDTSTART;TZID=Asia/Seoul:20261003T150000\nDTEND;TZID=Asia/Seoul:20261003T160000\nSUMMARY:치과\nLOCATION:강남\nEND:VEVENT\nEND:VCALENDAR\n")
         (self.home / "cal.ics").write_text(ics, encoding="utf-8")

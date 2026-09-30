@@ -135,10 +135,11 @@ class CollectTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
-        self._old = {k: os.environ.get(k) for k in ("HOME", "XDG_CACHE_HOME", "SECOND_BRAIN_VAULT")}
+        self._old = {k: os.environ.get(k) for k in ("HOME", "XDG_CACHE_HOME", "SECOND_BRAIN_VAULT", "SECOND_BRAIN_OFFLINE")}
         os.environ["HOME"] = str(self.home)
         os.environ["XDG_CACHE_HOME"] = str(self.home / ".cache")
         os.environ.pop("SECOND_BRAIN_VAULT", None)
+        os.environ["SECOND_BRAIN_OFFLINE"] = "1"  # 이 테스트는 일정만 다룬다 - 날씨 조회가 실제 네트워크를 타면 안 됨
         (self.home / "cal.ics").write_text(ICS, encoding="utf-8")
         cfgdir = self.home / ".config" / "second-brain"
         cfgdir.mkdir(parents=True)

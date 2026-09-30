@@ -101,12 +101,50 @@ class NormalizeQueryTests(unittest.TestCase):
         self.assertEqual(weather._normalize_place("  제주도  "), "제주도")
 
     def test_fallback_suffix(self):
-        cands = weather._fallback_queries("김포공항")
+        cands = weather.candidates("김포공항")
         self.assertIn("김포", cands)
 
     def test_fallback_multi_token(self):
-        cands = weather._fallback_queries("강남 삼성점 근처")
+        cands = weather.candidates("강남 삼성점 근처")
         self.assertIn("강남 삼성점", cands)
+
+
+class CandidatesTests(unittest.TestCase):
+    def test_airport_alias_then_generic_then_locality(self):
+        self.assertEqual(weather.candidates("김포공항"), ["김포공항", "김포국제공항", "김포"])
+
+    def test_island_do_alias_and_si(self):
+        self.assertEqual(weather.candidates("제주도"), ["제주도", "제주", "제주시"])
+
+    def test_multi_token_airport_with_extra_token(self):
+        self.assertEqual(weather.candidates("인천공항 T2"), ["인천공항 T2", "인천국제공항", "인천"])
+
+    def test_generic_airport_not_in_alias_dict(self):
+        # 별칭 사전에 없어도 "X공항" 일반 규칙이 커버해야 한다.
+        cands = weather.candidates("여수공항")
+        self.assertEqual(cands, ["여수공항", "여수국제공항", "여수"])
+
+    def test_facility_suffix_strips_to_locality(self):
+        self.assertIn("강남", weather.candidates("강남역"))
+        self.assertIn("판교테크노밸리", weather.candidates("판교테크노밸리점"))
+
+    def test_admin_suffix_strips_to_locality(self):
+        self.assertIn("화성", weather.candidates("화성시"))
+        self.assertIn("수원", weather.candidates("수원구"))
+
+    def test_last_resort_two_char_marked_only_when_nothing_else_matches(self):
+        cands = weather.candidates("없는곳")
+        self.assertEqual(cands, ["없는곳", "없는"])
+        # 규칙이 하나라도 맞으면 마지막 수단(2글자)은 추가되지 않는다
+        self.assertNotIn("동탄역"[:2], weather.candidates("동탄역")[2:])
+
+    def test_no_last_resort_for_short_names(self):
+        # 한글 3자 미만이면 마지막 수단도 시도하지 않는다(원문만 반환)
+        self.assertEqual(weather.candidates("동탄"), ["동탄"])
+
+    def test_no_duplicates(self):
+        cands = weather.candidates("제주도")
+        self.assertEqual(len(cands), len(set(cands)))
 
 
 class GeocodeTests(WeatherTestBase):
@@ -138,6 +176,25 @@ class GeocodeTests(WeatherTestBase):
         # 전체 쿼리 먼저 시도하고 그다음 fallback을 시도했는지 확인
         self.assertEqual(len(fetch.calls), 2)
 
+    def test_last_resort_candidate_marks_approx(self):
+        fetch = FakeFetch(
+            {
+                "name=%EC%97%86%EB%8A%94%EA%B3%B3": {"results": []},
+                "name=%EC%97%86%EB%8A%94": _geo_result(name="없는"),
+            }
+        )
+        weather.FETCH = fetch
+        result = weather.geocode("없는곳", self.cache_dir)
+        self.assertIsNotNone(result)
+        self.assertTrue(result.get("approx"))
+
+    def test_normal_hit_does_not_mark_approx(self):
+        fetch = FakeFetch({"name=%EC%A0%9C%EC%A3%BC%EB%8F%84": _geo_result(name="제주도")})
+        weather.FETCH = fetch
+        result = weather.geocode("제주도", self.cache_dir)
+        self.assertIsNotNone(result)
+        self.assertFalse(result.get("approx"))
+
     def test_cache_write_then_read_without_network(self):
         fetch = FakeFetch({"name=%EC%A0%9C%EC%A3%BC%EB%8F%84": _geo_result(name="제주도")})
         weather.FETCH = fetch
@@ -153,15 +210,22 @@ class GeocodeTests(WeatherTestBase):
         self.assertEqual(len(fetch.calls), 1)
 
     def test_miss_cached_and_retried_after_7_days(self):
-        fetch = FakeFetch({"name=%EC%97%86%EB%8A%94%EA%B3%B3": {"results": []}})
+        # "없는곳"은 한글 3자라 다른 규칙이 안 맞으면 최후 수단으로 앞 2글자("없는")도
+        # 시도한다 - 두 후보 모두 미스로 고정해 둔다.
+        fetch = FakeFetch(
+            {
+                "name=%EC%97%86%EB%8A%94%EA%B3%B3": {"results": []},
+                "name=%EC%97%86%EB%8A%94": {"results": []},
+            }
+        )
         weather.FETCH = fetch
         result = weather.geocode("없는곳", self.cache_dir)
         self.assertIsNone(result)
-        self.assertEqual(len(fetch.calls), 1)
+        self.assertEqual(len(fetch.calls), 2)
         # 바로 다시 조회하면 캐시된 미스라 네트워크를 타지 않음
         result2 = weather.geocode("없는곳", self.cache_dir)
         self.assertIsNone(result2)
-        self.assertEqual(len(fetch.calls), 1)
+        self.assertEqual(len(fetch.calls), 2)
         # 캐시 타임스탬프를 8일 전으로 돌리면 재시도해야 함
         cache_path = self.cache_dir / "geocode.json"
         data = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -169,7 +233,7 @@ class GeocodeTests(WeatherTestBase):
         cache_path.write_text(json.dumps(data), encoding="utf-8")
         result3 = weather.geocode("없는곳", self.cache_dir)
         self.assertIsNone(result3)
-        self.assertEqual(len(fetch.calls), 2)
+        self.assertEqual(len(fetch.calls), 4)
 
     def test_network_failure_returns_none(self):
         weather.FETCH = FakeFetch(raise_always=True)
