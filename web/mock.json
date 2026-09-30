@@ -1,0 +1,1854 @@
+{
+ "_comment": "?mock=1 전용 가공 데이터. 각 키는 동일 이름 /api/* 응답 형태. search는 클라이언트가 notes에서 계산.",
+ "summary": {
+  "vault": "~/brain",
+  "generated_at": "2026-09-30T09:00:00+09:00",
+  "counts": {
+   "notes": 24,
+   "decisions": 6,
+   "projects": 3,
+   "people": 3,
+   "total": 36
+  },
+  "this_week": {
+   "new_notes": 11,
+   "new_decisions": 1
+  },
+  "open_decisions": [
+   {
+    "path": "decisions/로컬-DB는-SQLite로-간다.md",
+    "title": "로컬 DB는 SQLite로 간다",
+    "revisit": "2026-10-05",
+    "days_left": 5
+   },
+   {
+    "path": "decisions/백업은-외장클라우드-이중화.md",
+    "title": "백업은 외장+클라우드 이중화",
+    "revisit": "2026-10-21",
+    "days_left": 21
+   },
+   {
+    "path": "decisions/NAS-OS를-새-배포판으로-교체.md",
+    "title": "NAS OS를 새 배포판으로 교체",
+    "revisit": "2026-10-02",
+    "days_left": 2
+   }
+  ],
+  "recent": [
+   {
+    "path": "notes/TestFlight-배포-체크리스트.md",
+    "title": "TestFlight 배포 체크리스트",
+    "type": "note",
+    "created": "2026-09-29",
+    "project": "사이드-앱",
+    "tags": [
+     "배포",
+     "ios"
+    ]
+   },
+   {
+    "path": "notes/전력-사용량-대시보드-만들기.md",
+    "title": "전력 사용량 대시보드 만들기",
+    "type": "idea",
+    "created": "2026-09-29",
+    "project": "홈서버",
+    "tags": [
+     "모니터링"
+    ]
+   },
+   {
+    "path": "notes/뉴스레터-톤-가이드.md",
+    "title": "뉴스레터 톤 가이드",
+    "type": "note",
+    "created": "2026-09-29",
+    "project": "글쓰기",
+    "tags": [
+     "톤",
+     "가이드"
+    ]
+   },
+   {
+    "path": "people/김하늘-디자인-파트너.md",
+    "title": "김하늘 (디자인 파트너)",
+    "type": "person",
+    "created": "2026-09-29",
+    "project": "사이드-앱",
+    "tags": [
+     "사람"
+    ]
+   },
+   {
+    "path": "notes/위젯에-오늘의-한-줄-보여주기.md",
+    "title": "위젯에 오늘의 한 줄 보여주기",
+    "type": "idea",
+    "created": "2026-09-28",
+    "project": "사이드-앱",
+    "tags": [
+     "위젯"
+    ]
+   },
+   {
+    "path": "notes/독자-질문으로-한-회-채우기.md",
+    "title": "독자 질문으로 한 회 채우기",
+    "type": "idea",
+    "created": "2026-09-28",
+    "project": "글쓰기",
+    "tags": [
+     "아이디어"
+    ]
+   },
+   {
+    "path": "notes/제목-AB-결과-메모.md",
+    "title": "제목 A/B 결과 메모",
+    "type": "note",
+    "created": "2026-09-28",
+    "project": "글쓰기",
+    "tags": [
+     "실험"
+    ]
+   },
+   {
+    "path": "notes/읽은-책-한-줄-요약-모으기.md",
+    "title": "읽은 책 한 줄 요약 모으기",
+    "type": "idea",
+    "created": "2026-09-28",
+    "project": null,
+    "tags": [
+     "독서"
+    ]
+   }
+  ]
+ },
+ "graph": {
+  "nodes": [
+   {
+    "id": "notes/SwiftUI-상태-관리-정리.md",
+    "path": "notes/SwiftUI-상태-관리-정리.md",
+    "title": "SwiftUI 상태 관리 정리",
+    "type": "note",
+    "project": "사이드-앱",
+    "created": "2026-09-20",
+    "tags": [
+     "swift",
+     "ios"
+    ],
+    "degree": 1
+   },
+   {
+    "id": "notes/습관-추적에-스트릭-대신-회복-개념.md",
+    "path": "notes/습관-추적에-스트릭-대신-회복-개념.md",
+    "title": "습관 추적에 스트릭 대신 '회복' 개념",
+    "type": "idea",
+    "project": "사이드-앱",
+    "created": "2026-09-26",
+    "tags": [
+     "아이디어",
+     "ux"
+    ],
+    "degree": 1
+   },
+   {
+    "id": "sources/오프라인-우선-앱-설계-글-요약.md",
+    "path": "sources/오프라인-우선-앱-설계-글-요약.md",
+    "title": "오프라인 우선 앱 설계 글 요약",
+    "type": "source",
+    "project": "사이드-앱",
+    "created": "2026-09-18",
+    "tags": [
+     "아키텍처",
+     "sync"
+    ],
+    "degree": 1
+   },
+   {
+    "id": "meetings/디자인-리뷰-메모--온보딩-3단계.md",
+    "path": "meetings/디자인-리뷰-메모--온보딩-3단계.md",
+    "title": "디자인 리뷰 메모 — 온보딩 3단계",
+    "type": "meeting",
+    "project": "사이드-앱",
+    "created": "2026-09-10",
+    "tags": [
+     "회의",
+     "온보딩"
+    ],
+    "degree": 3
+   },
+   {
+    "id": "notes/TestFlight-배포-체크리스트.md",
+    "path": "notes/TestFlight-배포-체크리스트.md",
+    "title": "TestFlight 배포 체크리스트",
+    "type": "note",
+    "project": "사이드-앱",
+    "created": "2026-09-29",
+    "tags": [
+     "배포",
+     "ios"
+    ],
+    "degree": 4
+   },
+   {
+    "id": "notes/위젯에-오늘의-한-줄-보여주기.md",
+    "path": "notes/위젯에-오늘의-한-줄-보여주기.md",
+    "title": "위젯에 오늘의 한 줄 보여주기",
+    "type": "idea",
+    "project": "사이드-앱",
+    "created": "2026-09-28",
+    "tags": [
+     "위젯"
+    ],
+    "degree": 1
+   },
+   {
+    "id": "notes/CoreData-vs-SQLite-비교.md",
+    "path": "notes/CoreData-vs-SQLite-비교.md",
+    "title": "CoreData vs SQLite 비교",
+    "type": "note",
+    "project": "사이드-앱",
+    "created": "2026-09-04",
+    "tags": [
+     "db"
+    ],
+    "degree": 1
+   },
+   {
+    "id": "sources/접근성-가이드라인-핵심-10개.md",
+    "path": "sources/접근성-가이드라인-핵심-10개.md",
+    "title": "접근성 가이드라인 핵심 10개",
+    "type": "source",
+    "project": "사이드-앱",
+    "created": "2026-09-13",
+    "tags": [
+     "접근성"
+    ],
+    "degree": 1
+   },
+   {
+    "id": "notes/ZFS-스냅샷-주기-설정.md",
+    "path": "notes/ZFS-스냅샷-주기-설정.md",
+    "title": "ZFS 스냅샷 주기 설정",
+    "type": "note",
+    "project": "홈서버",
+    "created": "2026-09-27",
+    "tags": [
+     "zfs",
+     "백업"
+    ],
+    "degree": 1
+   },
+   {
+    "id": "notes/Tailscale로-외부-접속-구성.md",
+    "path": "notes/Tailscale로-외부-접속-구성.md",
+    "title": "Tailscale로 외부 접속 구성",
+    "type": "note",
+    "project": "홈서버",
+    "created": "2026-09-19",
+    "tags": [
+     "네트워크",
+     "vpn"
+    ],
+    "degree": 1
+   },
+   {
+    "id": "sources/3-2-1-백업-원칙-정리.md",
+    "path": "sources/3-2-1-백업-원칙-정리.md",
+    "title": "3-2-1 백업 원칙 정리",
+    "type": "source",
+    "project": "홈서버",
+    "created": "2026-09-12",
+    "tags": [
+     "백업"
+    ],
+    "degree": 2
+   },
+   {
+    "id": "notes/전력-사용량-대시보드-만들기.md",
+    "path": "notes/전력-사용량-대시보드-만들기.md",
+    "title": "전력 사용량 대시보드 만들기",
+    "type": "idea",
+    "project": "홈서버",
+    "created": "2026-09-29",
+    "tags": [
+     "모니터링"
+    ],
+    "degree": 2
+   },
+   {
+    "id": "meetings/가족-사진-보관-방식-논의.md",
+    "path": "meetings/가족-사진-보관-방식-논의.md",
+    "title": "가족 사진 보관 방식 논의",
+    "type": "meeting",
+    "project": "홈서버",
+    "created": "2026-09-01",
+    "tags": [
+     "회의",
+     "사진"
+    ],
+    "degree": 2
+   },
+   {
+    "id": "notes/도커-컴포즈-파일-구조.md",
+    "path": "notes/도커-컴포즈-파일-구조.md",
+    "title": "도커 컴포즈 파일 구조",
+    "type": "note",
+    "project": "홈서버",
+    "created": "2026-09-14",
+    "tags": [
+     "docker"
+    ],
+    "degree": 1
+   },
+   {
+    "id": "notes/UPS-연동과-안전-종료.md",
+    "path": "notes/UPS-연동과-안전-종료.md",
+    "title": "UPS 연동과 안전 종료",
+    "type": "note",
+    "project": "홈서버",
+    "created": "2026-09-24",
+    "tags": [
+     "전원"
+    ],
+    "degree": 1
+   },
+   {
+    "id": "notes/뉴스레터-톤-가이드.md",
+    "path": "notes/뉴스레터-톤-가이드.md",
+    "title": "뉴스레터 톤 가이드",
+    "type": "note",
+    "project": "글쓰기",
+    "created": "2026-09-29",
+    "tags": [
+     "톤",
+     "가이드"
+    ],
+    "degree": 3
+   },
+   {
+    "id": "notes/독자-질문으로-한-회-채우기.md",
+    "path": "notes/독자-질문으로-한-회-채우기.md",
+    "title": "독자 질문으로 한 회 채우기",
+    "type": "idea",
+    "project": "글쓰기",
+    "created": "2026-09-28",
+    "tags": [
+     "아이디어"
+    ],
+    "degree": 1
+   },
+   {
+    "id": "sources/좋은-도입부-쓰는-법-요약.md",
+    "path": "sources/좋은-도입부-쓰는-법-요약.md",
+    "title": "좋은 도입부 쓰는 법 요약",
+    "type": "source",
+    "project": "글쓰기",
+    "created": "2026-09-17",
+    "tags": [
+     "글쓰기"
+    ],
+    "degree": 1
+   },
+   {
+    "id": "meetings/공동-필자와-연재-일정-조율.md",
+    "path": "meetings/공동-필자와-연재-일정-조율.md",
+    "title": "공동 필자와 연재 일정 조율",
+    "type": "meeting",
+    "project": "글쓰기",
+    "created": "2026-09-17",
+    "tags": [
+     "회의",
+     "일정"
+    ],
+    "degree": 1
+   },
+   {
+    "id": "notes/제목-AB-결과-메모.md",
+    "path": "notes/제목-AB-결과-메모.md",
+    "title": "제목 A/B 결과 메모",
+    "type": "note",
+    "project": "글쓰기",
+    "created": "2026-09-28",
+    "tags": [
+     "실험"
+    ],
+    "degree": 3
+   },
+   {
+    "id": "notes/주간-회고-템플릿.md",
+    "path": "notes/주간-회고-템플릿.md",
+    "title": "주간 회고 템플릿",
+    "type": "note",
+    "project": null,
+    "created": "2026-09-23",
+    "tags": [
+     "회고"
+    ],
+    "degree": 0
+   },
+   {
+    "id": "notes/읽은-책-한-줄-요약-모으기.md",
+    "path": "notes/읽은-책-한-줄-요약-모으기.md",
+    "title": "읽은 책 한 줄 요약 모으기",
+    "type": "idea",
+    "project": null,
+    "created": "2026-09-28",
+    "tags": [
+     "독서"
+    ],
+    "degree": 0
+   },
+   {
+    "id": "sources/간헐적-복습-간격-연구-요약.md",
+    "path": "sources/간헐적-복습-간격-연구-요약.md",
+    "title": "간헐적 복습 간격 연구 요약",
+    "type": "source",
+    "project": null,
+    "created": "2026-09-13",
+    "tags": [
+     "학습"
+    ],
+    "degree": 0
+   },
+   {
+    "id": "notes/출퇴근-시간-활용-목록.md",
+    "path": "notes/출퇴근-시간-활용-목록.md",
+    "title": "출퇴근 시간 활용 목록",
+    "type": "note",
+    "project": null,
+    "created": "2026-09-17",
+    "tags": [
+     "루틴"
+    ],
+    "degree": 0
+   },
+   {
+    "id": "people/김하늘-디자인-파트너.md",
+    "path": "people/김하늘-디자인-파트너.md",
+    "title": "김하늘 (디자인 파트너)",
+    "type": "person",
+    "project": "사이드-앱",
+    "created": "2026-09-29",
+    "tags": [
+     "사람"
+    ],
+    "degree": 1
+   },
+   {
+    "id": "people/박지후-공동-필자.md",
+    "path": "people/박지후-공동-필자.md",
+    "title": "박지후 (공동 필자)",
+    "type": "person",
+    "project": "글쓰기",
+    "created": "2026-09-04",
+    "tags": [
+     "사람"
+    ],
+    "degree": 1
+   },
+   {
+    "id": "people/이도윤-홈랩-멘토.md",
+    "path": "people/이도윤-홈랩-멘토.md",
+    "title": "이도윤 (홈랩 멘토)",
+    "type": "person",
+    "project": "홈서버",
+    "created": "2026-09-12",
+    "tags": [
+     "사람"
+    ],
+    "degree": 0
+   },
+   {
+    "id": "decisions/로컬-DB는-SQLite로-간다.md",
+    "path": "decisions/로컬-DB는-SQLite로-간다.md",
+    "title": "로컬 DB는 SQLite로 간다",
+    "type": "decision",
+    "project": "사이드-앱",
+    "created": "2026-09-27",
+    "tags": [
+     "결정",
+     "사이드-앱"
+    ],
+    "degree": 2
+   },
+   {
+    "id": "decisions/온보딩은-3단계로-줄인다.md",
+    "path": "decisions/온보딩은-3단계로-줄인다.md",
+    "title": "온보딩은 3단계로 줄인다",
+    "type": "decision",
+    "project": "사이드-앱",
+    "created": "2026-09-23",
+    "tags": [
+     "결정",
+     "사이드-앱"
+    ],
+    "degree": 0
+   },
+   {
+    "id": "decisions/백업은-외장클라우드-이중화.md",
+    "path": "decisions/백업은-외장클라우드-이중화.md",
+    "title": "백업은 외장+클라우드 이중화",
+    "type": "decision",
+    "project": "홈서버",
+    "created": "2026-09-19",
+    "tags": [
+     "결정",
+     "홈서버"
+    ],
+    "degree": 1
+   },
+   {
+    "id": "decisions/NAS-OS를-교체하지-않는다.md",
+    "path": "decisions/NAS-OS를-교체하지-않는다.md",
+    "title": "NAS OS를 교체하지 않는다",
+    "type": "decision",
+    "project": "홈서버",
+    "created": "2026-09-15",
+    "tags": [
+     "결정",
+     "홈서버"
+    ],
+    "degree": 1
+   },
+   {
+    "id": "decisions/NAS-OS를-새-배포판으로-교체.md",
+    "path": "decisions/NAS-OS를-새-배포판으로-교체.md",
+    "title": "NAS OS를 새 배포판으로 교체",
+    "type": "decision",
+    "project": "홈서버",
+    "created": "2026-09-11",
+    "tags": [
+     "결정",
+     "홈서버"
+    ],
+    "degree": 0
+   },
+   {
+    "id": "decisions/뉴스레터는-격주-발행.md",
+    "path": "decisions/뉴스레터는-격주-발행.md",
+    "title": "뉴스레터는 격주 발행",
+    "type": "decision",
+    "project": "글쓰기",
+    "created": "2026-09-07",
+    "tags": [
+     "결정",
+     "글쓰기"
+    ],
+    "degree": 2
+   },
+   {
+    "id": "projects/사이드-앱.md",
+    "path": "projects/사이드-앱.md",
+    "title": "사이드-앱",
+    "type": "project",
+    "project": "사이드-앱",
+    "created": "2026-08-01",
+    "tags": [
+     "프로젝트"
+    ],
+    "degree": 9
+   },
+   {
+    "id": "projects/홈서버.md",
+    "path": "projects/홈서버.md",
+    "title": "홈서버",
+    "type": "project",
+    "project": "홈서버",
+    "created": "2026-08-01",
+    "tags": [
+     "프로젝트"
+    ],
+    "degree": 7
+   },
+   {
+    "id": "projects/글쓰기.md",
+    "path": "projects/글쓰기.md",
+    "title": "글쓰기",
+    "type": "project",
+    "project": "글쓰기",
+    "created": "2026-08-01",
+    "tags": [
+     "프로젝트"
+    ],
+    "degree": 4
+   }
+  ],
+  "edges": [
+   {
+    "source": "decisions/NAS-OS를-교체하지-않는다.md",
+    "target": "sources/3-2-1-백업-원칙-정리.md"
+   },
+   {
+    "source": "meetings/가족-사진-보관-방식-논의.md",
+    "target": "decisions/로컬-DB는-SQLite로-간다.md"
+   },
+   {
+    "source": "meetings/가족-사진-보관-방식-논의.md",
+    "target": "projects/홈서버.md"
+   },
+   {
+    "source": "meetings/공동-필자와-연재-일정-조율.md",
+    "target": "notes/TestFlight-배포-체크리스트.md"
+   },
+   {
+    "source": "meetings/디자인-리뷰-메모--온보딩-3단계.md",
+    "target": "decisions/백업은-외장클라우드-이중화.md"
+   },
+   {
+    "source": "meetings/디자인-리뷰-메모--온보딩-3단계.md",
+    "target": "projects/사이드-앱.md"
+   },
+   {
+    "source": "notes/CoreData-vs-SQLite-비교.md",
+    "target": "projects/사이드-앱.md"
+   },
+   {
+    "source": "notes/SwiftUI-상태-관리-정리.md",
+    "target": "projects/사이드-앱.md"
+   },
+   {
+    "source": "notes/Tailscale로-외부-접속-구성.md",
+    "target": "projects/홈서버.md"
+   },
+   {
+    "source": "notes/TestFlight-배포-체크리스트.md",
+    "target": "meetings/디자인-리뷰-메모--온보딩-3단계.md"
+   },
+   {
+    "source": "notes/TestFlight-배포-체크리스트.md",
+    "target": "people/김하늘-디자인-파트너.md"
+   },
+   {
+    "source": "notes/TestFlight-배포-체크리스트.md",
+    "target": "projects/사이드-앱.md"
+   },
+   {
+    "source": "notes/UPS-연동과-안전-종료.md",
+    "target": "projects/홈서버.md"
+   },
+   {
+    "source": "notes/ZFS-스냅샷-주기-설정.md",
+    "target": "projects/홈서버.md"
+   },
+   {
+    "source": "notes/뉴스레터-톤-가이드.md",
+    "target": "projects/글쓰기.md"
+   },
+   {
+    "source": "notes/도커-컴포즈-파일-구조.md",
+    "target": "projects/홈서버.md"
+   },
+   {
+    "source": "notes/독자-질문으로-한-회-채우기.md",
+    "target": "projects/글쓰기.md"
+   },
+   {
+    "source": "notes/습관-추적에-스트릭-대신-회복-개념.md",
+    "target": "projects/사이드-앱.md"
+   },
+   {
+    "source": "notes/위젯에-오늘의-한-줄-보여주기.md",
+    "target": "projects/사이드-앱.md"
+   },
+   {
+    "source": "notes/전력-사용량-대시보드-만들기.md",
+    "target": "notes/뉴스레터-톤-가이드.md"
+   },
+   {
+    "source": "notes/전력-사용량-대시보드-만들기.md",
+    "target": "projects/홈서버.md"
+   },
+   {
+    "source": "notes/제목-AB-결과-메모.md",
+    "target": "decisions/뉴스레터는-격주-발행.md"
+   },
+   {
+    "source": "notes/제목-AB-결과-메모.md",
+    "target": "notes/뉴스레터-톤-가이드.md"
+   },
+   {
+    "source": "notes/제목-AB-결과-메모.md",
+    "target": "projects/글쓰기.md"
+   },
+   {
+    "source": "people/박지후-공동-필자.md",
+    "target": "decisions/뉴스레터는-격주-발행.md"
+   },
+   {
+    "source": "projects/사이드-앱.md",
+    "target": "decisions/로컬-DB는-SQLite로-간다.md"
+   },
+   {
+    "source": "sources/3-2-1-백업-원칙-정리.md",
+    "target": "projects/홈서버.md"
+   },
+   {
+    "source": "sources/오프라인-우선-앱-설계-글-요약.md",
+    "target": "projects/사이드-앱.md"
+   },
+   {
+    "source": "sources/접근성-가이드라인-핵심-10개.md",
+    "target": "projects/사이드-앱.md"
+   },
+   {
+    "source": "sources/좋은-도입부-쓰는-법-요약.md",
+    "target": "projects/글쓰기.md"
+   }
+  ]
+ },
+ "notes": {
+  "notes/SwiftUI-상태-관리-정리.md": {
+   "path": "notes/SwiftUI-상태-관리-정리.md",
+   "title": "SwiftUI 상태 관리 정리",
+   "type": "note",
+   "frontmatter": {
+    "title": "SwiftUI 상태 관리 정리",
+    "type": "note",
+    "created": "2026-09-20",
+    "tags": [
+     "swift",
+     "ios"
+    ],
+    "project": "사이드-앱"
+   },
+   "body": "# SwiftUI 상태 관리 정리\n\nSwiftUI 상태 관리 정리에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[사이드-앱]]\n",
+   "links_out": [
+    "projects/사이드-앱.md"
+   ],
+   "links_in": []
+  },
+  "notes/습관-추적에-스트릭-대신-회복-개념.md": {
+   "path": "notes/습관-추적에-스트릭-대신-회복-개념.md",
+   "title": "습관 추적에 스트릭 대신 '회복' 개념",
+   "type": "idea",
+   "frontmatter": {
+    "title": "습관 추적에 스트릭 대신 '회복' 개념",
+    "type": "idea",
+    "created": "2026-09-26",
+    "tags": [
+     "아이디어",
+     "ux"
+    ],
+    "project": "사이드-앱"
+   },
+   "body": "# 습관 추적에 스트릭 대신 '회복' 개념\n\n습관 추적에 스트릭 대신 '회복' 개념에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[사이드-앱]]\n",
+   "links_out": [
+    "projects/사이드-앱.md"
+   ],
+   "links_in": []
+  },
+  "sources/오프라인-우선-앱-설계-글-요약.md": {
+   "path": "sources/오프라인-우선-앱-설계-글-요약.md",
+   "title": "오프라인 우선 앱 설계 글 요약",
+   "type": "source",
+   "frontmatter": {
+    "title": "오프라인 우선 앱 설계 글 요약",
+    "type": "source",
+    "created": "2026-09-18",
+    "tags": [
+     "아키텍처",
+     "sync"
+    ],
+    "project": "사이드-앱"
+   },
+   "body": "# 오프라인 우선 앱 설계 글 요약\n\n오프라인 우선 앱 설계 글 요약에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[사이드-앱]]\n",
+   "links_out": [
+    "projects/사이드-앱.md"
+   ],
+   "links_in": []
+  },
+  "meetings/디자인-리뷰-메모--온보딩-3단계.md": {
+   "path": "meetings/디자인-리뷰-메모--온보딩-3단계.md",
+   "title": "디자인 리뷰 메모 — 온보딩 3단계",
+   "type": "meeting",
+   "frontmatter": {
+    "title": "디자인 리뷰 메모 — 온보딩 3단계",
+    "type": "meeting",
+    "created": "2026-09-10",
+    "tags": [
+     "회의",
+     "온보딩"
+    ],
+    "project": "사이드-앱"
+   },
+   "body": "# 디자인 리뷰 메모 — 온보딩 3단계\n\n디자인 리뷰 메모 — 온보딩 3단계에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[백업은 외장+클라우드 이중화]]\n- [[사이드-앱]]\n",
+   "links_out": [
+    "decisions/백업은-외장클라우드-이중화.md",
+    "projects/사이드-앱.md"
+   ],
+   "links_in": [
+    "notes/TestFlight-배포-체크리스트.md"
+   ]
+  },
+  "notes/TestFlight-배포-체크리스트.md": {
+   "path": "notes/TestFlight-배포-체크리스트.md",
+   "title": "TestFlight 배포 체크리스트",
+   "type": "note",
+   "frontmatter": {
+    "title": "TestFlight 배포 체크리스트",
+    "type": "note",
+    "created": "2026-09-29",
+    "tags": [
+     "배포",
+     "ios"
+    ],
+    "project": "사이드-앱"
+   },
+   "body": "# TestFlight 배포 체크리스트\n\nTestFlight 배포 체크리스트에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[디자인 리뷰 메모 — 온보딩 3단계]]\n- [[김하늘 (디자인 파트너)]]\n- [[사이드-앱]]\n",
+   "links_out": [
+    "meetings/디자인-리뷰-메모--온보딩-3단계.md",
+    "people/김하늘-디자인-파트너.md",
+    "projects/사이드-앱.md"
+   ],
+   "links_in": [
+    "meetings/공동-필자와-연재-일정-조율.md"
+   ]
+  },
+  "notes/위젯에-오늘의-한-줄-보여주기.md": {
+   "path": "notes/위젯에-오늘의-한-줄-보여주기.md",
+   "title": "위젯에 오늘의 한 줄 보여주기",
+   "type": "idea",
+   "frontmatter": {
+    "title": "위젯에 오늘의 한 줄 보여주기",
+    "type": "idea",
+    "created": "2026-09-28",
+    "tags": [
+     "위젯"
+    ],
+    "project": "사이드-앱"
+   },
+   "body": "# 위젯에 오늘의 한 줄 보여주기\n\n위젯에 오늘의 한 줄 보여주기에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[사이드-앱]]\n",
+   "links_out": [
+    "projects/사이드-앱.md"
+   ],
+   "links_in": []
+  },
+  "notes/CoreData-vs-SQLite-비교.md": {
+   "path": "notes/CoreData-vs-SQLite-비교.md",
+   "title": "CoreData vs SQLite 비교",
+   "type": "note",
+   "frontmatter": {
+    "title": "CoreData vs SQLite 비교",
+    "type": "note",
+    "created": "2026-09-04",
+    "tags": [
+     "db"
+    ],
+    "project": "사이드-앱"
+   },
+   "body": "# CoreData vs SQLite 비교\n\nCoreData vs SQLite 비교에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[사이드-앱]]\n",
+   "links_out": [
+    "projects/사이드-앱.md"
+   ],
+   "links_in": []
+  },
+  "sources/접근성-가이드라인-핵심-10개.md": {
+   "path": "sources/접근성-가이드라인-핵심-10개.md",
+   "title": "접근성 가이드라인 핵심 10개",
+   "type": "source",
+   "frontmatter": {
+    "title": "접근성 가이드라인 핵심 10개",
+    "type": "source",
+    "created": "2026-09-13",
+    "tags": [
+     "접근성"
+    ],
+    "project": "사이드-앱"
+   },
+   "body": "# 접근성 가이드라인 핵심 10개\n\n접근성 가이드라인 핵심 10개에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[사이드-앱]]\n",
+   "links_out": [
+    "projects/사이드-앱.md"
+   ],
+   "links_in": []
+  },
+  "notes/ZFS-스냅샷-주기-설정.md": {
+   "path": "notes/ZFS-스냅샷-주기-설정.md",
+   "title": "ZFS 스냅샷 주기 설정",
+   "type": "note",
+   "frontmatter": {
+    "title": "ZFS 스냅샷 주기 설정",
+    "type": "note",
+    "created": "2026-09-27",
+    "tags": [
+     "zfs",
+     "백업"
+    ],
+    "project": "홈서버"
+   },
+   "body": "# ZFS 스냅샷 주기 설정\n\nZFS 스냅샷 주기 설정에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[홈서버]]\n",
+   "links_out": [
+    "projects/홈서버.md"
+   ],
+   "links_in": []
+  },
+  "notes/Tailscale로-외부-접속-구성.md": {
+   "path": "notes/Tailscale로-외부-접속-구성.md",
+   "title": "Tailscale로 외부 접속 구성",
+   "type": "note",
+   "frontmatter": {
+    "title": "Tailscale로 외부 접속 구성",
+    "type": "note",
+    "created": "2026-09-19",
+    "tags": [
+     "네트워크",
+     "vpn"
+    ],
+    "project": "홈서버"
+   },
+   "body": "# Tailscale로 외부 접속 구성\n\nTailscale로 외부 접속 구성에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[홈서버]]\n",
+   "links_out": [
+    "projects/홈서버.md"
+   ],
+   "links_in": []
+  },
+  "sources/3-2-1-백업-원칙-정리.md": {
+   "path": "sources/3-2-1-백업-원칙-정리.md",
+   "title": "3-2-1 백업 원칙 정리",
+   "type": "source",
+   "frontmatter": {
+    "title": "3-2-1 백업 원칙 정리",
+    "type": "source",
+    "created": "2026-09-12",
+    "tags": [
+     "백업"
+    ],
+    "project": "홈서버"
+   },
+   "body": "# 3-2-1 백업 원칙 정리\n\n3-2-1 백업 원칙 정리에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[홈서버]]\n",
+   "links_out": [
+    "projects/홈서버.md"
+   ],
+   "links_in": [
+    "decisions/NAS-OS를-교체하지-않는다.md"
+   ]
+  },
+  "notes/전력-사용량-대시보드-만들기.md": {
+   "path": "notes/전력-사용량-대시보드-만들기.md",
+   "title": "전력 사용량 대시보드 만들기",
+   "type": "idea",
+   "frontmatter": {
+    "title": "전력 사용량 대시보드 만들기",
+    "type": "idea",
+    "created": "2026-09-29",
+    "tags": [
+     "모니터링"
+    ],
+    "project": "홈서버"
+   },
+   "body": "# 전력 사용량 대시보드 만들기\n\n전력 사용량 대시보드 만들기에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[뉴스레터 톤 가이드]]\n- [[홈서버]]\n",
+   "links_out": [
+    "notes/뉴스레터-톤-가이드.md",
+    "projects/홈서버.md"
+   ],
+   "links_in": []
+  },
+  "meetings/가족-사진-보관-방식-논의.md": {
+   "path": "meetings/가족-사진-보관-방식-논의.md",
+   "title": "가족 사진 보관 방식 논의",
+   "type": "meeting",
+   "frontmatter": {
+    "title": "가족 사진 보관 방식 논의",
+    "type": "meeting",
+    "created": "2026-09-01",
+    "tags": [
+     "회의",
+     "사진"
+    ],
+    "project": "홈서버"
+   },
+   "body": "# 가족 사진 보관 방식 논의\n\n가족 사진 보관 방식 논의에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[로컬 DB는 SQLite로 간다]]\n- [[홈서버]]\n",
+   "links_out": [
+    "decisions/로컬-DB는-SQLite로-간다.md",
+    "projects/홈서버.md"
+   ],
+   "links_in": []
+  },
+  "notes/도커-컴포즈-파일-구조.md": {
+   "path": "notes/도커-컴포즈-파일-구조.md",
+   "title": "도커 컴포즈 파일 구조",
+   "type": "note",
+   "frontmatter": {
+    "title": "도커 컴포즈 파일 구조",
+    "type": "note",
+    "created": "2026-09-14",
+    "tags": [
+     "docker"
+    ],
+    "project": "홈서버"
+   },
+   "body": "# 도커 컴포즈 파일 구조\n\n도커 컴포즈 파일 구조에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[홈서버]]\n",
+   "links_out": [
+    "projects/홈서버.md"
+   ],
+   "links_in": []
+  },
+  "notes/UPS-연동과-안전-종료.md": {
+   "path": "notes/UPS-연동과-안전-종료.md",
+   "title": "UPS 연동과 안전 종료",
+   "type": "note",
+   "frontmatter": {
+    "title": "UPS 연동과 안전 종료",
+    "type": "note",
+    "created": "2026-09-24",
+    "tags": [
+     "전원"
+    ],
+    "project": "홈서버"
+   },
+   "body": "# UPS 연동과 안전 종료\n\nUPS 연동과 안전 종료에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[홈서버]]\n",
+   "links_out": [
+    "projects/홈서버.md"
+   ],
+   "links_in": []
+  },
+  "notes/뉴스레터-톤-가이드.md": {
+   "path": "notes/뉴스레터-톤-가이드.md",
+   "title": "뉴스레터 톤 가이드",
+   "type": "note",
+   "frontmatter": {
+    "title": "뉴스레터 톤 가이드",
+    "type": "note",
+    "created": "2026-09-29",
+    "tags": [
+     "톤",
+     "가이드"
+    ],
+    "project": "글쓰기"
+   },
+   "body": "# 뉴스레터 톤 가이드\n\n뉴스레터 톤 가이드에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[글쓰기]]\n",
+   "links_out": [
+    "projects/글쓰기.md"
+   ],
+   "links_in": [
+    "notes/전력-사용량-대시보드-만들기.md",
+    "notes/제목-AB-결과-메모.md"
+   ]
+  },
+  "notes/독자-질문으로-한-회-채우기.md": {
+   "path": "notes/독자-질문으로-한-회-채우기.md",
+   "title": "독자 질문으로 한 회 채우기",
+   "type": "idea",
+   "frontmatter": {
+    "title": "독자 질문으로 한 회 채우기",
+    "type": "idea",
+    "created": "2026-09-28",
+    "tags": [
+     "아이디어"
+    ],
+    "project": "글쓰기"
+   },
+   "body": "# 독자 질문으로 한 회 채우기\n\n독자 질문으로 한 회 채우기에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[글쓰기]]\n",
+   "links_out": [
+    "projects/글쓰기.md"
+   ],
+   "links_in": []
+  },
+  "sources/좋은-도입부-쓰는-법-요약.md": {
+   "path": "sources/좋은-도입부-쓰는-법-요약.md",
+   "title": "좋은 도입부 쓰는 법 요약",
+   "type": "source",
+   "frontmatter": {
+    "title": "좋은 도입부 쓰는 법 요약",
+    "type": "source",
+    "created": "2026-09-17",
+    "tags": [
+     "글쓰기"
+    ],
+    "project": "글쓰기"
+   },
+   "body": "# 좋은 도입부 쓰는 법 요약\n\n좋은 도입부 쓰는 법 요약에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[글쓰기]]\n",
+   "links_out": [
+    "projects/글쓰기.md"
+   ],
+   "links_in": []
+  },
+  "meetings/공동-필자와-연재-일정-조율.md": {
+   "path": "meetings/공동-필자와-연재-일정-조율.md",
+   "title": "공동 필자와 연재 일정 조율",
+   "type": "meeting",
+   "frontmatter": {
+    "title": "공동 필자와 연재 일정 조율",
+    "type": "meeting",
+    "created": "2026-09-17",
+    "tags": [
+     "회의",
+     "일정"
+    ],
+    "project": "글쓰기"
+   },
+   "body": "# 공동 필자와 연재 일정 조율\n\n공동 필자와 연재 일정 조율에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[TestFlight 배포 체크리스트]]\n",
+   "links_out": [
+    "notes/TestFlight-배포-체크리스트.md"
+   ],
+   "links_in": []
+  },
+  "notes/제목-AB-결과-메모.md": {
+   "path": "notes/제목-AB-결과-메모.md",
+   "title": "제목 A/B 결과 메모",
+   "type": "note",
+   "frontmatter": {
+    "title": "제목 A/B 결과 메모",
+    "type": "note",
+    "created": "2026-09-28",
+    "tags": [
+     "실험"
+    ],
+    "project": "글쓰기"
+   },
+   "body": "# 제목 A/B 결과 메모\n\n제목 A/B 결과 메모에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[뉴스레터는 격주 발행]]\n- [[뉴스레터 톤 가이드]]\n- [[글쓰기]]\n",
+   "links_out": [
+    "decisions/뉴스레터는-격주-발행.md",
+    "notes/뉴스레터-톤-가이드.md",
+    "projects/글쓰기.md"
+   ],
+   "links_in": []
+  },
+  "notes/주간-회고-템플릿.md": {
+   "path": "notes/주간-회고-템플릿.md",
+   "title": "주간 회고 템플릿",
+   "type": "note",
+   "frontmatter": {
+    "title": "주간 회고 템플릿",
+    "type": "note",
+    "created": "2026-09-23",
+    "tags": [
+     "회고"
+    ]
+   },
+   "body": "# 주간 회고 템플릿\n\n주간 회고 템플릿에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n",
+   "links_out": [],
+   "links_in": []
+  },
+  "notes/읽은-책-한-줄-요약-모으기.md": {
+   "path": "notes/읽은-책-한-줄-요약-모으기.md",
+   "title": "읽은 책 한 줄 요약 모으기",
+   "type": "idea",
+   "frontmatter": {
+    "title": "읽은 책 한 줄 요약 모으기",
+    "type": "idea",
+    "created": "2026-09-28",
+    "tags": [
+     "독서"
+    ]
+   },
+   "body": "# 읽은 책 한 줄 요약 모으기\n\n읽은 책 한 줄 요약 모으기에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n",
+   "links_out": [],
+   "links_in": []
+  },
+  "sources/간헐적-복습-간격-연구-요약.md": {
+   "path": "sources/간헐적-복습-간격-연구-요약.md",
+   "title": "간헐적 복습 간격 연구 요약",
+   "type": "source",
+   "frontmatter": {
+    "title": "간헐적 복습 간격 연구 요약",
+    "type": "source",
+    "created": "2026-09-13",
+    "tags": [
+     "학습"
+    ]
+   },
+   "body": "# 간헐적 복습 간격 연구 요약\n\n간헐적 복습 간격 연구 요약에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n",
+   "links_out": [],
+   "links_in": []
+  },
+  "notes/출퇴근-시간-활용-목록.md": {
+   "path": "notes/출퇴근-시간-활용-목록.md",
+   "title": "출퇴근 시간 활용 목록",
+   "type": "note",
+   "frontmatter": {
+    "title": "출퇴근 시간 활용 목록",
+    "type": "note",
+    "created": "2026-09-17",
+    "tags": [
+     "루틴"
+    ]
+   },
+   "body": "# 출퇴근 시간 활용 목록\n\n출퇴근 시간 활용 목록에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n",
+   "links_out": [],
+   "links_in": []
+  },
+  "people/김하늘-디자인-파트너.md": {
+   "path": "people/김하늘-디자인-파트너.md",
+   "title": "김하늘 (디자인 파트너)",
+   "type": "person",
+   "frontmatter": {
+    "title": "김하늘 (디자인 파트너)",
+    "type": "person",
+    "created": "2026-09-29",
+    "tags": [
+     "사람"
+    ],
+    "project": "사이드-앱"
+   },
+   "body": "# 김하늘 (디자인 파트너)\n\n김하늘 (디자인 파트너)에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n",
+   "links_out": [],
+   "links_in": [
+    "notes/TestFlight-배포-체크리스트.md"
+   ]
+  },
+  "people/박지후-공동-필자.md": {
+   "path": "people/박지후-공동-필자.md",
+   "title": "박지후 (공동 필자)",
+   "type": "person",
+   "frontmatter": {
+    "title": "박지후 (공동 필자)",
+    "type": "person",
+    "created": "2026-09-04",
+    "tags": [
+     "사람"
+    ],
+    "project": "글쓰기"
+   },
+   "body": "# 박지후 (공동 필자)\n\n박지후 (공동 필자)에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[뉴스레터는 격주 발행]]\n",
+   "links_out": [
+    "decisions/뉴스레터는-격주-발행.md"
+   ],
+   "links_in": []
+  },
+  "people/이도윤-홈랩-멘토.md": {
+   "path": "people/이도윤-홈랩-멘토.md",
+   "title": "이도윤 (홈랩 멘토)",
+   "type": "person",
+   "frontmatter": {
+    "title": "이도윤 (홈랩 멘토)",
+    "type": "person",
+    "created": "2026-09-12",
+    "tags": [
+     "사람"
+    ],
+    "project": "홈서버"
+   },
+   "body": "# 이도윤 (홈랩 멘토)\n\n이도윤 (홈랩 멘토)에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n",
+   "links_out": [],
+   "links_in": []
+  },
+  "decisions/로컬-DB는-SQLite로-간다.md": {
+   "path": "decisions/로컬-DB는-SQLite로-간다.md",
+   "title": "로컬 DB는 SQLite로 간다",
+   "type": "decision",
+   "frontmatter": {
+    "title": "로컬 DB는 SQLite로 간다",
+    "type": "decision",
+    "created": "2026-09-27",
+    "tags": [
+     "결정",
+     "사이드-앱"
+    ],
+    "project": "사이드-앱",
+    "status": "open",
+    "revisit": "2026-10-05"
+   },
+   "body": "# 로컬 DB는 SQLite로 간다\n\n## 상황\n선택지를 오래 미뤄 작업이 멈춰 있었어요.\n\n## 고려한 선택지\n- **A안**: 익숙하고 빠름\n- **B안**: 유연하지만 학습 비용\n\n## 결정\nA안으로 간다.\n\n## 이유\n- 지금 규모에선 **단순함**이 이긴다\n- 되돌리기 쉽다\n",
+   "links_out": [],
+   "links_in": [
+    "meetings/가족-사진-보관-방식-논의.md",
+    "projects/사이드-앱.md"
+   ]
+  },
+  "decisions/온보딩은-3단계로-줄인다.md": {
+   "path": "decisions/온보딩은-3단계로-줄인다.md",
+   "title": "온보딩은 3단계로 줄인다",
+   "type": "decision",
+   "frontmatter": {
+    "title": "온보딩은 3단계로 줄인다",
+    "type": "decision",
+    "created": "2026-09-23",
+    "tags": [
+     "결정",
+     "사이드-앱"
+    ],
+    "project": "사이드-앱",
+    "status": "decided"
+   },
+   "body": "# 온보딩은 3단계로 줄인다\n\n## 상황\n선택지를 오래 미뤄 작업이 멈춰 있었어요.\n\n## 고려한 선택지\n- **A안**: 익숙하고 빠름\n- **B안**: 유연하지만 학습 비용\n\n## 결정\nA안으로 간다.\n\n## 이유\n- 지금 규모에선 **단순함**이 이긴다\n- 되돌리기 쉽다\n",
+   "links_out": [],
+   "links_in": []
+  },
+  "decisions/백업은-외장클라우드-이중화.md": {
+   "path": "decisions/백업은-외장클라우드-이중화.md",
+   "title": "백업은 외장+클라우드 이중화",
+   "type": "decision",
+   "frontmatter": {
+    "title": "백업은 외장+클라우드 이중화",
+    "type": "decision",
+    "created": "2026-09-19",
+    "tags": [
+     "결정",
+     "홈서버"
+    ],
+    "project": "홈서버",
+    "status": "open",
+    "revisit": "2026-10-21"
+   },
+   "body": "# 백업은 외장+클라우드 이중화\n\n## 상황\n선택지를 오래 미뤄 작업이 멈춰 있었어요.\n\n## 고려한 선택지\n- **A안**: 익숙하고 빠름\n- **B안**: 유연하지만 학습 비용\n\n## 결정\nA안으로 간다.\n\n## 이유\n- 지금 규모에선 **단순함**이 이긴다\n- 되돌리기 쉽다\n",
+   "links_out": [],
+   "links_in": [
+    "meetings/디자인-리뷰-메모--온보딩-3단계.md"
+   ]
+  },
+  "decisions/NAS-OS를-교체하지-않는다.md": {
+   "path": "decisions/NAS-OS를-교체하지-않는다.md",
+   "title": "NAS OS를 교체하지 않는다",
+   "type": "decision",
+   "frontmatter": {
+    "title": "NAS OS를 교체하지 않는다",
+    "type": "decision",
+    "created": "2026-09-15",
+    "tags": [
+     "결정",
+     "홈서버"
+    ],
+    "project": "홈서버",
+    "status": "superseded"
+   },
+   "body": "# NAS OS를 교체하지 않는다\n\n## 상황\n선택지를 오래 미뤄 작업이 멈춰 있었어요.\n\n## 고려한 선택지\n- **A안**: 익숙하고 빠름\n- **B안**: 유연하지만 학습 비용\n\n## 결정\nA안으로 간다.\n\n## 이유\n- 지금 규모에선 **단순함**이 이긴다\n- 되돌리기 쉽다\n\n## 연결\n- [[3-2-1 백업 원칙 정리]]\n",
+   "links_out": [
+    "sources/3-2-1-백업-원칙-정리.md"
+   ],
+   "links_in": []
+  },
+  "decisions/NAS-OS를-새-배포판으로-교체.md": {
+   "path": "decisions/NAS-OS를-새-배포판으로-교체.md",
+   "title": "NAS OS를 새 배포판으로 교체",
+   "type": "decision",
+   "frontmatter": {
+    "title": "NAS OS를 새 배포판으로 교체",
+    "type": "decision",
+    "created": "2026-09-11",
+    "tags": [
+     "결정",
+     "홈서버"
+    ],
+    "project": "홈서버",
+    "status": "open",
+    "revisit": "2026-10-02",
+    "supersedes": "decisions/NAS-OS를-교체하지-않는다.md"
+   },
+   "body": "# NAS OS를 새 배포판으로 교체\n\n## 상황\n선택지를 오래 미뤄 작업이 멈춰 있었어요.\n\n## 고려한 선택지\n- **A안**: 익숙하고 빠름\n- **B안**: 유연하지만 학습 비용\n\n## 결정\nA안으로 간다.\n\n## 이유\n- 지금 규모에선 **단순함**이 이긴다\n- 되돌리기 쉽다\n",
+   "links_out": [],
+   "links_in": []
+  },
+  "decisions/뉴스레터는-격주-발행.md": {
+   "path": "decisions/뉴스레터는-격주-발행.md",
+   "title": "뉴스레터는 격주 발행",
+   "type": "decision",
+   "frontmatter": {
+    "title": "뉴스레터는 격주 발행",
+    "type": "decision",
+    "created": "2026-09-07",
+    "tags": [
+     "결정",
+     "글쓰기"
+    ],
+    "project": "글쓰기",
+    "status": "decided"
+   },
+   "body": "# 뉴스레터는 격주 발행\n\n## 상황\n선택지를 오래 미뤄 작업이 멈춰 있었어요.\n\n## 고려한 선택지\n- **A안**: 익숙하고 빠름\n- **B안**: 유연하지만 학습 비용\n\n## 결정\nA안으로 간다.\n\n## 이유\n- 지금 규모에선 **단순함**이 이긴다\n- 되돌리기 쉽다\n",
+   "links_out": [],
+   "links_in": [
+    "notes/제목-AB-결과-메모.md",
+    "people/박지후-공동-필자.md"
+   ]
+  },
+  "projects/사이드-앱.md": {
+   "path": "projects/사이드-앱.md",
+   "title": "사이드-앱",
+   "type": "project",
+   "frontmatter": {
+    "title": "사이드-앱",
+    "type": "project",
+    "created": "2026-08-01",
+    "tags": [
+     "프로젝트"
+    ],
+    "project": "사이드-앱"
+   },
+   "body": "# 사이드-앱\n\n사이드-앱에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n\n## 연결\n- [[로컬 DB는 SQLite로 간다]]\n",
+   "links_out": [
+    "decisions/로컬-DB는-SQLite로-간다.md"
+   ],
+   "links_in": [
+    "meetings/디자인-리뷰-메모--온보딩-3단계.md",
+    "notes/CoreData-vs-SQLite-비교.md",
+    "notes/SwiftUI-상태-관리-정리.md",
+    "notes/TestFlight-배포-체크리스트.md",
+    "notes/습관-추적에-스트릭-대신-회복-개념.md",
+    "notes/위젯에-오늘의-한-줄-보여주기.md",
+    "sources/오프라인-우선-앱-설계-글-요약.md",
+    "sources/접근성-가이드라인-핵심-10개.md"
+   ]
+  },
+  "projects/홈서버.md": {
+   "path": "projects/홈서버.md",
+   "title": "홈서버",
+   "type": "project",
+   "frontmatter": {
+    "title": "홈서버",
+    "type": "project",
+    "created": "2026-08-01",
+    "tags": [
+     "프로젝트"
+    ],
+    "project": "홈서버"
+   },
+   "body": "# 홈서버\n\n홈서버에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n",
+   "links_out": [],
+   "links_in": [
+    "meetings/가족-사진-보관-방식-논의.md",
+    "notes/Tailscale로-외부-접속-구성.md",
+    "notes/UPS-연동과-안전-종료.md",
+    "notes/ZFS-스냅샷-주기-설정.md",
+    "notes/도커-컴포즈-파일-구조.md",
+    "notes/전력-사용량-대시보드-만들기.md",
+    "sources/3-2-1-백업-원칙-정리.md"
+   ]
+  },
+  "projects/글쓰기.md": {
+   "path": "projects/글쓰기.md",
+   "title": "글쓰기",
+   "type": "project",
+   "frontmatter": {
+    "title": "글쓰기",
+    "type": "project",
+    "created": "2026-08-01",
+    "tags": [
+     "프로젝트"
+    ],
+    "project": "글쓰기"
+   },
+   "body": "# 글쓰기\n\n글쓰기에 대해 정리한 기록이에요.\n\n## 핵심\n- 첫 번째 포인트는 **작게 시작하기**\n- 두 번째는 주기적으로 되돌아보기\n\n### 다음 할 일\n1. 초안 다시 읽기\n2. 관련 노트와 연결하기\n",
+   "links_out": [],
+   "links_in": [
+    "notes/뉴스레터-톤-가이드.md",
+    "notes/독자-질문으로-한-회-채우기.md",
+    "notes/제목-AB-결과-메모.md",
+    "sources/좋은-도입부-쓰는-법-요약.md"
+   ]
+  }
+ },
+ "timeline": [
+  {
+   "date": "2026-09-29",
+   "items": [
+    {
+     "path": "notes/TestFlight-배포-체크리스트.md",
+     "title": "TestFlight 배포 체크리스트",
+     "type": "note",
+     "project": "사이드-앱"
+    },
+    {
+     "path": "notes/전력-사용량-대시보드-만들기.md",
+     "title": "전력 사용량 대시보드 만들기",
+     "type": "idea",
+     "project": "홈서버"
+    },
+    {
+     "path": "notes/뉴스레터-톤-가이드.md",
+     "title": "뉴스레터 톤 가이드",
+     "type": "note",
+     "project": "글쓰기"
+    },
+    {
+     "path": "people/김하늘-디자인-파트너.md",
+     "title": "김하늘 (디자인 파트너)",
+     "type": "person",
+     "project": "사이드-앱"
+    }
+   ]
+  },
+  {
+   "date": "2026-09-28",
+   "items": [
+    {
+     "path": "notes/위젯에-오늘의-한-줄-보여주기.md",
+     "title": "위젯에 오늘의 한 줄 보여주기",
+     "type": "idea",
+     "project": "사이드-앱"
+    },
+    {
+     "path": "notes/독자-질문으로-한-회-채우기.md",
+     "title": "독자 질문으로 한 회 채우기",
+     "type": "idea",
+     "project": "글쓰기"
+    },
+    {
+     "path": "notes/제목-AB-결과-메모.md",
+     "title": "제목 A/B 결과 메모",
+     "type": "note",
+     "project": "글쓰기"
+    },
+    {
+     "path": "notes/읽은-책-한-줄-요약-모으기.md",
+     "title": "읽은 책 한 줄 요약 모으기",
+     "type": "idea",
+     "project": null
+    }
+   ]
+  },
+  {
+   "date": "2026-09-27",
+   "items": [
+    {
+     "path": "notes/ZFS-스냅샷-주기-설정.md",
+     "title": "ZFS 스냅샷 주기 설정",
+     "type": "note",
+     "project": "홈서버"
+    },
+    {
+     "path": "decisions/로컬-DB는-SQLite로-간다.md",
+     "title": "로컬 DB는 SQLite로 간다",
+     "type": "decision",
+     "project": "사이드-앱"
+    }
+   ]
+  },
+  {
+   "date": "2026-09-26",
+   "items": [
+    {
+     "path": "notes/습관-추적에-스트릭-대신-회복-개념.md",
+     "title": "습관 추적에 스트릭 대신 '회복' 개념",
+     "type": "idea",
+     "project": "사이드-앱"
+    }
+   ]
+  },
+  {
+   "date": "2026-09-24",
+   "items": [
+    {
+     "path": "notes/UPS-연동과-안전-종료.md",
+     "title": "UPS 연동과 안전 종료",
+     "type": "note",
+     "project": "홈서버"
+    }
+   ]
+  },
+  {
+   "date": "2026-09-23",
+   "items": [
+    {
+     "path": "notes/주간-회고-템플릿.md",
+     "title": "주간 회고 템플릿",
+     "type": "note",
+     "project": null
+    },
+    {
+     "path": "decisions/온보딩은-3단계로-줄인다.md",
+     "title": "온보딩은 3단계로 줄인다",
+     "type": "decision",
+     "project": "사이드-앱"
+    }
+   ]
+  },
+  {
+   "date": "2026-09-20",
+   "items": [
+    {
+     "path": "notes/SwiftUI-상태-관리-정리.md",
+     "title": "SwiftUI 상태 관리 정리",
+     "type": "note",
+     "project": "사이드-앱"
+    }
+   ]
+  },
+  {
+   "date": "2026-09-19",
+   "items": [
+    {
+     "path": "notes/Tailscale로-외부-접속-구성.md",
+     "title": "Tailscale로 외부 접속 구성",
+     "type": "note",
+     "project": "홈서버"
+    },
+    {
+     "path": "decisions/백업은-외장클라우드-이중화.md",
+     "title": "백업은 외장+클라우드 이중화",
+     "type": "decision",
+     "project": "홈서버"
+    }
+   ]
+  },
+  {
+   "date": "2026-09-18",
+   "items": [
+    {
+     "path": "sources/오프라인-우선-앱-설계-글-요약.md",
+     "title": "오프라인 우선 앱 설계 글 요약",
+     "type": "source",
+     "project": "사이드-앱"
+    }
+   ]
+  },
+  {
+   "date": "2026-09-17",
+   "items": [
+    {
+     "path": "sources/좋은-도입부-쓰는-법-요약.md",
+     "title": "좋은 도입부 쓰는 법 요약",
+     "type": "source",
+     "project": "글쓰기"
+    },
+    {
+     "path": "meetings/공동-필자와-연재-일정-조율.md",
+     "title": "공동 필자와 연재 일정 조율",
+     "type": "meeting",
+     "project": "글쓰기"
+    },
+    {
+     "path": "notes/출퇴근-시간-활용-목록.md",
+     "title": "출퇴근 시간 활용 목록",
+     "type": "note",
+     "project": null
+    }
+   ]
+  },
+  {
+   "date": "2026-09-15",
+   "items": [
+    {
+     "path": "decisions/NAS-OS를-교체하지-않는다.md",
+     "title": "NAS OS를 교체하지 않는다",
+     "type": "decision",
+     "project": "홈서버"
+    }
+   ]
+  },
+  {
+   "date": "2026-09-14",
+   "items": [
+    {
+     "path": "notes/도커-컴포즈-파일-구조.md",
+     "title": "도커 컴포즈 파일 구조",
+     "type": "note",
+     "project": "홈서버"
+    }
+   ]
+  },
+  {
+   "date": "2026-09-13",
+   "items": [
+    {
+     "path": "sources/접근성-가이드라인-핵심-10개.md",
+     "title": "접근성 가이드라인 핵심 10개",
+     "type": "source",
+     "project": "사이드-앱"
+    },
+    {
+     "path": "sources/간헐적-복습-간격-연구-요약.md",
+     "title": "간헐적 복습 간격 연구 요약",
+     "type": "source",
+     "project": null
+    }
+   ]
+  },
+  {
+   "date": "2026-09-12",
+   "items": [
+    {
+     "path": "sources/3-2-1-백업-원칙-정리.md",
+     "title": "3-2-1 백업 원칙 정리",
+     "type": "source",
+     "project": "홈서버"
+    },
+    {
+     "path": "people/이도윤-홈랩-멘토.md",
+     "title": "이도윤 (홈랩 멘토)",
+     "type": "person",
+     "project": "홈서버"
+    }
+   ]
+  },
+  {
+   "date": "2026-09-11",
+   "items": [
+    {
+     "path": "decisions/NAS-OS를-새-배포판으로-교체.md",
+     "title": "NAS OS를 새 배포판으로 교체",
+     "type": "decision",
+     "project": "홈서버"
+    }
+   ]
+  },
+  {
+   "date": "2026-09-10",
+   "items": [
+    {
+     "path": "meetings/디자인-리뷰-메모--온보딩-3단계.md",
+     "title": "디자인 리뷰 메모 — 온보딩 3단계",
+     "type": "meeting",
+     "project": "사이드-앱"
+    }
+   ]
+  },
+  {
+   "date": "2026-09-07",
+   "items": [
+    {
+     "path": "decisions/뉴스레터는-격주-발행.md",
+     "title": "뉴스레터는 격주 발행",
+     "type": "decision",
+     "project": "글쓰기"
+    }
+   ]
+  },
+  {
+   "date": "2026-09-04",
+   "items": [
+    {
+     "path": "notes/CoreData-vs-SQLite-비교.md",
+     "title": "CoreData vs SQLite 비교",
+     "type": "note",
+     "project": "사이드-앱"
+    },
+    {
+     "path": "people/박지후-공동-필자.md",
+     "title": "박지후 (공동 필자)",
+     "type": "person",
+     "project": "글쓰기"
+    }
+   ]
+  },
+  {
+   "date": "2026-09-01",
+   "items": [
+    {
+     "path": "meetings/가족-사진-보관-방식-논의.md",
+     "title": "가족 사진 보관 방식 논의",
+     "type": "meeting",
+     "project": "홈서버"
+    }
+   ]
+  }
+ ],
+ "decisions": {
+  "open": [
+   {
+    "path": "decisions/로컬-DB는-SQLite로-간다.md",
+    "title": "로컬 DB는 SQLite로 간다",
+    "created": "2026-09-27",
+    "revisit": "2026-10-05",
+    "days_left": 5,
+    "project": "사이드-앱",
+    "supersedes": null
+   },
+   {
+    "path": "decisions/백업은-외장클라우드-이중화.md",
+    "title": "백업은 외장+클라우드 이중화",
+    "created": "2026-09-19",
+    "revisit": "2026-10-21",
+    "days_left": 21,
+    "project": "홈서버",
+    "supersedes": null
+   },
+   {
+    "path": "decisions/NAS-OS를-새-배포판으로-교체.md",
+    "title": "NAS OS를 새 배포판으로 교체",
+    "created": "2026-09-11",
+    "revisit": "2026-10-02",
+    "days_left": 2,
+    "project": "홈서버",
+    "supersedes": "decisions/NAS-OS를-교체하지-않는다.md"
+   }
+  ],
+  "decided": [
+   {
+    "path": "decisions/온보딩은-3단계로-줄인다.md",
+    "title": "온보딩은 3단계로 줄인다",
+    "created": "2026-09-23",
+    "revisit": null,
+    "days_left": null,
+    "project": "사이드-앱",
+    "supersedes": null
+   },
+   {
+    "path": "decisions/뉴스레터는-격주-발행.md",
+    "title": "뉴스레터는 격주 발행",
+    "created": "2026-09-07",
+    "revisit": null,
+    "days_left": null,
+    "project": "글쓰기",
+    "supersedes": null
+   }
+  ],
+  "superseded": [
+   {
+    "path": "decisions/NAS-OS를-교체하지-않는다.md",
+    "title": "NAS OS를 교체하지 않는다",
+    "created": "2026-09-15",
+    "revisit": null,
+    "days_left": null,
+    "project": "홈서버",
+    "supersedes": null
+   }
+  ]
+ },
+ "projects": [
+  {
+   "name": "사이드-앱",
+   "note_count": 9,
+   "decision_count": 2,
+   "last_activity": "2026-09-29",
+   "recent": [
+    {
+     "path": "notes/TestFlight-배포-체크리스트.md",
+     "title": "TestFlight 배포 체크리스트",
+     "type": "note"
+    },
+    {
+     "path": "people/김하늘-디자인-파트너.md",
+     "title": "김하늘 (디자인 파트너)",
+     "type": "person"
+    },
+    {
+     "path": "notes/위젯에-오늘의-한-줄-보여주기.md",
+     "title": "위젯에 오늘의 한 줄 보여주기",
+     "type": "idea"
+    }
+   ]
+  },
+  {
+   "name": "홈서버",
+   "note_count": 8,
+   "decision_count": 3,
+   "last_activity": "2026-09-29",
+   "recent": [
+    {
+     "path": "notes/전력-사용량-대시보드-만들기.md",
+     "title": "전력 사용량 대시보드 만들기",
+     "type": "idea"
+    },
+    {
+     "path": "notes/ZFS-스냅샷-주기-설정.md",
+     "title": "ZFS 스냅샷 주기 설정",
+     "type": "note"
+    },
+    {
+     "path": "notes/UPS-연동과-안전-종료.md",
+     "title": "UPS 연동과 안전 종료",
+     "type": "note"
+    }
+   ]
+  },
+  {
+   "name": "글쓰기",
+   "note_count": 6,
+   "decision_count": 1,
+   "last_activity": "2026-09-29",
+   "recent": [
+    {
+     "path": "notes/뉴스레터-톤-가이드.md",
+     "title": "뉴스레터 톤 가이드",
+     "type": "note"
+    },
+    {
+     "path": "notes/독자-질문으로-한-회-채우기.md",
+     "title": "독자 질문으로 한 회 채우기",
+     "type": "idea"
+    },
+    {
+     "path": "notes/제목-AB-결과-메모.md",
+     "title": "제목 A/B 결과 메모",
+     "type": "note"
+    }
+   ]
+  }
+ ]
+}
