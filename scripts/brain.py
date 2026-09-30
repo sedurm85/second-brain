@@ -540,7 +540,7 @@ def default_body(ntype, title):
     if ntype == "person":
         return f"# {title}\n\n## 맥락\n"
     if ntype == "event":
-        return f"# {title}\n\n## 준비\n\n## 메모\n"
+        return f"# {title}\n\n## 준비\n\n## 동선\n\n## 메모\n"
     return f"# {title}\n"
 
 
@@ -2726,11 +2726,22 @@ def parse_steps(body, default_day, year_hint=None):
     return steps
 
 
+def note_sections(body):
+    """'## 제목' 단위로 본문을 나눈다 → {제목: 내용}. 첫 절(H1 등) 키는 ''."""
+    out, cur, buf = {}, "", []
+    for ln in body.split("\n"):
+        if ln.startswith("## "):
+            out[cur] = "\n".join(buf).strip()
+            cur, buf = ln[3:].strip(), []
+        else:
+            buf.append(ln)
+    out[cur] = "\n".join(buf).strip()
+    return out
+
+
 def _event_note_payload(n):
     items = _checklist(n.body)
-    memo = n.body.split("## 메모", 1)[1].strip() if "## 메모" in n.body else ""
-    if "## 동선" in memo or "## 준비" in memo:
-        memo = re.split(r"\n## ", memo)[0]
+    memo = note_sections(n.body).get("메모", "")
     day = str(n.meta.get("event_date") or n.created)[:10]
     return {"path": n.rel, "title": n.title, "checklist": items,
             "done": sum(1 for x in items if x["done"]), "total": len(items),
