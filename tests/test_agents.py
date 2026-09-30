@@ -17,11 +17,12 @@ class AgentsTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
-        self._old = {k: os.environ.get(k) for k in ("HOME", "XDG_CACHE_HOME", "SECOND_BRAIN_VAULT", "SECOND_BRAIN_LAUNCH_AGENTS", "CLAUDE_CONFIG_DIR")}
+        self._old = {k: os.environ.get(k) for k in ("HOME", "XDG_CACHE_HOME", "SECOND_BRAIN_VAULT", "SECOND_BRAIN_LAUNCH_AGENTS", "CLAUDE_CONFIG_DIR", "SECOND_BRAIN_NO_LAUNCHCTL")}
         os.environ["HOME"] = str(self.home)
         os.environ["XDG_CACHE_HOME"] = str(self.home / ".cache")
         os.environ.pop("SECOND_BRAIN_VAULT", None)
         os.environ["CLAUDE_CONFIG_DIR"] = str(self.home / ".claude-x")
+        os.environ["SECOND_BRAIN_NO_LAUNCHCTL"] = "1"  # 실제 launchd를 건드리지 않음
         self.agents = self.home / "agents"
         self.agents.mkdir()
         os.environ["SECOND_BRAIN_LAUNCH_AGENTS"] = str(self.agents)

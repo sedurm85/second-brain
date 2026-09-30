@@ -23,6 +23,7 @@ class RunTest(unittest.TestCase):
         os.environ["XDG_CACHE_HOME"] = str(self.home / ".cache")
         os.environ.pop("SECOND_BRAIN_VAULT", None)
         os.environ["SECOND_BRAIN_RUN_DRY"] = "1"
+        os.environ["SECOND_BRAIN_NO_LAUNCHCTL"] = "1"
         os.environ["SECOND_BRAIN_JOBS_DIR"] = str(self.home / "nojobs")
         agents = self.home / "agents"
         agents.mkdir()

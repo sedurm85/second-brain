@@ -3728,6 +3728,8 @@ def agent_plist(name, spec, brain_path=None, python=None):
 
 
 def _launchctl(*args):
+    if os.environ.get("SECOND_BRAIN_NO_LAUNCHCTL"):  # 테스트·드라이런: 실제 launchd를 건드리지 않는다
+        return 0, "skipped"
     try:
         r = subprocess.run(["launchctl", *args], capture_output=True, text=True, timeout=20)
         return r.returncode, (r.stdout + r.stderr).strip()
