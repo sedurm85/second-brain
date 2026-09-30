@@ -86,3 +86,5 @@
 - 워커 추가: wt/core-actions(음성으로 제안 채택·체크·할 일 완료), wt/serve-agent(대시보드 상주 launchd), wt/apple-notes(Apple Notes 가져오기), wt/search-ops(검색 연산자 type:/tag:/since: + 보드 필터)
 - 가동 중: trip-mode, core-actions, serve-agent, apple-notes, search-ops
 - 사용자 약속: 자정까지 워커 3명 이상 상시 가동, 멈추지 않기
+- 18:36 wt/trip-mode 머지(여행 인식·날짜 탭·짐 목록, 테스트 423). 관리자: 코어 자유 질문 맥락 확장(준비 제안·회고 질문·계획), 제주도 제안을 여행 모드로 재생성(예약·짐·서류 분류), 야간 체계를 메모리에 기록. 워커 추가: wt/people-section(보드 「사람」 섹션)
+- 의미 링크 제안 10쌍 재확인(변동 없음) — 볼트 링크 적용은 사용자 승인 원칙 유지, 목록은 보드 리뷰에서 확인 가능
