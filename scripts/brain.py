@@ -2231,8 +2231,8 @@ def kakao_brief(t):
     own_today = [x for x in (t.get("tasks") or {}).get("today", []) if x.get("kind") == "task"]
     if own_today:
         parts.append(f"할 일 {len(own_today)}: " + ", ".join(x["text"][:14] for x in own_today[:2]) + (" 등" if len(own_today) > 2 else ""))
-    elif tk.get("week") or tk.get("waiting"):
-        parts.append("할 일 오늘 0" + (f"·이번 주 {tk['week']}" if tk.get("week") else "") + (f"·기다림 {tk['waiting']}" if tk.get("waiting") else ""))
+    elif tk.get("week") or tk.get("waiting") or tk.get("someday"):
+        parts.append("할 일 오늘 0" + (f"·이번 주 {tk['week']}" if tk.get("week") else "") + (f"·언젠가 {tk['someday']}" if tk.get("someday") else "") + (f"·기다림 {tk['waiting']}" if tk.get("waiting") else ""))
     if t["revisit"]:
         parts.append("되돌아볼 결정 " + ", ".join(f"{_short(d_['title'])[:16]}({_dleft(d_)})" for d_ in t["revisit"][:2]))
     w = t["this_week"]
