@@ -143,4 +143,7 @@ tags:
 | 프론트매터 없는 마크다운 | 첫 헤딩 → `title`(없으면 파일명), 파일 수정시각 → `created`, `type: note` |
 | Claude Code 메모리(`name`/`description`/`type` 또는 `metadata.type`) | feedback→note, project→project, reference→source, user→person. `description`은 본문 첫 줄 인용으로, `modified` → `created`, 태그 `claude-memory` + 원래 타입. `MEMORY.md` 인덱스는 건너뜀 |
 
+- 위키링크 재작성: 가져오기 전에 원본 전체를 훑어 `원래 이름(메모리 name·파일명) → 새 파일명` 매핑을 만들고, 본문과 프론트매터 `links`의 `[[원래이름]]`을 `[[새파일명]]`으로 바꿔요. 매핑에 없는 링크는 그대로 두고, 이미 잘못 가져온 볼트는 `brain.py relink [--dry-run]`으로 복구해요.
+- 메모리 제목: `name`이 영문 슬러그면 `description` 첫 문장(` — `/` - ` 앞 → 첫 마침표/쉼표 앞 → 40자 절단)을 `title`로 써요. 짧고 구분자 없는 설명이면 기존처럼 `name`에서 만들고, 파일명은 항상 `name` 기준이라 바뀌지 않아요.
+
 원본 파일은 읽기만 하고, 볼트에 같은 `title`+`created` 노트가 있으면 건너뛰어요. `--dry-run`으로 먼저 확인할 수 있어요.

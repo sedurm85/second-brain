@@ -905,6 +905,84 @@ def _memory_title(name, mtype):
     return name
 
 
+_SLUG_NAME_RE = re.compile(r"[A-Za-z0-9_\-]+")
+_SENTENCE_END_RE = re.compile(r"[.,](?=\s|$)")  # v0.2.0·1,300 같은 숫자 내부 구두점은 제외
+
+
+def _description_title(desc):
+    """description 첫 문장: ' — '/' - ' 앞 → 첫 마침표/쉼표 앞 → 40자 초과면 40자 절단.
+    어느 규칙에도 안 걸리는 짧은 설명(구분자 없음·40자 이하)은 None(기존 방식 폴백)."""
+    d = re.sub(r"\s+", " ", str(desc or "").replace("**", "")).strip()
+    if not d:
+        return None
+    head = None
+    for sep in (" — ", " - "):
+        if sep in d:
+            head = d.split(sep, 1)[0]
+            break
+    if head is None:
+        m = _SENTENCE_END_RE.search(d)
+        if m:
+            head = d[:m.start()]
+        elif len(d) > 40:
+            head = d[:40]
+    head = (head or "").strip()
+    return head or None
+
+
+def _memory_display_title(meta, mtype):
+    """메모리 노트 제목. name이 영문 슬러그일 때만 description 첫 문장을 쓴다(한글 name은 그대로)."""
+    name = str(meta.get("name") or "").strip()
+    if _SLUG_NAME_RE.fullmatch(name):
+        t = _description_title(meta.get("description"))
+        if t:
+            return t
+    return _memory_title(name, mtype)
+
+
+def _link_key(target):
+    """위키링크 대상 문자열 → 매핑 조회용 키(.md·경로 제거)."""
+    t = target.strip()
+    if t.endswith(".md"):
+        t = t[:-3]
+    return t.rsplit("/", 1)[-1]
+
+
+def rewrite_wikilinks(text, mapping):
+    """본문의 [[대상|별칭]]/[[대상#헤딩]]에서 대상이 mapping에 있으면 새 stem으로 바꾼다."""
+    def sub(m):
+        inner = m.group(1)
+        cut = min([i for i in (inner.find("|"), inner.find("#")) if i >= 0] or [len(inner)])
+        new = mapping.get(_link_key(inner[:cut]))
+        return f"[[{new}{inner[cut:]}]]" if new else m.group(0)
+    return WIKILINK_RE.sub(sub, text)
+
+
+def _rewrite_link_value(v, mapping):
+    v = str(v)
+    if "[[" in v:
+        return rewrite_wikilinks(v, mapping)
+    new = mapping.get(_link_key(link_target(v)))
+    return wikilink(new) if new else v
+
+
+def rewrite_meta_links(meta, mapping):
+    """프론트매터 links/supersedes 값의 대상을 재작성. 바뀌었으면 True."""
+    changed = False
+    for key in ("links", "supersedes"):
+        if key not in meta or isinstance(meta[key], dict):
+            continue
+        old = meta[key]
+        if isinstance(old, list):
+            new = [_rewrite_link_value(x, mapping) for x in old]
+        else:
+            new = _rewrite_link_value(old, mapping)
+        if new != old:
+            meta[key] = new
+            changed = True
+    return changed
+
+
 def _date_from(value, fallback):
     s = str(value or "")[:10]
     return s if DATE_RE.match(s) else fallback
@@ -919,7 +997,8 @@ def _first_heading(body):
 
 
 def convert_file(path):
-    """원본 파일 → (type, meta, body). 원본은 읽기만 한다."""
+    """원본 파일 → (type, meta, body, info). 원본은 읽기만 한다.
+    info = {"stem_title": 파일 stem 산출용 제목, "names": 이 파일을 가리키던 원래 링크 이름들}."""
     text = path.read_text(encoding="utf-8", errors="replace")
     meta, body = parse_frontmatter(text)
     mtime = date.fromtimestamp(path.stat().st_mtime).isoformat()
@@ -928,12 +1007,14 @@ def convert_file(path):
         ntype = MEMORY_TYPE_MAP.get(mtype, "note")
         md = meta.get("metadata") if isinstance(meta.get("metadata"), dict) else {}
         created = _date_from(meta.get("modified") or md.get("modified"), mtime)
-        new_meta = {"title": _memory_title(meta["name"], mtype), "type": ntype, "created": created,
+        stem_title = _memory_title(meta["name"], mtype)  # stem은 기존 규칙 유지(링크 안정성)
+        new_meta = {"title": _memory_display_title(meta, mtype), "type": ntype, "created": created,
                     "tags": ["claude-memory"] + ([mtype] if mtype else [])}
         desc = str(meta.get("description") or "").strip()
         new_body = (f"> {desc}\n\n" if desc else "") + body.lstrip("\n")
         new_meta["imported_from"] = path.name
-        return ntype, new_meta, new_body
+        names = [x for x in (str(meta["name"]).strip(), path.stem) if x]
+        return ntype, new_meta, new_body, {"stem_title": stem_title, "names": names}
     ntype = str(meta.get("type") or "note")
     if ntype not in ALL_TYPES:
         ntype = "note"
@@ -950,7 +1031,7 @@ def convert_file(path):
     if ntype == "decision" and new_meta.get("status") not in DECISION_STATUSES:
         new_meta["status"] = "open"
     new_meta["imported_from"] = path.name
-    return ntype, new_meta, body
+    return ntype, new_meta, body, {"stem_title": title, "names": [path.stem]}
 
 
 def import_path(vault, src, dry_run=False):
@@ -966,36 +1047,98 @@ def import_path(vault, src, dry_run=False):
         for root, dirs, fs in os.walk(src):
             dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS and not d.startswith("."))
             files += [Path(root) / f for f in sorted(fs) if f.endswith(".md")]
-    seen = {(n.title, n.created) for n in load_notes(vault)}
+    seen = {(n.title, n.created): n.stem for n in load_notes(vault)}
     taken = existing_stems(vault)
     next_dec = next_decision_number(vault)
     result = {"source": str(src), "dry_run": dry_run, "imported": [], "skipped": [], "errors": []}
+    planned = []  # (원본, 대상 경로, type, meta, body)
+    mapping = {}  # 원래 링크 이름(name·파일 stem) → 볼트의 새 stem
     for f in files:
         if f.name == "MEMORY.md" and f.parent.name == "memory":
             result["skipped"].append({"file": str(f), "reason": "메모리 인덱스 파일"})
             continue
         try:
-            ntype, meta, body = convert_file(f)
+            ntype, meta, body, info = convert_file(f)
         except (OSError, UnicodeError) as e:
             result["errors"].append({"file": str(f), "error": str(e)})
             continue
         key = (meta["title"], meta["created"])
         if key in seen:
+            # 이미 가져온 노트여도 다른 파일의 링크가 그 노트를 가리키도록 매핑은 남긴다
+            for nm in info["names"]:
+                if nm != seen[key]:
+                    mapping.setdefault(nm, seen[key])
             result["skipped"].append({"file": str(f), "reason": "중복(title+created)"})
             continue
-        seen.add(key)
         if ntype == "decision":
-            stem = unique_stem(f"{next_dec:03d}-{slugify(meta['title'])}", taken)
+            stem = unique_stem(f"{next_dec:03d}-{slugify(info['stem_title'])}", taken)
             dest = vault / "decisions" / f"{stem}.md"
             next_dec += 1
         else:
-            dest = target_path(vault, ntype, meta["title"], meta["created"], taken)
+            dest = target_path(vault, ntype, info["stem_title"], meta["created"], taken)
+        seen[key] = dest.stem
         taken.add(dest.stem)
+        for nm in info["names"]:
+            if nm != dest.stem:  # 파일명이 바뀐 경우만 재작성 대상
+                mapping.setdefault(nm, dest.stem)
+        planned.append((f, dest, ntype, meta, body))
+    relinked = 0
+    for f, dest, ntype, meta, body in planned:
+        new_body = rewrite_wikilinks(body, mapping)
+        if rewrite_meta_links(meta, mapping) or new_body != body:
+            relinked += 1
         if not dry_run:
-            write_note(dest, meta, body)
+            write_note(dest, meta, new_body)
         result["imported"].append({"file": str(f), "dest": dest.relative_to(vault).as_posix(),
                                    "type": ntype, "title": meta["title"]})
+    result["relinked"] = relinked
     if not dry_run and result["imported"]:
+        build_index(vault)
+    return result
+
+
+MEMORY_PREFIX_RE = re.compile(r"^(?:project|feedback|reference|user)[_\-]", re.I)
+
+
+def _relink_candidates(key):
+    stripped = MEMORY_PREFIX_RE.sub("", key)
+    out = []
+    for c in (stripped.replace("_", "-"), slugify(stripped), key.replace("_", "-"), slugify(key)):
+        if c and c != key and c not in out:
+            out.append(c)
+    return out
+
+
+def relink(vault, dry_run=False):
+    """존재하지 않는 [[대상]]을 `_`→`-`·메모리 타입 접두어 제거로 찾을 수 있으면 재작성."""
+    notes = load_notes(vault)
+    stems = {n.stem for n in notes}
+    titles = {n.title for n in notes}
+    result = {"dry_run": dry_run, "changed": [], "links": 0}
+    for n in notes:
+        targets = [link_target(t) for t in WIKILINK_RE.findall(n.body)]
+        for k in ("links", "supersedes"):
+            targets += [link_target(v) for v in as_list(n.meta.get(k))]
+        mapping = {}
+        for t in targets:
+            key = _link_key(t)
+            if not key or key in stems or key in titles or key in mapping:
+                continue
+            hit = next((c for c in _relink_candidates(key) if c in stems), None)
+            if hit:
+                mapping[key] = hit
+        if not mapping:
+            continue
+        meta = dict(n.meta)
+        new_body = rewrite_wikilinks(n.body, mapping)
+        meta_changed = rewrite_meta_links(meta, mapping)
+        if new_body == n.body and not meta_changed:
+            continue
+        result["changed"].append({"path": n.rel, "map": mapping})
+        result["links"] += len(mapping)
+        if not dry_run:
+            write_note(n.path, meta, new_body)
+    if not dry_run and result["changed"]:
         build_index(vault)
     return result
 
@@ -1660,7 +1803,7 @@ def cmd_import(args):
     mode = " (미리보기, 아무것도 쓰지 않음)" if args.dry_run else ""
     by_type = Counter(x["type"] for x in r["imported"])
     out = [f"가져오기{mode}: 새로 {len(r['imported'])}개 · 건너뜀 {len(r['skipped'])}개 · "
-           f"오류 {len(r['errors'])}개"]
+           f"오류 {len(r['errors'])}개 · 링크 재작성 {r.get('relinked', 0)}개 파일"]
     if by_type:
         out.append("타입별: " + ", ".join(f"{k} {c}" for k, c in sorted(by_type.items())))
     out += [f"- {x['dest']} ← {Path(x['file']).name}" for x in r["imported"][:30]]
@@ -1668,6 +1811,21 @@ def cmd_import(args):
         out.append(f"- ... 외 {len(r['imported']) - 30}개")
     out += [f"! {Path(e['file']).name}: {e['error']}" for e in r["errors"]]
     print("\n".join(out))
+    return EXIT_OK
+
+
+def cmd_relink(args):
+    v = require_vault()
+    r = relink(v, dry_run=args.dry_run)
+    if not args.dry_run and r["changed"]:
+        git_commit(v, f"brain: relink {len(r['changed'])} notes")
+    mode = " (미리보기, 아무것도 쓰지 않음)" if args.dry_run else ""
+    out = [f"링크 복구{mode}: 변경 파일 {len(r['changed'])}개 · 링크 {r['links']}개"]
+    for c in r["changed"][:30]:
+        out.append(f"- {c['path']}: " + ", ".join(f"{a}→{b}" for a, b in sorted(c["map"].items())))
+    if len(r["changed"]) > 30:
+        out.append(f"- ... 외 {len(r['changed']) - 30}개")
+    emit(args, r, "\n".join(out))
     return EXIT_OK
 
 
@@ -1782,6 +1940,9 @@ def build_parser():
     s = add("import", "마크다운 폴더·Obsidian 볼트·Claude Code 메모리 가져오기", cmd_import)
     s.add_argument("path", help="가져올 파일/폴더(홈 아래)")
     s.add_argument("--dry-run", action="store_true", help="쓰지 않고 결과만 미리보기")
+
+    s = add("relink", "끊어진 [[링크]] 복구(`_`→`-`·메모리 타입 접두어 제거로 찾기)", cmd_relink)
+    s.add_argument("--dry-run", action="store_true", help="쓰지 않고 변경 대상만 출력")
 
     s = add("config", "설정 조회/변경", cmd_config)
     s.add_argument("action", choices=("get", "set"), help="get 또는 set")
