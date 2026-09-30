@@ -3,6 +3,8 @@
 
 데이터는 stdout, 로그는 stderr. 종료 코드: 0 성공, 2 입력 오류, 3 볼트 없음.
 """
+from __future__ import annotations
+
 import argparse
 import csv
 import json

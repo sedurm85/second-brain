@@ -302,4 +302,10 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 
 - `brain.py doctor`: 볼트(노트 수·요약 수·정제 대기)·Python·Claude CLI(ask_cmd 실행 파일)·캘린더(소스·ICS 주소 파일 존재)·카톡 헬퍼·자동화 위젯(문제 목록)·알림 에이전트(loaded 수)·캐시 폴더를 ✓/✗ + → 고치는 법으로. 외부 호출 없음. ✗가 있으면 종료 코드 2. brain-setup 스킬 0단계
 - 보드 첫 문장 「챙길 것」에 채택 대기 준비 제안 N건·회고 질문 N개 추가. brain-today 스킬에 준비 제안·회고 질문 줄
+
+## CI
+
+- `.github/workflows/tests.yml`: push(main)·PR마다 ubuntu-latest+macOS-latest에서 `python -m unittest discover -s tests -q` 실행. Python 3.9~3.13 매트릭스, macOS는 비용 절감 위해 3.12·3.13만
+- `scripts/brain.py`에 `from __future__ import annotations` 추가(3.9 방어용). `agenda.py`/`mailer.py`는 이미 있었고 `str | None` 같은 PEP 604 어노테이션도 그 덕에 3.9에서 안전함을 확인
+- match문·zip(strict=)·PEP 695 제네릭 등 3.10+ 전용 런타임 문법은 scripts/*.py에서 발견되지 않음
 - 테스트 180
