@@ -2607,6 +2607,17 @@ def _regex(pat):
         raise BrainError(f"정규식 오류({pat}): {e}")
 
 
+def _int_ge0(v, name):
+    """정수 검증(0 이상). widget update의 lines·last 등에 쓴다."""
+    try:
+        n = int(str(v).strip())
+    except (TypeError, ValueError):
+        raise BrainError(f"{name}은 0 이상 정수여야 해요: {v}")
+    if n < 0:
+        raise BrainError(f"{name}은 0 이상 정수여야 해요: {v}")
+    return n
+
+
 def _num(v):
     """문자열 → 숫자(쉼표·공백 허용). 실패 시 None."""
     s = str(v).strip().replace(",", "")
@@ -4041,7 +4052,41 @@ def cmd_widget(args):
         cfg = load_widgets_config()
         raw = next((x for x in cfg["widgets"] if str(x.get("id")) == wid), {})
         out = dict(w, config=raw)
-        emit(args, out, f"[{w['status'].upper()}] {w['title']} ({w['id']}) · 팀 {w.get('team') or '-'} · {w['summary']}")
+        st = raw.get("status") if isinstance(raw.get("status"), dict) else {}
+        extra = []
+        if st.get("ok_pattern"):
+            extra.append(f"정상패턴:{st['ok_pattern']}")
+        if st.get("fail_pattern"):
+            extra.append(f"실패패턴:{st['fail_pattern']}")
+        if st.get("stale_minutes"):
+            extra.append(f"지연:{st['stale_minutes']}분")
+        if raw.get("lines"):
+            extra.append(f"줄:{raw['lines']}")
+        extra_txt = (" · " + " · ".join(extra)) if extra else ""
+        emit(args, out, f"[{w['status'].upper()}] {w['title']} ({w['id']}) · 팀 {w.get('team') or '-'} · {w['summary']}{extra_txt}")
+        return EXIT_OK
+    if action == "set":
+        wid = args.arg1 or ""
+        if not wid:
+            raise BrainError("widget set <id> key=value [key=value ...]가 필요해요")
+        pairs = ([args.arg2] if args.arg2 else []) + list(args.kv or [])
+        if not pairs:
+            raise BrainError("widget set <id> key=value [key=value ...]가 필요해요")
+        key_map = {"title": "title", "team": "team", "source": "source", "kind": "kind",
+                   "ok": "ok_pattern", "fail": "fail_pattern", "stale": "stale_minutes",
+                   "lines": "lines", "x": "x", "y": "y", "last": "last", "fields": "fields"}
+        patch = {}
+        for pair in pairs:
+            if "=" not in pair:
+                raise BrainError(f"key=value 형식이 아니에요: {pair}")
+            k, v = pair.split("=", 1)
+            k = k.strip().lower()
+            if k not in key_map:
+                raise BrainError(f"모르는 키예요: {k} (title/team/source/kind/ok/fail/stale/lines/x/y/last/fields)")
+            pk = key_map[k]
+            patch[pk] = [s.strip() for s in v.split(",") if s.strip()] if pk == "fields" else v
+        res = widget_action({"action": "update", "id": wid, "patch": patch}, [], cli=True)
+        emit(args, res, f"설정 변경: {res['id']} → {', '.join(patch.keys())}")
         return EXIT_OK
     if action == "add":
         if not args.arg1 or not args.arg2:
@@ -4097,7 +4142,7 @@ def cmd_widget(args):
         res = widget_action({"action": "brief", "id": args.arg1, "force": args.force}, ws, cli=True)
         emit(args, res, f"{res.get('did', '')} · {res.get('issue', '')} · {res.get('mood', '')}")
         return EXIT_OK
-    raise BrainError("action은 add · move · rename · remove · pause · resume · run · brief · show · list 중 하나")
+    raise BrainError("action은 add · move · rename · remove · update(set) · pause · resume · run · brief · show · list 중 하나")
 
 
 def cmd_today(args):
@@ -4764,6 +4809,86 @@ def remove_widget(wid):
     return {"ok": True, "id": wid}
 
 
+def update_widget(wid, patch):
+    """직원 설정 편집: title·team·source·kind·ok_pattern·fail_pattern·stale_minutes·lines·fields·x·y·last 중
+    patch에 있는 키만 바꾼다(add와 같은 검증 규칙). 패턴류는 status 아래에 저장.
+    비서 에이전트(id가 brain-로 시작)는 로그 경로를 스스로 관리하므로 source·kind 변경만 거부(이름·팀·패턴·지연은 허용)."""
+    if not isinstance(patch, dict) or not patch:
+        raise BrainError("patch가 비어 있어요")
+    p, data = _load_widgets_raw()
+    hit = next((w for w in data["widgets"] if isinstance(w, dict) and str(w.get("id")) == wid), None)
+    if not hit:
+        raise BrainError(f"위젯이 없어요: {wid}")
+    is_agent = wid.startswith("brain-")
+
+    if "title" in patch and patch["title"] is not None:
+        title = str(patch["title"]).strip()
+        if not title or len(title) > 40:
+            raise BrainError("직원 이름(제목)은 1~40자여야 해요")
+        hit["title"] = title
+    if "team" in patch and patch["team"] is not None:
+        team = str(patch["team"]).strip()
+        if team and len(team) > 20:
+            raise BrainError("부서(팀) 이름은 1~20자여야 해요")
+        hit["team"] = team
+    if "source" in patch and patch["source"] is not None:
+        if is_agent:
+            raise BrainError("비서 에이전트는 로그 경로를 스스로 관리해요 — source는 못 바꿔요")
+        source = str(patch["source"]).strip()
+        resolve_widget_source(source)  # 홈 밖·상대경로·`..`는 여기서 BrainError로 거부
+        hit["source"] = source
+    if "kind" in patch and patch["kind"] is not None:
+        if is_agent:
+            raise BrainError("비서 에이전트는 종류(kind)를 못 바꿔요")
+        kind = str(patch["kind"]).strip().lower()
+        if kind not in WIDGET_HIRE_KINDS:
+            raise BrainError(f"kind는 {' · '.join(WIDGET_HIRE_KINDS)} 중 하나여야 해요(명령 실행 위젯은 여기서 못 만들어요)")
+        hit["kind"] = kind
+    status = hit.get("status") if isinstance(hit.get("status"), dict) else {}
+    if "ok_pattern" in patch:
+        ok_pattern = str(patch["ok_pattern"] or "").strip() or None
+        _regex(ok_pattern)
+        if ok_pattern:
+            status["ok_pattern"] = ok_pattern
+        else:
+            status.pop("ok_pattern", None)
+    if "fail_pattern" in patch:
+        fail_pattern = str(patch["fail_pattern"] or "").strip() or None
+        _regex(fail_pattern)
+        if fail_pattern:
+            status["fail_pattern"] = fail_pattern
+        else:
+            status.pop("fail_pattern", None)
+    if "stale_minutes" in patch:
+        raw = patch["stale_minutes"]
+        has_val = str(raw if raw is not None else "").strip() != ""
+        stale = _num(raw) if has_val else None
+        if has_val and (stale is None or stale < 0):
+            raise BrainError(f"stale_minutes는 0 이상 숫자여야 해요: {raw}")
+        if stale is not None and stale > 0:
+            status["stale_minutes"] = stale
+        else:
+            status.pop("stale_minutes", None)
+    hit["status"] = status
+    if "lines" in patch and patch["lines"] is not None:
+        hit["lines"] = _int_ge0(patch["lines"], "lines")
+    if "fields" in patch and patch["fields"] is not None:
+        fields = patch["fields"]
+        if not isinstance(fields, list) or not all(isinstance(f, str) and f.strip() for f in fields):
+            raise BrainError("fields는 문자열 리스트여야 해요")
+        hit["fields"] = [f.strip() for f in fields]
+    if "x" in patch and patch["x"] is not None:
+        hit["x"] = str(patch["x"]).strip()
+    if "y" in patch and patch["y"] is not None:
+        hit["y"] = str(patch["y"]).strip()
+    if "last" in patch and patch["last"] is not None:
+        hit["last"] = _int_ge0(patch["last"], "last")
+    _save_widgets_raw(p, data)
+    ws = collect_widgets()
+    widget = next((w for w in ws if w["id"] == wid), None) or hit
+    return {"ok": True, "id": wid, "widget": widget}
+
+
 def widget_action(body, widgets, cli=False):
     """cli=True면 사용자 자신의 터미널에서 부르는 것이라 allow_run/allow_hire 게이트만 건너뛴다.
     그 밖의 검증(홈 경로 규칙·kind 허용 목록·정규식 검사·brain- 접두 퇴사 거부)은 그대로 유지."""
@@ -4796,7 +4921,11 @@ def widget_action(body, widgets, cli=False):
         if not cli:
             _require_hire(cfg)
         return dict(remove_widget(wid), action="remove")
-    raise BrainError("action은 run · pause · resume · brief · add · move · rename · remove 중 하나")
+    if action == "update":
+        if not cli:
+            _require_hire(cfg)
+        return dict(update_widget(wid, body.get("patch") or {}), action="update")
+    raise BrainError("action은 run · pause · resume · brief · add · move · rename · remove · update 중 하나")
 
 
 DATE_IN_LINE_RE = re.compile(r"(20\d{2})-(\d{2})-(\d{2})")
@@ -7627,10 +7756,11 @@ def build_parser():
     add("today", "오늘 브리핑: 일정·되돌아볼 결정·자동화 상태·inbox·이번 주 신규(+카톡용 200자)", cmd_today)
     add("widgets", "위젯(~/.config/second-brain/widgets.json) 상태 조회", cmd_widgets)
 
-    s = add("widget", "위젯(자동화 직원) 채용·이동·이름변경·퇴사·정지·재개·실행·요약·조회·목록. 터미널이라 allow_run/allow_hire를 건너뛴다", cmd_widget)
-    s.add_argument("action", choices=("add", "move", "rename", "remove", "pause", "resume", "run", "brief", "show", "list"))
-    s.add_argument("arg1", nargs="?", help="add: 제목 · 그 외: id")
-    s.add_argument("arg2", nargs="?", help="add: source(홈 경로) · move: 팀 · rename: 새 제목")
+    s = add("widget", "위젯(자동화 직원) 채용·이동·이름변경·설정변경·퇴사·정지·재개·실행·요약·조회·목록. 터미널이라 allow_run/allow_hire를 건너뛴다", cmd_widget)
+    s.add_argument("action", choices=("add", "move", "rename", "set", "remove", "pause", "resume", "run", "brief", "show", "list"))
+    s.add_argument("arg1", nargs="?", help="add: 제목 · set: id · 그 외: id")
+    s.add_argument("arg2", nargs="?", help="add: source(홈 경로) · move: 팀 · rename: 새 제목 · set: key=value")
+    s.add_argument("kv", nargs="*", help="set: key=value ... (title/team/source/kind/ok/fail/stale/lines/x/y/last/fields)")
     s.add_argument("--kind", choices=WIDGET_HIRE_KINDS, default="log", help="add: log · json · csv · markdown(기본 log)")
     s.add_argument("--team", help="add: 소속 팀")
     s.add_argument("--ok", dest="ok_pattern", help="add: 정상 판정 정규식")

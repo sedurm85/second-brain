@@ -150,6 +150,22 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 .hire-row select { background: var(--panel-2); border: 1px solid var(--rule-strong); border-radius: 6px; padding: 4px 8px; color: var(--ink); font: inherit; font-size: 12.5px; }
 .confirm-box { font-size: 12.5px; color: var(--warn); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .hire-err { color: var(--crit); font-size: 12px; }
+/* 상세 패널의 설정 편집(disclosure, 기본 접힘) */
+.dSettings { margin: 10px 0; border-top: 1px solid var(--rule); padding-top: 8px; }
+.dSettings[hidden] { display: none; }
+.dSettings summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--ink-2); padding: 2px 0; user-select: none; }
+.dSettings summary:hover { color: var(--ink); }
+.dSettings form { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.dSettings label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--ink-2); }
+.dSettings input, .dSettings select { background: var(--panel-2); border: 1px solid var(--rule-strong); border-radius: 6px; padding: 6px 8px; color: var(--ink); font: inherit; font-size: 12.5px; width: 100%; }
+.dSettings .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.dSettings .hint { color: var(--muted); font-size: 11px; }
+.dSettings .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 2px; }
+.dSettings .actions button { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--rule-strong); background: var(--panel-2); color: var(--ink); font-size: 12.5px; cursor: pointer; }
+.dSettings .actions button[type="submit"] { background: var(--accent); color: var(--bg); border-color: transparent; font-weight: 600; }
+.dSettings .actions button[type="submit"]:disabled { opacity: .6; cursor: default; }
+.dSettings .err { color: var(--crit); font-size: 12px; min-height: 1em; }
+.dSettings .test-result { font-size: 12px; color: var(--ink-2); min-height: 1em; }
 .desk .st .sc { display: block; color: var(--muted); opacity: .8; }
 .desk.talk .say { white-space: normal; max-width: 180px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 @media (max-width: 720px) { .desk.talk .say { max-width: 140px; -webkit-line-clamp: 2; font-size: 10.5px; } .desk { padding-top: 30px; } }
@@ -232,6 +248,54 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
   <div class="hist" id="dHist"></div>
   <div class="staff-brief" id="dBrief"></div>
   <div class="dHire" id="dHire"></div>
+  <details class="dSettings" id="dSettingsWrap" hidden>
+    <summary>설정</summary>
+    <form id="dSettingsForm">
+      <label for="sTitle">제목
+        <input id="sTitle" name="title" maxlength="40" required autocomplete="off">
+      </label>
+      <div class="row2">
+        <label for="sTeam">팀
+          <input id="sTeam" name="team" list="dSettingsTeamList" maxlength="20" autocomplete="off">
+          <datalist id="dSettingsTeamList"></datalist>
+        </label>
+        <label for="sKind">종류
+          <select id="sKind" name="kind">
+            <option value="log">로그(log)</option>
+            <option value="json">json</option>
+            <option value="csv">csv</option>
+            <option value="markdown">markdown</option>
+          </select>
+        </label>
+      </div>
+      <label for="sSource">로그 경로(source)
+        <input id="sSource" name="source" required autocomplete="off">
+      </label>
+      <div class="row2">
+        <label for="sOk">정상 패턴
+          <input id="sOk" name="ok_pattern" placeholder="예: len:" autocomplete="off">
+        </label>
+        <label for="sFail">실패 패턴
+          <input id="sFail" name="fail_pattern" placeholder="예: Traceback|Error" autocomplete="off">
+        </label>
+      </div>
+      <div class="row2">
+        <label for="sStale">지연 분(선택)
+          <input id="sStale" name="stale_minutes" type="number" min="0" placeholder="비우면 안 바뀜">
+        </label>
+        <label for="sLines">줄 수(선택)
+          <input id="sLines" name="lines" type="number" min="0" placeholder="비우면 안 바뀜">
+        </label>
+      </div>
+      <div class="hint">경로는 홈 디렉토리 아래(~/…)만 가능해요. 비서 에이전트는 로그 경로·종류는 못 바꿔요.</div>
+      <div class="err" id="sErr" role="alert"></div>
+      <div class="actions">
+        <button type="button" id="sTestBtn">패턴 시험</button>
+        <button type="submit">저장</button>
+      </div>
+      <div class="test-result" id="sTestResult" aria-live="polite"></div>
+    </form>
+  </details>
   <pre id="dBody"></pre>
 </aside>
 <div class="modal-backdrop" id="hireBackdrop" hidden></div>
@@ -537,7 +601,10 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
       '<svg viewBox="0 0 ' + W + " " + H + '" width="100%" height="' + H + '" aria-label="날짜별 실행 수">' + bars + "</svg>" +
       '<div class="hist-axis"><span>' + first + "</span><span>" + last + "</span></div>";
   }
-  $("dClose").addEventListener("click", function () { $("detail").classList.remove("open"); $("dHist").innerHTML = ""; $("dHire").innerHTML = ""; });
+  $("dClose").addEventListener("click", function () {
+    $("detail").classList.remove("open"); $("dHist").innerHTML = ""; $("dHire").innerHTML = "";
+    var sw = $("dSettingsWrap"); sw.hidden = true; sw.open = false; delete sw.dataset.wid;
+  });
 
   /* ───────── 부서 이동 · 퇴사 (상세 패널) ───────── */
   function renderHireControls(w) {
@@ -583,6 +650,68 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
         .then(function () { $("detail").classList.remove("open"); $("dHire").innerHTML = ""; load(); })
         .catch(function (err) { var e = $("dHireErr"); if (e) e.textContent = err.message || String(err); });
     }
+  });
+
+  /* ───────── 설정 편집(상세 패널, 기본 접힘) ───────── */
+  var SETTINGS_KINDS = ["log", "json", "csv", "markdown"];
+  function fillSettings(w) {
+    var wrap = $("dSettingsWrap");
+    if (!S.data || !S.data.hireable) { wrap.hidden = true; wrap.open = false; delete wrap.dataset.wid; return; }
+    wrap.hidden = false; wrap.open = false; wrap.dataset.wid = w.id;
+    var teams = (S.data.teams || []).map(function (t) { return t.name; });
+    var dl = $("dSettingsTeamList"); dl.innerHTML = "";
+    teams.forEach(function (t) { var o = document.createElement("option"); o.value = t; dl.appendChild(o); });
+    $("sTitle").value = shortTitle(w.title || w.id);
+    $("sTeam").value = w.team || "";
+    $("sSource").value = w.source || "";
+    $("sKind").value = SETTINGS_KINDS.indexOf(w.kind) !== -1 ? w.kind : "log";
+    var st = w.status_cfg || {};
+    $("sOk").value = st.ok_pattern || "";
+    $("sFail").value = st.fail_pattern || "";
+    $("sStale").value = st.stale_minutes != null ? st.stale_minutes : "";
+    $("sLines").value = "";
+    $("sErr").textContent = "";
+    $("sTestResult").textContent = "";
+  }
+  $("sTestBtn").addEventListener("click", function () {
+    var okPat = $("sOk").value.trim(), failPat = $("sFail").value.trim();
+    var lines = ($("dBody").textContent || "").split("\n").filter(function (l) { return l.trim(); });
+    var res = $("sTestResult");
+    try {
+      var okRe = okPat ? new RegExp(okPat) : null, failRe = failPat ? new RegExp(failPat) : null;
+      var okN = okRe ? lines.filter(function (l) { return okRe.test(l); }).length : 0;
+      var failN = failRe ? lines.filter(function (l) { return failRe.test(l); }).length : 0;
+      res.style.color = ""; res.textContent = "정상 패턴 " + okN + "줄 일치 · 실패 패턴 " + failN + "줄 일치";
+    } catch (e) {
+      res.style.color = "var(--crit)"; res.textContent = "정규식 오류: " + (e.message || e);
+    }
+  });
+  $("dSettingsForm").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var wid = $("dSettingsWrap").dataset.wid; if (!wid) return;
+    var patch = {
+      title: $("sTitle").value.trim(), team: $("sTeam").value.trim(), source: $("sSource").value.trim(),
+      kind: $("sKind").value, ok_pattern: $("sOk").value.trim(), fail_pattern: $("sFail").value.trim()
+    };
+    var stale = $("sStale").value.trim(); if (stale !== "") patch.stale_minutes = stale;
+    var lines = $("sLines").value.trim(); if (lines !== "") patch.lines = lines;
+    var btn = $("dSettingsForm").querySelector("button[type=submit]");
+    btn.disabled = true; btn.textContent = "저장 중…"; $("sErr").textContent = "";
+    widgetAction({ action: "update", id: wid, patch: patch }).then(function () {
+      return load().then(function () {
+        var w = S.widgets[wid];
+        if (!w) return;
+        var d = w.data || {}, body = d.lines ? d.lines.join("\n") : d.text || (d.fields ? Object.keys(d.fields).map(function (k) { return k + ": " + d.fields[k]; }).join("\n") : "") || w.summary;
+        openDetail(w.title, (ST_KO[w.status] || w.status) + " · " + ago(w.age_minutes) + (w.updated_at ? " · " + String(w.updated_at).replace("T", " ").slice(0, 16) : ""), body);
+        if (w.kind === "log") fetch("/api/widget-history?id=" + encodeURIComponent(w.id)).then(function (r) { return r.json(); }).then(renderHistory).catch(function () {});
+        renderBrief(w.id, null);
+        renderHireControls(w);
+        fillSettings(w);
+        $("leadSay").textContent = shortTitle(w.title) + " 님 설정을 바꿨어요. 다음 근무부터 적용돼요.";
+      });
+    }).catch(function (err) {
+      $("sErr").textContent = err.message || String(err);
+    }).then(function () { btn.disabled = false; btn.textContent = "저장"; });
   });
 
   /* ───────── 직원 채용(모달) ───────── */
@@ -637,9 +766,12 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
       if (w.kind === "log") fetch("/api/widget-history?id=" + encodeURIComponent(w.id)).then(function (r) { return r.json(); }).then(renderHistory).catch(function () {});
       renderBrief(w.id, null);
       renderHireControls(w);
+      fillSettings(w);
     } else if (b.getAttribute("data-job")) {
       var j = (S.data.jobs || []).filter(function (x) { return x.id === b.getAttribute("data-job"); })[0]; if (!j) return;
       openDetail("Claude 작업 " + j.id, (j.state || "") + (j.tempo ? " · " + j.tempo : "") + (j.updated_min != null ? " · " + ago(j.updated_min) : ""), (j.detail || "") + (j.recent && j.recent.length ? "\n\n최근:\n" + j.recent.join("\n") : ""));
+      $("dHire").innerHTML = "";
+      var sw = $("dSettingsWrap"); sw.hidden = true; sw.open = false; delete sw.dataset.wid;
     }
   });
   document.addEventListener("keydown", function (ev) {

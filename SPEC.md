@@ -502,6 +502,12 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `lint_vault(vault, today=None)`은 순수 조회(`{"issues","counts","notes"}`)이고, `--fix`는 별도의 `fix_lint_issues(vault, issues)`가 fixable(`tags-not-list`·`link-self`·`link-broken`·`journal-date-mismatch`·`bom-or-crlf`)만 노트당 `write_note` 한 번으로 고친다. 파일 삭제는 절대 하지 않으며, 고친 뒤에는 `build_index` + `git_commit`이 따라붙고 다시 점검해 남은 이슈로 종료 코드(0=이슈 없음, 2=남음)를 정한다
 - `doctor_report`에 "볼트 점검" 항목 한 줄 추가(`lint_vault` 크래시가 doctor 전체를 죽이지 않도록 try/except로 감쌈), fix 안내는 `` `brain.py lint --fix` ``
 - `skills/brain-doctor/SKILL.md`에 "볼트 점검 ✗ → lint --json으로 코드 보여주고, fixable만 승인 후 --fix" 단계 추가
+## v0.30 직원 설정 편집
+
+- `widget_action`에 `update` 액션 추가(`{id, patch}`), 새 헬퍼 `update_widget(wid, patch)`가 `add`와 같은 검증 규칙으로 title·team·source·kind·ok_pattern·fail_pattern·stale_minutes·lines·fields·x·y·last 중 patch에 있는 키만 바꾼다. 패턴·stale은 `status` 아래에, `brain-` 로 시작하는 비서 에이전트는 source·kind만 거부(이름·팀·패턴·지연·줄 수는 허용)
+- CLI `widget set <id> key=value [key=value...]`(`title/team/source/kind/ok/fail/stale/lines/x/y/last/fields`)가 `update`를 호출, `widget show`의 사람이 읽는 줄에 정상/실패 패턴·지연·줄 수를 덧붙임
+- `web/office.html`: 사무실 상세 패널에 기본 접힌 「설정」 disclosure(제목·팀·경로·종류·패턴·지연 분·줄 수 폼)와 「패턴 시험」(브라우저 `RegExp`로 현재 로그 표시분 대조) 버튼 추가, 저장 성공 시 재조회 후 같은 위젯 상세를 다시 열고 팀장 한마디로 알림. `!data.hireable`이면 블록 전체를 숨김
+- 신규 테스트 `tests/test_widget_edit.py` 23건(필드별 업데이트, source/kind/regex 검증, brain- 접두 거부·허용 구분, allow_hire 게이트, CLI 왕복, HTTP 회귀). 전체 스위트 524 통과(기존 501 + 신규 23)
 - 신규 테스트 `tests/test_lint.py` 8건(코드별 검출·개수, report-only 항목은 fixable=False, --fix가 고칠 것만 고치고 재점검하면 이슈가 줄어듦, 파일 미삭제, CLI 종료 코드·`--json`, 깨끗한 볼트는 이슈 0, doctor 연동). 전체 스위트 441 통과(기존 433 + 신규 8)
 ## v0.30 빠른 캡처
 

@@ -1,7 +1,7 @@
 ---
 name: brain-office
-description: 자동화 위젯(사무실 직원)을 대시보드를 열지 않고 대화로 채용·이동·이름변경·퇴사·정지·재개·실행·요약 확인한다. widgets.json의 allow_hire·allow_run 없이도 사용자 자신의 터미널 권한으로 처리한다.
-when_to_use: 사용자가 "사무실 상태", "직원 채용", "자동화 등록해줘", "OO 로그 직원으로 붙여줘", "OO 직원 쉬게 해", "부서 이동", "퇴사 처리", "누가 일하고 있어", "직원 한 줄 요약"이라고 할 때 또는 /second-brain:brain-office 호출 시.
+description: 자동화 위젯(사무실 직원)을 대시보드를 열지 않고 대화로 채용·이동·이름변경·설정변경·퇴사·정지·재개·실행·요약 확인한다. widgets.json의 allow_hire·allow_run 없이도 사용자 자신의 터미널 권한으로 처리한다.
+when_to_use: 사용자가 "사무실 상태", "직원 채용", "자동화 등록해줘", "OO 로그 직원으로 붙여줘", "OO 직원 쉬게 해", "부서 이동", "패턴/지연 시간 바꿔줘", "퇴사 처리", "누가 일하고 있어", "직원 한 줄 요약"이라고 할 때 또는 /second-brain:brain-office 호출 시.
 allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py *) Bash(test *) Bash(ls *) Read
 ---
 
@@ -34,6 +34,18 @@ CLI는 사용자 자신의 터미널이라 대시보드의 `allow_hire`/`allow_r
 - 쉬게 하기(경고 대상에서 뺌, 기록은 유지): `widget pause <id>`
 - 다시 켜기: `widget resume <id>`
 - 퇴사(위젯 등록만 삭제, 로그 파일은 그대로 남음): 실행 전에 "정말 `<id>`를 퇴사 처리할까요? 로그 파일은 지워지지 않아요"로 한 줄 확인부터 받고, 승인 후에만 `widget remove <id>` 실행. `brain-` 로 시작하는 비서 에이전트는 여기서 못 지운다(`agents remove` 안내).
+
+## (c-2) 설정 바꾸기 (패턴 · 지연 · 줄 수 · 경로 등)
+
+이미 등록된 직원의 세부 설정만 바꿀 땐 `widget set <id> key=value [key=value...]`을 쓴다. 키는 `title`(제목) · `team`(팀) · `source`(로그/파일 경로) · `kind`(log·json·csv·markdown) · `ok`(정상 패턴) · `fail`(실패 패턴) · `stale`(지연 분) · `lines`(마지막 N줄) · `x`/`y`/`last`(csv 위젯) · `fields`(json 위젯, 쉼표로 구분).
+
+```
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py widget set marketset stale=1500 ok="완료|OK" fail="실패|Error"
+```
+
+- 바꾸려는 키만 적으면 되고, 나머지 설정은 그대로 유지된다.
+- `source`/`kind`는 `add`와 같은 규칙(홈 경로 안, 명령 실행형 금지)을 그대로 따르고, `brain-` 로 시작하는 비서 에이전트는 이 두 키만 못 바꾼다(이름·팀·패턴·지연은 바꿀 수 있다).
+- 바꾼 뒤 `widget show <id>` 로 반영된 패턴·지연·줄 수를 확인해 보여준다.
 
 ## (d) 한 줄 요약 (팀장 브리핑)
 
