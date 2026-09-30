@@ -411,3 +411,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 기존 「할 일」 규칙에 `tasks.today`의 `kind === "reminder"` 개수를 세어 "미리알림 N개도 있어요" 한 줄 추가. `proactive(t)`에 `suggestions.count`·`retro_questions.length`를 각각 한 문장으로, 기존 `S.spoken` 가드로 페이지 로드당 한 번만 말하게 추가
 - HUD 입력창 placeholder에 "회사 현황 / 누가 일해" 예시 추가
 - Playwright로 데모 서버에서 `#askForm` 제출 → `#caption`에 "성공률"/"첫 기록", "다음 근무" 문구가 실제로 뜨는 것 확인. `python3 -m unittest tests.test_core` 3건 유지
+## v0.28 파서 경계 테스트 (2026-09-30)
+
+- `tests/test_edge_cases.py` 신설(54건): frontmatter 라운드트립(콜론·따옴표·유니코드·BOM·CRLF·본문 속 `---`·닫는 `---` 없음), `slugify`/경로 안전(이모지·구두점만·`..`), `tokenize`/`dash_search`(구두점만·초장문·자모), `parse_tasks`/`TAG_RE`(잘못된 날짜·중첩 괄호·탭 들여쓰기), `agenda.parse_ics`(폴딩·이스케이프·RRULE COUNT/UNTIL·EXDATE·RECURRENCE-ID·CANCELLED), `_tail_lines`, `event_key`(제목에 `|`)
+- 실버그 1건 발견·수정: `scripts/brain.py`의 `_tail_lines`가 "잘린 첫 줄 버림" 로직 때문에 창(max_bytes) 전체가 개행 없는 초대형 한 줄로 채워지면 그 유일한 줄까지 버려 빈 리스트를 반환하던 문제. 뒤에 완전한 줄이 남아 있을 때만 첫 줄을 버리도록 최소 수정(정상적인 다줄 로그의 동작은 그대로)
+- 나머지는 모두 의도된 동작으로 확인: int/bool 값을 넣으면 quoting 규칙상 문자열로 고정되는 것(타입 보존은 애초에 계약 아님), `@due()` 빈 문자열이 None 대신 `""`로 남는 것(둘 다 falsy라 하위 로직엔 영향 없음), DTSTART가 DTEND보다 나중이어도 보정 없이 그대로 반영, BYDAY의 서열(`2MO`) 접두사는 WEEKLY가 아니면 조용히 무시
+- 전체 스위트 328 통과(기존 274 + 신규 54)

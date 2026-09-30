@@ -1894,8 +1894,11 @@ def _tail_lines(path, n, max_bytes=262144):
             f.seek(size - max_bytes)
         raw = f.read()
     lines = [ln.rstrip("\r") for ln in raw.decode("utf-8", errors="replace").split("\n")]
-    if size > max_bytes and lines:
-        lines = lines[1:]  # 잘린 첫 줄 버림
+    if size > max_bytes and len(lines) > 1:
+        rest = lines[1:]
+        if any(ln.strip() for ln in rest):
+            lines = rest  # 잘린 첫 줄 버림(뒤에 완전한 줄이 남아 있을 때만)
+        # else: 창 전체가 한 줄(초대형 로그 줄)뿐이면 버리지 않고 잘린 내용이라도 남긴다
     return [ln for ln in lines if ln.strip()][-n:] if n > 0 else []
 
 
