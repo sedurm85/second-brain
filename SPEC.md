@@ -315,3 +315,10 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `load_notes(vault)`가 요청마다 전체 마크다운을 다시 읽던 것을 프로세스 생존 기간 캐시로 바꿈. 캐시 키는 볼트 지문(노트 디렉토리를 `os.walk`+`stat`만으로 훑은 (경로, mtime_ns, size) 튜플) — 내용을 읽지 않아 매 호출마다 검사해도 저비용이고, 생성·수정·삭제·이름변경(Obsidian 등 외부 편집 포함)을 자동으로 감지한다. `write_note()`가 모든 쓰기 경로(create_note/import/relink/enrich 등)의 단일 통로라 그 안에서 `invalidate_notes_cache()`를 한 번 더 호출해 지문 방식 위에 belt-and-braces를 얹었다
 - 노트 300개 볼트에서 `dash_today()` 측정: 캐시 전 평균 145.6ms/호출·`load_notes` 3회·`Note` 실제 파싱 903회(3×300) → 캐시 후 평균 29.7ms/호출(첫 호출만 콜드 67ms, 이후 4회는 ~20ms)·`load_notes` 호출 수는 여전히 3회지만 파싱은 첫 호출 301회 이후 0회
 - `SECOND_BRAIN_NO_NOTE_CACHE=1`로 캐시를 완전히 끌 수 있다(테스트용). `tests/test_notes_cache.py` 추가(생성/외부 편집/삭제 즉시 반영, 캐시 적중 시 내용 동일+Note 재사용, 환경변수로 비활성화). 테스트 185
+## v0.27 사무실 모바일·접근성 (2026-09-30)
+
+- `web/office.html`에 `max-width: 720px`/`420px` 미디어쿼리 추가: 방(rooms) 1열, 책상(desks) 390px 기준 3열, 말풍선은 책상 폭(92%) 기준 한 줄 말줄임(방 밖으로 안 넘침), 상단바(topbar)는 줄바꿈되어 상태 램프가 아래 줄로, 활동 로그 항목은 줄바꿈 허용
+- 우측 상세(`.detail`) 패널이 720px 이하에서는 하단 바텀시트(전체 폭, `bottom:0`, `max-height:70vh`, 스크롤 가능)로 전환, 닫기·Escape는 기존 그대로 유지
+- `.runbtn`(role=button span)에 Enter/Space 키보드 실행 추가 — 클릭 핸들러를 `runWidget()` 함수로 분리해 클릭·keydown 모두에서 재사용, `.desk`에는 accent색 `:focus-visible` 아웃라인 추가
+- `#leadSay`에 `aria-live="polite"` 추가, `prefers-reduced-motion: reduce`일 때 0.5초 타이핑 프레임 `setInterval`을 아예 예약하지 않도록 JS 가드 추가
+- Playwright로 390×800 뷰포트에서 `document.documentElement.scrollWidth === 390` 확인(상세 패널 오픈 상태 포함), `tests.test_office` 통과 유지

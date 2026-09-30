@@ -66,6 +66,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 .desks { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px 4px; padding: 10px 12px 14px; background-image: repeating-linear-gradient(0deg, transparent 0 22px, rgba(255, 255, 255, .025) 22px 23px), repeating-linear-gradient(90deg, transparent 0 22px, rgba(255, 255, 255, .025) 22px 23px); }
 .desk { position: relative; display: grid; justify-items: center; padding: 22px 4px 8px; border-radius: 8px; background: none; border: 0; text-align: center; min-width: 0; width: 100%; transition: background .15s; }
 .desk:hover, .desk:focus-visible { background: rgba(255, 255, 255, .04); }
+.desk:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; box-shadow: 0 0 0 2px var(--accent) inset; }
 .desk svg { width: 72px; height: 72px; image-rendering: pixelated; shape-rendering: crispEdges; display: block; }
 .desk .nm { font-size: 11.5px; color: var(--ink-2); margin-top: 4px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .desk .st { font-size: 11px; color: var(--muted); }
@@ -117,7 +118,30 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 .hist svg { display: block; }
 .hist-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 2px; }
 .empty { color: var(--muted); font-size: 13px; padding: 14px 16px 18px; }
-@media (max-width: 720px) { .bar { height: auto; flex-wrap: wrap; padding: 8px 0; } .bar .stat { margin-left: 0; } .rooms { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 720px) {
+  .bar { height: auto; flex-wrap: wrap; padding: 8px 0; }
+  .bar .stat { margin-left: 0; }
+  .rooms { grid-template-columns: minmax(0, 1fr); }
+  .room { min-width: 0; }
+  /* 상세 패널: 우측 드로어 대신 하단 바텀시트 */
+  .detail { left: 0; right: 0; bottom: 0; top: auto; width: 100%; max-width: none; max-height: 70vh; border-radius: 14px 14px 0 0; padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 420px) {
+  body { overflow-x: hidden; }
+  .wrap { padding: 0 16px 60px; }
+  .bar { gap: 8px; }
+  .bar h1 { font-size: 15px; }
+  .bar .links { order: 3; width: 100%; }
+  .bar .stat { order: 4; flex-basis: 100%; margin-left: 0; justify-content: space-between; gap: 6px; font-size: 11.5px; }
+  .desks { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 4px; }
+  .desk { min-width: 0; padding-top: 26px; }
+  .desk .nm { font-size: 11px; }
+  /* 말풍선을 책상 폭에 맞춰 한 줄로 잘라 방 밖으로 넘치지 않게 */
+  .say, .desk.talk .say { max-width: 92%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: anywhere; display: block; -webkit-line-clamp: unset; }
+  .feed ul { columns: 1; }
+  .feed li { flex-wrap: wrap; }
+  .feed .k, .feed .s { white-space: normal; overflow: visible; text-overflow: unset; max-width: 100%; overflow-wrap: anywhere; }
+}
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -130,7 +154,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
     <span class="clock" id="clock">--:--</span>
   </header>
   <section class="lead" aria-label="팀장의 한마디">
-    <div class="bubble"><div class="who" id="leadWho">브레인</div><div id="leadSay">사무실을 여는 중이에요…</div></div>
+    <div class="bubble"><div class="who" id="leadWho">브레인</div><div id="leadSay" aria-live="polite">사무실을 여는 중이에요…</div></div>
   </section>
   <main class="rooms" id="rooms" aria-live="polite"></main>
   <section class="feed"><h2>활동 로그</h2><ul id="feed"><li class="empty">불러오는 중</li></ul></section>
@@ -335,18 +359,18 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
       '<div class="hist-axis"><span>' + first + "</span><span>" + last + "</span></div>";
   }
   $("dClose").addEventListener("click", function () { $("detail").classList.remove("open"); $("dHist").innerHTML = ""; });
+  /* runbtn(▶)은 role=button span이라 클릭·Enter/Space 모두에서 같은 동작을 태워야 함 */
+  function runWidget(rb) {
+    var wid = rb.getAttribute("data-run"); rb.textContent = "…";
+    fetch("/api/session").then(function (r) { return r.json(); }).then(function (s) {
+      return fetch("/api/widget", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": s.token }, body: JSON.stringify({ action: "run", id: wid }) })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); });
+    }).then(function () { $("leadSay").textContent = shortTitle((S.widgets[wid] || {}).title) + " 담당에게 지금 일을 시켰어요. 잠시 뒤 타이핑을 시작할 거예요."; setTimeout(load, 5000); })
+      .catch(function (err) { rb.textContent = "▶"; $("leadSay").textContent = "실행 실패: " + (err.message || err); });
+  }
   document.addEventListener("click", function (ev) {
     var rb = ev.target.closest(".runbtn[data-run]");
-    if (rb) {
-      ev.stopPropagation(); ev.preventDefault();
-      var wid = rb.getAttribute("data-run"); rb.textContent = "…";
-      fetch("/api/session").then(function (r) { return r.json(); }).then(function (s) {
-        return fetch("/api/widget", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": s.token }, body: JSON.stringify({ action: "run", id: wid }) })
-          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); });
-      }).then(function () { $("leadSay").textContent = shortTitle((S.widgets[wid] || {}).title) + " 담당에게 지금 일을 시켰어요. 잠시 뒤 타이핑을 시작할 거예요."; setTimeout(load, 5000); })
-        .catch(function (err) { rb.textContent = "▶"; $("leadSay").textContent = "실행 실패: " + (err.message || err); });
-      return;
-    }
+    if (rb) { ev.stopPropagation(); ev.preventDefault(); runWidget(rb); return; }
     var b = ev.target.closest(".desk"); if (!b) return;
     if (b.getAttribute("data-wid")) {
       var w = S.widgets[b.getAttribute("data-wid")]; if (!w) return;
@@ -359,7 +383,13 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
       openDetail("Claude 작업 " + j.id, (j.state || "") + (j.tempo ? " · " + j.tempo : "") + (j.updated_min != null ? " · " + ago(j.updated_min) : ""), (j.detail || "") + (j.recent && j.recent.length ? "\n\n최근:\n" + j.recent.join("\n") : ""));
     }
   });
-  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape") $("detail").classList.remove("open"); });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") { $("detail").classList.remove("open"); return; }
+    if (ev.key === "Enter" || ev.key === " " || ev.key === "Spacebar") {
+      var rb = ev.target.closest(".runbtn[data-run]");
+      if (rb) { ev.preventDefault(); runWidget(rb); }
+    }
+  });
 
   /* ───────── 시계·갱신·프레임 ───────── */
   function tick() { var d = new Date(); $("clock").textContent = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
@@ -374,8 +404,9 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
       el.textContent = wid ? thought(wid, st) : thought("claude-" + jid, st === "run" ? "run" : "ok", "claude");
     });
   }, 20000);
-  // 타이핑 프레임: 일하는 직원만 0.5초마다 스프라이트 교체
-  setInterval(function () {
+  // 타이핑 프레임: 일하는 직원만 0.5초마다 스프라이트 교체 (동작 줄임 요청 시 생략)
+  var reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  if (!reduceMotion) setInterval(function () {
     S.frame++;
     document.querySelectorAll(".desk.run svg, .desk.working svg").forEach(function (el) {
       var b = el.parentNode, id = b.getAttribute("data-wid") || ("claude-" + b.getAttribute("data-job"));
