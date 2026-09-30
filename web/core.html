@@ -71,6 +71,42 @@ button { cursor: pointer; }
   .caption { font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .caption .cursor { animation: none; } }
+/* 설정 시트 */
+.cfg-backdrop { position: fixed; inset: 0; background: rgba(2, 4, 8, .55); opacity: 0; pointer-events: none; transition: opacity .18s; z-index: 60; }
+.cfg-backdrop.open { opacity: 1; pointer-events: auto; }
+.cfg-sheet { position: fixed; z-index: 61; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(.98); width: min(460px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow-y: auto; background: rgba(10, 16, 26, .96); backdrop-filter: blur(16px); border: 1px solid rgba(160, 200, 230, .22); border-radius: 14px; box-shadow: 0 24px 60px rgba(0, 0, 0, .5); opacity: 0; visibility: hidden; transition: opacity .18s, transform .18s; }
+.cfg-sheet.open { opacity: 1; visibility: visible; transform: translate(-50%, -50%); }
+.cfg-head { display: flex; align-items: center; gap: 12px; padding: 18px 18px 12px; border-bottom: 1px solid rgba(160, 200, 230, .15); }
+.cfg-head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.cfg-head .icon-btn { margin-left: auto; height: 32px; width: 32px; flex: none; border-radius: 8px; border: 1px solid rgba(160, 200, 230, .18); background: rgba(255, 255, 255, .04); color: var(--ink-2); display: grid; place-items: center; }
+.cfg-head .icon-btn:hover { color: var(--ink); border-color: var(--accent); }
+.cfg-head .icon-btn svg { width: 16px; height: 16px; }
+.cfg-body { padding: 14px 18px 20px; display: grid; gap: 18px; }
+.cfg-body section { display: grid; gap: 8px; }
+.cfg-body h3 { margin: 0; font-size: 13px; color: var(--ink-2); font-weight: 600; letter-spacing: .02em; }
+.cfg-body label { font-size: 13.5px; color: var(--ink-2); display: grid; gap: 6px; }
+.cfg-body label.inline { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); }
+.cfg-body select, .cfg-body input[type=text] { height: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid rgba(160, 200, 230, .2); background: rgba(255, 255, 255, .04); color: var(--ink); }
+.cfg-body input[type=range] { width: 100%; accent-color: var(--accent); }
+.cfg-row { display: flex; gap: 10px; align-items: center; }
+.cfg-row select { flex: 1; }
+.cfg-row button, .cfg-actions button, .cfg-name-row button { height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid rgba(160, 200, 230, .2); background: rgba(255, 255, 255, .04); color: var(--ink-2); }
+.cfg-row button:hover, .cfg-actions button:hover, .cfg-name-row button:hover { color: var(--ink); border-color: var(--accent); }
+.cfg-name-row { display: flex; gap: 8px; }
+.cfg-name-row input { flex: 1; }
+.cfg-status { font-size: 12.5px; color: var(--muted); min-height: 1.2em; }
+.cfg-caption-fieldset { border: 0; padding: 0; margin: 0; }
+.cfg-caption-fieldset legend { font-size: 13.5px; color: var(--ink-2); padding: 0; margin: 0 0 6px; }
+.cfg-caption-group { display: flex; gap: 14px; flex-wrap: wrap; }
+.cfg-caption-group label { flex-direction: row; align-items: center; gap: 6px; color: var(--ink); font-size: 13.5px; }
+.cfg-actions { display: flex; justify-content: flex-end; padding-top: 4px; border-top: 1px solid rgba(160, 200, 230, .15); }
+.cmd-list { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: 12.5px; }
+.cmd-list dt { font-weight: 600; color: var(--ink); white-space: nowrap; }
+.cmd-list dd { margin: 0; color: var(--muted); }
+.caption.cap-small { font-size: clamp(14px, 1.6vw, 18px); }
+.caption.cap-medium { font-size: clamp(17px, 2vw, 22px); }
+.caption.cap-large { font-size: clamp(21px, 2.6vw, 28px); }
+@media (max-width: 480px) { .cmd-list { grid-template-columns: 1fr; } .cmd-list dt { margin-top: 6px; } }
 </style>
 </head>
 <body>
@@ -90,6 +126,7 @@ button { cursor: pointer; }
       <a href="/office" title="사무실 (직원 캐릭터)" aria-label="사무실">사무실</a>
       <button type="button" id="speakBtn" title="브리핑 읽기" aria-label="브리핑 읽기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg></button>
       <button type="button" id="muteBtn" title="소리 끄기/켜기" aria-label="소리 끄기/켜기" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="m16 9 5 5M21 9l-5 5"/></svg></button>
+      <button type="button" id="settingsBtn" title="설정" aria-label="설정 열기" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></button>
     </div>
     <div class="talk">
       <button type="button" class="mic" id="micBtn" title="말하기" aria-label="말하기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
@@ -99,6 +136,78 @@ button { cursor: pointer; }
 </div>
 <div class="hint" id="hint"></div>
 <style>.linkbtn { background: none; border: 0; padding: 0; color: var(--accent, #4fd1ff); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }</style>
+<div class="cfg-backdrop" id="cfgBackdrop"></div>
+<div class="cfg-sheet" id="cfgSheet" role="dialog" aria-modal="true" aria-labelledby="cfgTitle" aria-hidden="true">
+  <div class="cfg-head">
+    <h2 id="cfgTitle">설정</h2>
+    <button type="button" class="icon-btn" id="cfgClose" aria-label="닫기 (ESC)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
+  <div class="cfg-body">
+    <section>
+      <h3>음성</h3>
+      <label for="cfgVoice">음성 선택</label>
+      <div class="cfg-row">
+        <select id="cfgVoice"></select>
+        <button type="button" id="cfgVoiceTest">들어보기</button>
+      </div>
+    </section>
+    <section>
+      <label for="cfgRate">말 속도 <span id="cfgRateVal"></span></label>
+      <input type="range" id="cfgRate" min="0.8" max="1.4" step="0.05">
+      <label for="cfgPitch">음높이 <span id="cfgPitchVal"></span></label>
+      <input type="range" id="cfgPitch" min="0.8" max="1.2" step="0.05">
+    </section>
+    <section>
+      <label class="inline"><input type="checkbox" id="cfgAutobrief"> 열 때 브리핑 자동 재생</label>
+      <label class="inline"><input type="checkbox" id="cfgProactive"> 선제 알림</label>
+    </section>
+    <section>
+      <h3>비서 이름</h3>
+      <form id="cfgNameForm" class="cfg-name-row">
+        <input type="text" id="cfgName" maxlength="24" aria-label="비서 이름">
+        <button type="submit">저장</button>
+      </form>
+      <div class="cfg-status" id="cfgNameStatus" aria-live="polite"></div>
+    </section>
+    <fieldset class="cfg-caption-fieldset">
+      <legend>자막 크기</legend>
+      <div class="cfg-caption-group">
+        <label><input type="radio" name="cfgCaption" value="small"> 작게</label>
+        <label><input type="radio" name="cfgCaption" value="medium"> 보통</label>
+        <label><input type="radio" name="cfgCaption" value="large"> 크게</label>
+      </div>
+    </fieldset>
+    <section>
+      <h3>명령 도움말</h3>
+      <dl class="cmd-list">
+        <div><dt>오늘</dt><dd>"오늘 뭐 있어?"</dd></div>
+        <div><dt>이번 주</dt><dd>"이번 주 일정 알려줘"</dd></div>
+        <div><dt>내일</dt><dd>"내일 뭐 있어?"</dd></div>
+        <div><dt>다음 일정</dt><dd>"다음 일정은?"</dd></div>
+        <div><dt>자동화</dt><dd>"자동화 상태 어때?"</dd></div>
+        <div><dt>할 일</dt><dd>"할 일 뭐 있어?"</dd></div>
+        <div><dt>할 일 추가</dt><dd>"보고서 할 일로 추가해줘"</dd></div>
+        <div><dt>결정·회고</dt><dd>"되돌아볼 결정 있어?"</dd></div>
+        <div><dt>브리핑</dt><dd>"오늘 브리핑해줘"</dd></div>
+        <div><dt>메일</dt><dd>"메일 왔어?"</dd></div>
+        <div><dt>준비</dt><dd>"면접 준비 뭐 해야 해?"</dd></div>
+        <div><dt>일지</dt><dd>"오늘 뭐 했어?"</dd></div>
+        <div><dt>회사 현황</dt><dd>"회사 현황 어때?"</dd></div>
+        <div><dt>누가 일해</dt><dd>"지금 누가 일해?"</dd></div>
+        <div><dt>기억해</dt><dd>"이거 기억해 줘"</dd></div>
+        <div><dt>제안 채택·무시</dt><dd>"제안 다 채택해줘"</dd></div>
+        <div><dt>체크</dt><dd>"여권 챙겼어"</dd></div>
+        <div><dt>할 일 완료</dt><dd>"보고서 완료했어"</dd></div>
+        <div><dt>보드·사무실</dt><dd>"보드 열어" / "사무실 열어"</dd></div>
+        <div><dt>이름 변경</dt><dd>"이름을 자비스로 바꿔줘"</dd></div>
+        <div><dt>남은 할 일 내일로</dt><dd>"남은 할 일 내일로 넘겨줘"</dd></div>
+      </dl>
+    </section>
+    <div class="cfg-actions">
+      <button type="button" id="cfgReset">설정 초기화</button>
+    </div>
+  </div>
+</div>
 
 <script>
 (function () {
@@ -110,7 +219,26 @@ button { cursor: pointer; }
   /* ───────── 상태 ───────── */
   var S = { state: "idle", level: 0, target: 0, today: null, agenda: null, token: null, name: "브레인",
             muted: localStorage.getItem("brain.muted") === "1", speaking: false, listening: false, thinking: false, lastLine: "",
-            activated: false, seenFails: null, spoken: {}, pendingAction: null };
+            activated: false, seenFails: null, spoken: {}, pendingAction: null, autobriefSpoken: false };
+
+  /* ───────── 설정(로컬 저장) ───────── */
+  var CFG_KEYS = { voice: "brain-core-voice", rate: "brain-core-rate", pitch: "brain-core-pitch", autobrief: "brain-core-autobrief", proactive: "brain-core-proactive", caption: "brain-core-caption" };
+  function lsGet(k, d) { try { var v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 프라이빗 모드 등 저장 불가 */ } }
+  function lsDel(k) { try { localStorage.removeItem(k); } catch (e) { /* 무시 */ } }
+  var CFG = {
+    voice: lsGet(CFG_KEYS.voice, ""),
+    rate: parseFloat(lsGet(CFG_KEYS.rate, "1.02")) || 1.02,
+    pitch: parseFloat(lsGet(CFG_KEYS.pitch, "1.0")) || 1.0,
+    autobrief: lsGet(CFG_KEYS.autobrief, "0") === "1",
+    proactive: lsGet(CFG_KEYS.proactive, "1") !== "0",
+    caption: lsGet(CFG_KEYS.caption, "medium")
+  };
+  function applyCaptionSize() {
+    var el = $("caption"); if (!el) return;
+    el.classList.remove("cap-small", "cap-medium", "cap-large");
+    el.classList.add("cap-" + (CFG.caption || "medium"));
+  }
   var COLORS = {
     idle: ["#4fd1ff", "#3fe0a8", "#0b3a5c"], talk: ["#b48cf0", "#ff9ecf", "#2a1547"],
     think: ["#ffb84d", "#ffd166", "#3a2a0a"], alert: ["#ff5d6c", "#ff8a5b", "#3a0f18"]
@@ -226,8 +354,15 @@ button { cursor: pointer; }
 
   /* ───────── 말하기(TTS)·자막 ───────── */
   var synth = window.speechSynthesis, koVoice = null;
-  function pickVoice() { if (!synth) return; var vs = synth.getVoices(); koVoice = vs.find(function (v) { return /ko/i.test(v.lang) && /Yuna|Siri|Google/i.test(v.name); }) || vs.find(function (v) { return /ko/i.test(v.lang); }) || null; }
+  function pickVoice() {
+    if (!synth) return;
+    var vs = synth.getVoices();
+    var chosen = CFG.voice && vs.find(function (v) { return v.name === CFG.voice; });
+    koVoice = chosen || vs.find(function (v) { return /ko/i.test(v.lang) && /Yuna|Siri|Google/i.test(v.name); }) || vs.find(function (v) { return /ko/i.test(v.lang); }) || null;
+    refreshVoiceOptions();
+  }
   if (synth) { pickVoice(); synth.onvoiceschanged = pickVoice; }
+  applyCaptionSize();
   var typeTimer = 0;
   function caption(text, typed) {
     clearTimeout(typeTimer); S.lastLine = text;
@@ -244,7 +379,7 @@ button { cursor: pointer; }
     synth.cancel();
     lines.forEach(function (line, idx) {
       var u = new SpeechSynthesisUtterance(line);
-      u.lang = "ko-KR"; if (koVoice) u.voice = koVoice; u.rate = 1.02; u.pitch = 1.0;
+      u.lang = "ko-KR"; if (koVoice) u.voice = koVoice; u.rate = CFG.rate; u.pitch = CFG.pitch;
       u.onstart = function () { S.speaking = true; setState("talk"); S.target = .9; };
       u.onboundary = function () { S.target = .6 + Math.random() * .4; };
       u.onend = function () { if (idx === lines.length - 1) { S.speaking = false; S.target = 0; setState(S.thinking ? "think" : "idle"); renderHud(S.today || {}); } };
@@ -541,7 +676,101 @@ button { cursor: pointer; }
   $("speakBtn").addEventListener("click", function () { speak(briefLines(S.today || {})); });
   $("muteBtn").setAttribute("aria-pressed", String(S.muted));
   $("muteBtn").addEventListener("click", function () { S.muted = !S.muted; localStorage.setItem("brain.muted", S.muted ? "1" : "0"); $("muteBtn").setAttribute("aria-pressed", String(S.muted)); if (S.muted && synth) synth.cancel(); caption(S.muted ? "소리를 껐어요. 자막으로만 답해요." : "소리를 켰어요.", false); });
-  addEventListener("keydown", function (ev) { if (ev.code === "Space" && document.activeElement === document.body) { ev.preventDefault(); S.listening ? stopListen() : startListen(); } if (ev.key === "Escape") { synth && synth.cancel(); stopListen(); } });
+  addEventListener("keydown", function (ev) {
+    if (CFGUI.open) {
+      if (ev.key === "Escape") { ev.preventDefault(); closeSettingsSheet(); return; }
+      if (ev.key === "Tab") {
+        var f = $("cfgSheet").querySelectorAll("button, a[href], input, select, textarea");
+        if (!f.length) return;
+        var first = f[0], last = f[f.length - 1];
+        if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+        else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+      }
+      return;
+    }
+    if (ev.code === "Space" && document.activeElement === document.body) { ev.preventDefault(); S.listening ? stopListen() : startListen(); }
+    if (ev.key === "Escape") { synth && synth.cancel(); stopListen(); }
+  });
+
+  /* ───────── 설정 시트 ───────── */
+  var CFGUI = { open: false, lastFocus: null };
+  function refreshVoiceOptions() {
+    var sel = $("cfgVoice"); if (!sel || !synth) return;
+    var vs = synth.getVoices();
+    var ko = vs.filter(function (v) { return /ko/i.test(v.lang); });
+    var list = ko.length ? ko : vs;
+    sel.innerHTML = '<option value="">자동 선택</option>' + list.map(function (v) {
+      return '<option value="' + esc(v.name) + '"' + (v.name === CFG.voice ? " selected" : "") + '>' + esc(v.name) + " (" + esc(v.lang) + ")</option>";
+    }).join("");
+    if (!CFG.voice) sel.value = "";
+  }
+  function setNameStatus(msg) { var el = $("cfgNameStatus"); if (el) el.textContent = msg; }
+  function saveAssistantName(name) {
+    name = (name || "").trim();
+    if (!name) { setNameStatus("이름을 입력해 주세요."); return; }
+    setNameStatus("저장하는 중…");
+    fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify({ assistant_name: name }) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); })
+      .then(function () { S.name = name; $("name").textContent = S.name; document.title = S.name + " · 세컨드브레인"; setNameStatus("저장했어요."); })
+      .catch(function (err) { setNameStatus("저장하지 못했어요. " + (err.message || "")); });
+  }
+  function previewVoice() {
+    if (!synth) return;
+    var name = $("cfgVoice").value, vs = synth.getVoices();
+    var v = name ? vs.find(function (x) { return x.name === name; }) : koVoice;
+    var u = new SpeechSynthesisUtterance("안녕하세요, 이렇게 말할게요.");
+    u.lang = "ko-KR"; if (v) u.voice = v; u.rate = CFG.rate; u.pitch = CFG.pitch;
+    synth.cancel(); synth.speak(u);
+  }
+  function resetSettings() {
+    lsDel(CFG_KEYS.voice); lsDel(CFG_KEYS.rate); lsDel(CFG_KEYS.pitch); lsDel(CFG_KEYS.autobrief); lsDel(CFG_KEYS.proactive); lsDel(CFG_KEYS.caption);
+    CFG.voice = ""; CFG.rate = 1.02; CFG.pitch = 1.0; CFG.autobrief = false; CFG.proactive = true; CFG.caption = "medium";
+    applyCaptionSize(); pickVoice(); fillSettingsSheet();
+  }
+  function fillSettingsSheet() {
+    refreshVoiceOptions();
+    $("cfgRate").value = CFG.rate; $("cfgRateVal").textContent = CFG.rate.toFixed(2);
+    $("cfgPitch").value = CFG.pitch; $("cfgPitchVal").textContent = CFG.pitch.toFixed(2);
+    $("cfgAutobrief").checked = CFG.autobrief;
+    $("cfgProactive").checked = CFG.proactive;
+    $("cfgName").value = S.name || "";
+    setNameStatus("");
+    var radios = document.getElementsByName("cfgCaption");
+    for (var i = 0; i < radios.length; i++) radios[i].checked = radios[i].value === CFG.caption;
+  }
+  function openSettingsSheet() {
+    var sh = $("cfgSheet"), bd = $("cfgBackdrop"); if (!sh) return;
+    CFGUI.lastFocus = document.activeElement; CFGUI.open = true;
+    fillSettingsSheet();
+    sh.classList.add("open"); sh.setAttribute("aria-hidden", "false");
+    if (bd) bd.classList.add("open");
+    $("cfgClose").focus();
+  }
+  function closeSettingsSheet() {
+    var sh = $("cfgSheet"), bd = $("cfgBackdrop"); if (!sh || !CFGUI.open) return;
+    CFGUI.open = false;
+    sh.classList.remove("open"); sh.setAttribute("aria-hidden", "true");
+    if (bd) bd.classList.remove("open");
+    if (CFGUI.lastFocus && CFGUI.lastFocus.focus) CFGUI.lastFocus.focus();
+  }
+  $("settingsBtn").addEventListener("click", openSettingsSheet);
+  $("cfgClose").addEventListener("click", closeSettingsSheet);
+  $("cfgBackdrop").addEventListener("click", closeSettingsSheet);
+  $("cfgVoice").addEventListener("change", function () {
+    CFG.voice = $("cfgVoice").value;
+    if (CFG.voice) lsSet(CFG_KEYS.voice, CFG.voice); else lsDel(CFG_KEYS.voice);
+    pickVoice();
+  });
+  $("cfgVoiceTest").addEventListener("click", previewVoice);
+  $("cfgRate").addEventListener("input", function () { CFG.rate = parseFloat($("cfgRate").value); $("cfgRateVal").textContent = CFG.rate.toFixed(2); lsSet(CFG_KEYS.rate, String(CFG.rate)); });
+  $("cfgPitch").addEventListener("input", function () { CFG.pitch = parseFloat($("cfgPitch").value); $("cfgPitchVal").textContent = CFG.pitch.toFixed(2); lsSet(CFG_KEYS.pitch, String(CFG.pitch)); });
+  $("cfgAutobrief").addEventListener("change", function () { CFG.autobrief = $("cfgAutobrief").checked; lsSet(CFG_KEYS.autobrief, CFG.autobrief ? "1" : "0"); });
+  $("cfgProactive").addEventListener("change", function () { CFG.proactive = $("cfgProactive").checked; lsSet(CFG_KEYS.proactive, CFG.proactive ? "1" : "0"); });
+  $("cfgNameForm").addEventListener("submit", function (ev) { ev.preventDefault(); saveAssistantName($("cfgName").value); });
+  Array.prototype.forEach.call(document.getElementsByName("cfgCaption"), function (r) {
+    r.addEventListener("change", function () { if (r.checked) { CFG.caption = r.value; lsSet(CFG_KEYS.caption, CFG.caption); applyCaptionSize(); } });
+  });
+  $("cfgReset").addEventListener("click", resetSettings);
 
   /* ───────── 데이터 ───────── */
   /* 사무실 KPI·가동 현황: 60초에 한 번만 다시 받아온다 */
@@ -559,6 +788,7 @@ button { cursor: pointer; }
   }
   /* 선제 알림: 새로 실패한 자동화, 15분 안 시작하는 일정·동선을 스스로 말한다. 브라우저 정책상 첫 상호작용 뒤부터 소리가 난다 */
   function proactive(t) {
+    if (!CFG.proactive) return;
     var fails = {};
     (t.top_widgets || []).forEach(function (w) { if (w.status === "fail") fails[w.id] = w; });
     var lines = [];
@@ -579,7 +809,12 @@ button { cursor: pointer; }
     if (lines.length && S.activated) speak(lines);
     else if (lines.length) caption(lines.join(" "), false);
   }
-  function activate() { if (S.activated) return; S.activated = true; $("hint").textContent = "소리가 켜졌어요. 새 실패나 15분 안 일정은 제가 먼저 말할게요."; }
+  function maybeAutobrief() {
+    if (!CFG.autobrief || S.autobriefSpoken || !S.activated || !S.today) return;
+    S.autobriefSpoken = true;
+    speak(briefLines(S.today));
+  }
+  function activate() { if (S.activated) return; S.activated = true; $("hint").textContent = "소리가 켜졌어요. 새 실패나 15분 안 일정은 제가 먼저 말할게요."; maybeAutobrief(); }
   addEventListener("pointerdown", activate, { once: true }); addEventListener("keydown", activate, { once: true });
   function load() {
     return fetch("/api/today").then(function (r) { return r.json(); }).then(function (t) { S.today = t; renderHud(t); proactive(t); return t; });
@@ -590,6 +825,7 @@ button { cursor: pointer; }
     caption(first.slice(0, 2).join(" "), true);
     $("hint").textContent = "화면을 한 번 누르면 소리가 켜져요 · 스페이스나 마이크로 말하기 · 「보드」로 자세히";
     if (params.get("speak") === "1") setTimeout(function () { speak(first); }, 600); // 자동 재생은 브라우저가 막을 수 있어 옵션
+    maybeAutobrief();
   }).catch(function (err) { caption("보드 서버에 연결하지 못했어요. brain.py serve가 켜져 있는지 봐 주세요.", false); console.error(err); });
   fetch("/api/agenda?days=7").then(function (r) { return r.json(); }).then(function (ag) { S.agenda = ag; }).catch(function () {});
   setInterval(function () { if (!document.hidden) load(); }, 60000);

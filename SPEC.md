@@ -483,3 +483,10 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `dash_people(vault, agenda=None, today=None)`(`GET /api/people`): 사람 노트마다 `link_graph` 인접 수(`mentions`)·`attach_event_notes`가 붙인 `people` 필드로 매칭된 가장 가까운 일정(`next_event`)·그 사람 노트에 링크된 최근 노트 최대 3개(`recent_notes`/`last_note`)를 모아 next_event 임박 순(없으면 mentions 내림차순)으로 정렬. `unmatched_attendees`는 매칭 안 된 참석자를 정규화 이름으로 묶어 다음 일정·건수를 붙인다. 라우트는 `dash_tasks`/`/api/agenda`와 같은 패턴으로 `agenda_cache.get(14)` 사본에 `attach_event_notes`를 한 번 더 돌려 `people` 필드를 채운 뒤 넘긴다
 - 보드에 「사람」 섹션 추가(프로젝트 다음): 사람 카드 격자(이름 클릭 → 노트 패널, D-n 배지, 기록 건수, 최근 노트 링크)와 옆 칸에 「아직 노트가 없는 참석자」 목록(행마다 「사람 노트 만들기」 버튼이 기존 `POST /api/person` create 액션을 재사용). `boot()`과 `refreshLive()` 양쪽에서 `loadPeople()`로 불러 최신 상태를 유지
 - 테스트 `tests/test_people_section.py` 3건: 매칭된 사람(기록·다음 만남·최근 노트)과 미매칭 참석자, 사람 노트가 하나도 없는 볼트, `GET /api/people` 응답 모양. 전체 스위트 426 통과(기존 423 + 신규 3)
+## v0.30 코어 설정 시트
+
+- HUD 레일에 톱니(`#settingsBtn`) 버튼 추가, 도움말 시트와 같은 `role="dialog"` + `aria-modal` + Esc 닫힘 + Tab 포커스 트랩(닫으면 열기 전 포커스로 복귀) 패턴으로 `#cfgSheet` 구현. 항목: 음성 선택(`getVoices()` ko-KR 우선, 없으면 전체 + 들어보기 미리듣기) · 말 속도(0.8~1.4) · 음높이(0.8~1.2) · 열 때 브리핑 자동 재생 · 선제 알림 켜기/끄기 · 비서 이름(`POST /api/config`) · 자막 크기(작게/보통/크게) · 설정 초기화
+- 저장 키: `brain-core-voice`·`brain-core-rate`·`brain-core-pitch`·`brain-core-autobrief`·`brain-core-proactive`·`brain-core-caption`(모두 `localStorage`, `try/catch`로 프라이빗 모드 방어). `pickVoice()`가 저장된 음성명을 우선 매칭(음성 목록은 비동기라 `onvoiceschanged`에서도 재적용), `speak()`의 발화 속도·음높이는 하드코딩 대신 저장값을 읽고, `proactive()`는 선제 알림 토글이 꺼져 있으면 즉시 리턴
+- 자동 브리핑은 첫 상호작용(기존 "화면을 한 번 누르면 소리가 켜져요" 게이트) 이후 `S.today`가 준비된 시점에 페이지당 1회만 `briefLines()`를 말하도록 `maybeAutobrief()`로 처리(클릭이 로딩보다 먼저 와도/늦게 와도 정확히 한 번)
+- 명령 도움말: `answer()`의 정규식을 하나씩 대조해 실제로 존재하는 21개 음성 명령(오늘·이번 주·내일·다음 일정·자동화·할 일·할 일 추가·결정·회고·브리핑·메일·준비·일지·회사 현황·누가 일해·기억해·제안 채택·무시·체크·할 일 완료·보드·사무실·이름 변경·남은 할 일 내일로)만 예시 문장과 함께 나열
+- 검증: `node --check`로 `<script>` 문법 확인, `python3 -m unittest tests.test_core -q` 통과(백엔드 무변경). Playwright로 데모 서버(7799)에서 톱니 클릭 → 다이얼로그 노출(`role=dialog`) → 말 속도 슬라이더 조작 시 `localStorage["brain-core-rate"]` 갱신 → Esc로 `aria-hidden=true` 복귀 실측 확인
