@@ -105,3 +105,4 @@
 - 19:45 wt/onboarding-qa 머지(결함 2건 수정: 미리알림 enabled 가드·agents status 모순, --help 4단 그룹, 테스트 583). 워커 추가: wt/board-staff-brief(보드 자동화 섹션에서 실패 원인 한 줄), wt/ask-guard(Claude 호출 동시성·시간당 상한)
 - 19:50 wt/monthly-retro 머지(테스트 596) → 실제 설치(매월 1일 9:10, 내일 첫 실행) + 관리자가 9월 월간 회고를 지금 생성. 가동 중: perf-bench, e2e-suite, board-staff-brief, ask-guard
 - 19:58 wt/e2e-suite 머지(Playwright 16건, 총 612, 실제 버그 0). 워커 추가: wt/decision-review(되돌아볼 결정 유지/변경/종결 UI), wt/board-mobile(보드 390px 섹션별 폴리시). 가동 중: perf-bench, board-staff-brief, ask-guard, decision-review, board-mobile
+- 19:33 wt/board-staff-brief 머지(보드 자동화 행 「왜 실패했어?」). 가동 중: perf-bench, ask-guard, decision-review, board-mobile. 21:30 저녁 마감 에이전트 실행 로그 확인 예정
