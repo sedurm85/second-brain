@@ -99,3 +99,4 @@
 - 19:10 wt/export-html 머지(테스트 522). 실제 볼트 내보내기 107노트 260KB, Orca로 열어 목차·결정·앵커 62개 확인. 워커 추가: wt/inpage-remind(보드 토스트·코어 음성 화면 내 알림). 가동 중: overview-stats, widget-edit, obsidian-init, inpage-remind
 - 19:16 wt/overview-stats 머지(테스트 533, 실볼트: 링크 194·고아 6·요약 94%). 워커 추가: wt/agenda-gaps(일정 사이 여유·이동 경고). 가동 중: widget-edit, obsidian-init, inpage-remind, agenda-gaps
 - 19:22 wt/widget-edit 머지(직원 설정 편집·패턴 시험, 테스트 556). v0.30.0 태그·릴리스
+- 19:30 wt/obsidian-init 머지(테스트 571) → 실볼트에 `obsidian init` 적용(.obsidian 설정·템플릿 4개, 노트 무변경). 워커 추가: wt/perf-bench(1000노트 벤치·느린 API 캐시)
