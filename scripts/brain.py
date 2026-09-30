@@ -42,7 +42,7 @@ DECISION_STATUSES = ("open", "decided", "superseded")
 SKIP_FILES = {"BRAIN.md", "inbox.md"}
 SKIP_DIRS = {".git", ".obsidian", ".trash", "node_modules", "_demo", "_templates", "_attachments"}
 
-DEFAULT_CONFIG = {"vault": "~/brain", "git_autocommit": False, "index_head": 40}
+DEFAULT_CONFIG = {"vault": "~/brain", "git_autocommit": False, "index_head": 40, "claude_hourly_limit": 40}
 
 AUTO_BEGIN = "<!-- brain:auto:begin -->"
 AUTO_END = "<!-- brain:auto:end -->"
@@ -3865,6 +3865,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 d["runnable"] = {k: v["kind"] for k, v in cmds.items()} if allow else {}
                 d["hireable"] = bool(wcfg.get("allow_hire"))
                 return self._json(200, d)
+            if route == "/api/claude-usage":
+                cfg = load_config()
+                limit = cfg.get("claude_hourly_limit")
+                limit = limit if isinstance(limit, int) and limit > 0 else CLAUDE_HOURLY_LIMIT_DEFAULT
+                u = claude_usage(24)
+                u["limit"] = limit
+                u["remaining_hour"] = max(0, limit - u["hour_calls"])
+                return self._json(200, u)
             if route == "/api/mail":
                 return self._json(200, collect_mail_safe(force=bool(qs.get("force"))))
             if route == "/api/widget-history":
@@ -5677,7 +5685,7 @@ def office_schedule(widgets, cron_lines=None, plist_dir=None, today=None, now=No
 
 
 def dash_office(widgets, ps_lines=None, cron_lines=None, now=None):
-    """/api/office 응답: teams, widgets(요약), running, jobs, events, assistant_name, kpis, schedule."""
+    """/api/office 응답: teams, widgets(요약), running, jobs, events, assistant_name, kpis, schedule, claude_usage."""
     cfg = load_config()
     teams = {}
     order = []
@@ -5697,10 +5705,80 @@ def dash_office(widgets, ps_lines=None, cron_lines=None, now=None):
         "assistant_name": str(cfg.get("assistant_name") or "브레인"),
         "kpis": office_kpis(widgets, today=(now.date() if now else None)),
         "schedule": office_schedule(widgets, cron_lines=cron_lines, now=now),
+        "claude_usage": claude_usage(24),
     }
 
 
 ASK_TIMEOUT_SEC = 120
+
+CLAUDE_HOURLY_LIMIT_DEFAULT = 40
+_CLAUDE_LOCK = threading.Lock()  # /api/ask, /api/widget(brief) 등 헤드리스 Claude 호출 두 진입점(ask_assistant, _run_claude_json)이 공유하는 동시성 락
+
+
+def claude_usage_log_path():
+    return agenda_mod.cache_dir() / "claude_usage.jsonl"
+
+
+def claude_usage_log(kind, ok, ms, chars_in, chars_out):
+    """헤드리스 Claude 호출 한 건을 JSONL에 남긴다(대시보드·doctor에서 사용량 표시용). 기록 실패는 호출을 막지 않는다."""
+    try:
+        p = claude_usage_log_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        rec = {"ts": datetime.now().isoformat(timespec="seconds"), "kind": kind, "ok": bool(ok),
+               "ms": int(ms), "chars_in": int(chars_in), "chars_out": int(chars_out)}
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except OSError as e:
+        log(f"경고: Claude 사용량 기록 실패({e})")
+
+
+def _claude_usage_entries(max_lines=4000):
+    p = claude_usage_log_path()
+    if not p.exists():
+        return []
+    out = []
+    for ln in _tail_lines(p, max_lines):
+        try:
+            d = json.loads(ln)
+        except ValueError:
+            continue
+        if isinstance(d, dict) and d.get("ts"):
+            out.append(d)
+    return out
+
+
+def _claude_within(ts, hours, now=None):
+    try:
+        t = datetime.fromisoformat(ts)
+    except (TypeError, ValueError):
+        return False
+    return ((now or datetime.now()) - t) <= timedelta(hours=hours)
+
+
+def _claude_calls_since(hours, entries=None):
+    entries = entries if entries is not None else _claude_usage_entries()
+    now = datetime.now()
+    return sum(1 for e in entries if _claude_within(e.get("ts", ""), hours, now))
+
+
+def claude_usage(hours=24):
+    """최근 hours시간 헤드리스 Claude 호출 요약: {calls, by_kind, last, hour_calls}. hour_calls는 항상 최근 1시간 기준(상한 체크와 같은 창)."""
+    entries = _claude_usage_entries()
+    now = datetime.now()
+    window = [e for e in entries if _claude_within(e.get("ts", ""), hours, now)]
+    by_kind = Counter(e.get("kind", "?") for e in window)
+    return {"calls": len(window), "by_kind": dict(by_kind), "last": entries[-1] if entries else None,
+            "hour_calls": _claude_calls_since(1, entries)}
+
+
+def _claude_check_cap(cfg):
+    """호출 전 시간당 상한 체크. 닿으면 BrainError. SECOND_BRAIN_CLAUDE_UNLIMITED=1이면 우회(매니저 배치용)."""
+    if os.environ.get("SECOND_BRAIN_CLAUDE_UNLIMITED") == "1":
+        return
+    limit = cfg.get("claude_hourly_limit")
+    limit = limit if isinstance(limit, int) and limit > 0 else CLAUDE_HOURLY_LIMIT_DEFAULT
+    if _claude_calls_since(1) >= limit:
+        raise BrainError(f"Claude 호출이 시간당 {limit}회 상한에 닿았어요. 잠시 뒤 다시 시도하거나 `config set claude_hourly_limit <숫자>`로 조정해 주세요.")
 
 
 def ask_assistant(question, today, vault=None):
@@ -5733,16 +5811,27 @@ def ask_assistant(question, today, vault=None):
               f"[오늘 상태]\n{json.dumps(ctx, ensure_ascii=False)}\n\n[기억]\n{json.dumps(memory, ensure_ascii=False)}\n\n[최근 대화]\n{json.dumps(recent, ensure_ascii=False)}\n\n[질문]\n{q}")
     import shlex
     argv = shlex.split(cmd)
+    _claude_check_cap(cfg)
+    if not _CLAUDE_LOCK.acquire(timeout=0):
+        raise BrainError("지금 다른 질문에 답하고 있어요. 잠시 뒤 다시요.")
+    t0 = time.time()
+    ok, out = False, ""
     try:
-        r = subprocess.run(argv, input=prompt, capture_output=True, text=True, timeout=ASK_TIMEOUT_SEC,
-                           env=dict(os.environ, CLAUDE_CONFIG_DIR=os.environ.get("CLAUDE_CONFIG_DIR", "")) if os.environ.get("CLAUDE_CONFIG_DIR") else None)
-    except FileNotFoundError:
-        raise BrainError(f"답변 명령을 찾을 수 없어요: {argv[0]}")
-    except subprocess.TimeoutExpired:
-        raise BrainError("답이 늦어요. 잠시 뒤 다시 물어봐 주세요")
-    if r.returncode != 0:
-        raise BrainError(f"답변 실패: {(r.stderr or r.stdout).strip()[:160]}")
-    ans = " ".join(r.stdout.split())[:600]
+        try:
+            r = subprocess.run(argv, input=prompt, capture_output=True, text=True, timeout=ASK_TIMEOUT_SEC,
+                               env=dict(os.environ, CLAUDE_CONFIG_DIR=os.environ.get("CLAUDE_CONFIG_DIR", "")) if os.environ.get("CLAUDE_CONFIG_DIR") else None)
+        except FileNotFoundError:
+            raise BrainError(f"답변 명령을 찾을 수 없어요: {argv[0]}")
+        except subprocess.TimeoutExpired:
+            raise BrainError("답이 늦어요. 잠시 뒤 다시 물어봐 주세요")
+        if r.returncode != 0:
+            raise BrainError(f"답변 실패: {(r.stderr or r.stdout).strip()[:160]}")
+        out = r.stdout
+        ok = True
+    finally:
+        _CLAUDE_LOCK.release()
+        claude_usage_log("ask", ok, (time.time() - t0) * 1000, len(prompt), len(out))
+    ans = " ".join(out.split())[:600]
     log_core_chat(q, ans)
     return {"answer": ans, "via": argv[0], "memory_used": [m["title"] for m in memory]}
 
@@ -5980,7 +6069,7 @@ def staff_brief(w, today=None, force=False):
               '{"did": "이번 주 한 일 한 문장(60자 이내, 로그에 근거, 숫자 있으면 포함)", "issue": "문제 한 문장(50자 이내, 없으면 \"문제 없음\")", '
               '"mood": "직원 기분 한 마디(15자 이내, 가볍게. 예: 순조로움 / 지쳤어요 / 억울해요)"}\n'
               "로그에 없는 사실을 만들지 마라.\n\n[기록]\n" + json.dumps(ctx, ensure_ascii=False))
-    raw = _run_claude_json(prompt, timeout=180)
+    raw = _run_claude_json(prompt, timeout=180, kind="brief")
     if isinstance(raw, list):
         raw = raw[0] if raw and isinstance(raw[0], dict) else {}
     if not isinstance(raw, dict):
@@ -6633,16 +6722,27 @@ ENRICH_BATCH = 6
 ENRICH_BODY_CHARS = 1600
 
 
-def _run_claude_json(prompt, timeout=240):
-    """헤드리스 Claude(또는 SECOND_BRAIN_ASK_CMD)에 프롬프트를 주고 JSON을 파싱해 돌려준다."""
+def _run_claude_json(prompt, timeout=240, kind="misc"):
+    """헤드리스 Claude(또는 SECOND_BRAIN_ASK_CMD)에 프롬프트를 주고 JSON을 파싱해 돌려준다.
+    kind: enrich|prepare|journal|retro|brief|links 중 하나(사용량 로그 분류용)."""
     import shlex
     cfg = load_config()
     cmd = os.environ.get("SECOND_BRAIN_ASK_CMD") or cfg.get("ask_cmd") or "claude -p --output-format text"
     argv = shlex.split(cmd)
-    r = subprocess.run(argv, input=prompt, capture_output=True, text=True, timeout=timeout)
-    if r.returncode != 0:
-        raise BrainError(f"Claude 호출 실패: {(r.stderr or r.stdout).strip()[:200]}")
-    out = r.stdout.strip()
+    _claude_check_cap(cfg)
+    if not _CLAUDE_LOCK.acquire(timeout=0):
+        raise BrainError("지금 다른 질문에 답하고 있어요. 잠시 뒤 다시요.")
+    t0 = time.time()
+    ok, out = False, ""
+    try:
+        r = subprocess.run(argv, input=prompt, capture_output=True, text=True, timeout=timeout)
+        if r.returncode != 0:
+            raise BrainError(f"Claude 호출 실패: {(r.stderr or r.stdout).strip()[:200]}")
+        out = r.stdout.strip()
+        ok = True
+    finally:
+        _CLAUDE_LOCK.release()
+        claude_usage_log(kind, ok, (time.time() - t0) * 1000, len(prompt), len(out))
     m = re.search(r"```(?:json)?\s*(.*?)```", out, re.S)
     if m:
         out = m.group(1).strip()
@@ -6738,7 +6838,7 @@ def make_journal(vault, today, widgets=None, agenda=None, force=False):
     mat = journal_material(vault, today, widgets, agenda)
     if mat["empty"]:
         return {"empty": True, "material": mat}
-    raw = _run_claude_json(journal_prompt(mat))
+    raw = _run_claude_json(journal_prompt(mat), kind="journal")
     if isinstance(raw, list):
         raw = raw[0] if raw and isinstance(raw[0], dict) else {}
     if not isinstance(raw, dict):
@@ -6979,7 +7079,7 @@ def cmd_retro(args):
     if mat["empty"]:
         emit(args, {"empty": True}, f"지난 {mat['days']}일에 기록이 없어 회고를 쓰지 않았어요")
         return EXIT_OK
-    raw = _run_claude_json(retro_prompt_monthly(mat) if monthly else retro_prompt(mat))
+    raw = _run_claude_json(retro_prompt_monthly(mat) if monthly else retro_prompt(mat), kind="retro")
     if isinstance(raw, list):
         raw = raw[0] if raw and isinstance(raw[0], dict) else {}
     if not isinstance(raw, dict):
@@ -7022,7 +7122,7 @@ def semantic_link_suggestions(vault, r, limit=25):
               "이미 linked에 있는 것, 자기 자신, 단순히 같은 사람이 쓴 것·시기만 비슷한 것은 제외. 확신이 없으면 비운다. "
               'JSON 배열로만 답한다: [{"a": 후보 stem, "b": 카탈로그 stem, "reason": "20자 이내 이유"}]\n\n[카탈로그 stem | 제목 | 요약]\n'
               + "\n".join(catalog) + "\n\n[후보]\n" + json.dumps(items, ensure_ascii=False))
-    raw = _run_claude_json(prompt)
+    raw = _run_claude_json(prompt, kind="links")
     out, dup = [], set()
     for it in raw if isinstance(raw, list) else []:
         if not isinstance(it, dict):
@@ -7159,7 +7259,7 @@ def cmd_prepare(args):
             done.append({"key": e["key"], "items": []})
             continue
         try:
-            raw = _run_claude_json(prepare_prompt(e, e.get("note"), e.get("related")))
+            raw = _run_claude_json(prepare_prompt(e, e.get("note"), e.get("related")), kind="prepare")
             if isinstance(raw, list):
                 raw = raw[0] if raw and isinstance(raw[0], dict) else {}
             items = _norm_suggestion(raw if isinstance(raw, dict) else {}, e, trip=bool(e.get("trip")))
@@ -7289,7 +7389,7 @@ def cmd_enrich(args):
             report.extend({"stem": n.stem, "changed": ["(dry)"]} for n in batch)
             continue
         try:
-            items = _run_claude_json(enrich_prompt(batch, catalog))
+            items = _run_claude_json(enrich_prompt(batch, catalog), kind="enrich")
         except BrainError as e:
             log(f"경고: 배치 {i // ENRICH_BATCH + 1} 실패: {e}")
             failed.extend(n.stem for n in batch)
@@ -7344,6 +7444,10 @@ def doctor_report(today=None):
     exe = ask_cmd.split()[0]
     found = shutil.which(exe) or (os.path.isfile(os.path.expanduser(exe)) and exe)
     add("Claude CLI", bool(found), f"{exe} → {found or '못 찾음'}", None if found else "claude 설치 후 PATH에 넣거나 `config set ask_cmd <경로> -p --output-format text`")
+    cu = claude_usage(24)
+    limit = cfg.get("claude_hourly_limit")
+    limit = limit if isinstance(limit, int) and limit > 0 else CLAUDE_HOURLY_LIMIT_DEFAULT
+    add("Claude 사용량", True, f"Claude 호출 24h {cu['calls']}회 · 시간당 상한 {limit}회 중 {cu['hour_calls']}회 사용", None)
     srcs = agenda_mod.normalize_sources(cfg)
     if srcs:
         add("캘린더", True, ", ".join(f"{s['name']}({s['kind']})" for s in srcs), None)
@@ -8105,6 +8209,8 @@ def cmd_config(args):
         val = str(ensure_in_home(args.value, "볼트 경로"))
     elif args.key == "index_head" and (not isinstance(val, int) or val < 0):
         raise BrainError("index_head는 0 이상의 정수여야 합니다.")
+    elif args.key == "claude_hourly_limit" and (not isinstance(val, int) or val < 1):
+        raise BrainError("claude_hourly_limit은 1 이상의 정수여야 합니다.")
     elif args.key == "git_autocommit" and not isinstance(val, bool):
         raise BrainError("git_autocommit은 true/false여야 합니다.")
     cfg[args.key] = val
@@ -8222,7 +8328,7 @@ def build_parser():
     s = add("config", "설정 조회/변경", cmd_config)
     s.add_argument("action", choices=("get", "set", "init-widgets"),
                    help="get · set · init-widgets(예시 widgets.json 생성, 기존 파일 보존)")
-    s.add_argument("key", nargs="?", help="vault | git_autocommit | index_head | assistant_name | ask_cmd | kakao_cmd | notify_channels | notify_center")
+    s.add_argument("key", nargs="?", help="vault | git_autocommit | index_head | assistant_name | ask_cmd | kakao_cmd | notify_channels | notify_center | claude_hourly_limit")
     s.add_argument("value", nargs="?", help="set할 값")
 
     s = add("notify", "알림 채널 시험 발송(카톡 헬퍼 → 없으면 macOS 알림 센터). 설정 점검용", cmd_notify)

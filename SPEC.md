@@ -577,3 +577,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `dash_search`가 facet용으로 후보 전체를 `search()`에 넘기면서 스니펫까지 전부 계산하던 것을 `with_snippet=False` + 최종 `limit` 슬라이스 뒤로 미룸(자유어 검색 개선분의 대부분이 여기서 나옴)
 - 신규 테스트 `tests/test_perf_cache.py` 9건(캐시 적중 재사용, 노트/로그 편집 즉시 반영, `SECOND_BRAIN_NO_NOTE_CACHE=1` 비활성화). 전체 스위트 580 통과(기존 571 + 신규 9)
 - 문서 `docs/performance.md` 신설(측정법·전후표·캐시별 무효화 방식), `docs/architecture.md` 캐시·성능/테스트 절 갱신
+## v0.31 Claude 호출 가드
+
+- 헤드리스 Claude(내 계정 토큰) 호출은 두 진입점 `ask_assistant`·`_run_claude_json`뿐이라, 이 둘에 시간당 상한과 동시성 락을 같이 걸었다: `claude_hourly_limit`(기본 40) 초과 시 `BrainError`(상한 안내), `SECOND_BRAIN_CLAUDE_UNLIMITED=1`이면 매니저 배치용으로 우회. `_CLAUDE_LOCK`(전역 `threading.Lock`, `acquire(timeout=0)`)로 `/api/ask`·`/api/widget`(brief) 두 탭이 동시에 `claude -p`를 쏘지 못하게 막는다("지금 다른 질문에 답하고 있어요")
+- 호출마다 `claude_usage_log(kind, ok, ms, chars_in, chars_out)`가 `~/.cache/second-brain/claude_usage.jsonl`에 한 줄을 남긴다(kind = ask/enrich/prepare/journal/retro/brief/links). `claude_usage(hours=24)`가 이걸 집계해 `{calls, by_kind, last, hour_calls}`을 만들고, 새 라우트 `GET /api/claude-usage`(+`limit`, `remaining_hour`), `doctor_report`의 "Claude 사용량" 항목, `dash_office`의 `claude_usage` 키가 모두 같은 집계를 재사용한다
+- `web/office.html` Claude 작업실 방 머리에 "오늘 Claude 호출 N회" 한 줄을 추가했다(그 방에만, 자동화 팀 방 루프는 그대로)
+- 테스트 `tests/test_claude_guard.py` 7건(kind별 로그, 상한 3번째 호출 차단·언리밋 우회, 락 충돌 두 경로, `/api/claude-usage` 응답 모양, doctor 항목). 전체 스위트 590 통과(기존 583 + 신규 7)

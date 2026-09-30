@@ -153,7 +153,7 @@ Run `brain.py obsidian init` once before that first open to get per-type graph c
 ## FAQ
 
 **Where is my data?**
-Only in the vault folder on your machine (default `~/brain/`). The plugin itself sends nothing to any server. Free-form questions on the core screen go to headless Claude (your own account) together with today's state and search excerpts. The calendar URL file lives outside the vault under `~/.config/second-brain/`.
+Only in the vault folder on your machine (default `~/brain/`). The plugin itself sends nothing to any server. Free-form questions on the core screen go to headless Claude (your own account) together with today's state and search excerpts. The calendar URL file lives outside the vault under `~/.config/second-brain/`. Headless Claude calls (ask, journal, retro, enrich, etc.) use your own token, so there's an hourly cap (40 by default) — adjust it with `brain.py config set claude_hourly_limit 40`.
 
 **What if I uninstall the plugin?**
 The vault is outside the plugin and stays put. Reinstall and continue.

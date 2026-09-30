@@ -177,7 +177,7 @@ location: 김포공항
 | `~/.config/second-brain/config.json` | 볼트 위치, 캘린더 소스, 비서 이름, `kakao_cmd`, `ask_cmd` |
 | `~/.config/second-brain/google.ics.url` | 구글 캘린더 비공개 ICS 주소 한 줄(권한 600). 볼트·대화에 넣지 않기 |
 | `~/.config/second-brain/widgets.json` | 자동화 위젯(아래) |
-| `~/.cache/second-brain/` | 캘린더·메일 캐시, `suggestions.json`(준비 제안 보류함: pending/accepted/dismissed), `core_log.jsonl`(코어 문답), `staff_briefs.json`(직원 한 줄), `backups/`(zip), `agents/`(launchd 로그) |
+| `~/.cache/second-brain/` | 캘린더·메일 캐시, `suggestions.json`(준비 제안 보류함: pending/accepted/dismissed), `core_log.jsonl`(코어 문답), `staff_briefs.json`(직원 한 줄), `claude_usage.jsonl`(헤드리스 Claude 호출 사용량 로그: 종류·성공여부·소요시간·글자수, 시간당 상한·`/api/claude-usage`·doctor가 이걸 읽어요), `backups/`(zip), `agents/`(launchd 로그) |
 
 제안(준비 체크리스트·동선·링크)은 캐시에만 있다가 사용자가 보드에서 채택하거나 `link A B`를 실행할 때 볼트에 들어가요. 볼트에 자동으로 쓰는 건 일지·회고·`enrich` 정제(요약·태그·링크 필드) 셋뿐이고, 모두 노트 내용을 지우지 않아요.
 

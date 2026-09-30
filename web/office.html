@@ -89,6 +89,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 .room-head h2 { margin: 0; font-size: 14.5px; font-weight: 700; }
 .room-head .n { color: var(--muted); font-size: 12.5px; }
 .room-head .state { margin-left: auto; font-size: 12px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+.room-head .usage { font-size: 11.5px; color: var(--muted); width: 100%; }
 .kpi { flex-basis: 100%; display: flex; align-items: center; gap: 6px; margin-top: 2px; font-size: 11px; color: var(--muted); min-width: 0; flex-wrap: wrap; overflow-wrap: anywhere; }
 .kpi svg { flex: none; display: block; }
 .kpi b { color: var(--ink-2); font-weight: 600; }
@@ -498,8 +499,10 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
         '<span class="state"><span class="lamp ' + lamp + '"></span>' + label + "</span>" + kpiHtml(kpiTeams[team.name]) + "</div><div class=\"desks\">" + members.map(function (w) { return deskHtml(w, running[w.id]); }).join("") + "</div></section>";
     }).join("");
     var jobs = d.jobs || [];
+    var cu = d.claude_usage || {};
     rooms = '<section class="room claude" aria-label="Claude 작업실"><div class="window"></div><div class="room-head"><h2>Claude 작업실</h2><span class="n">' + jobs.length + "명</span>" +
-      '<span class="state"><span class="lamp ' + (jobs.some(function (j) { return j.state === "working"; }) ? "run" : jobs.length ? "good" : "") + '"></span>' + (jobs.some(function (j) { return j.state === "working"; }) ? "일하는 중" : jobs.length ? "대기" : "비어 있음") + "</span></div>" +
+      '<span class="state"><span class="lamp ' + (jobs.some(function (j) { return j.state === "working"; }) ? "run" : jobs.length ? "good" : "") + '"></span>' + (jobs.some(function (j) { return j.state === "working"; }) ? "일하는 중" : jobs.length ? "대기" : "비어 있음") + "</span>" +
+      '<span class="usage">오늘 Claude 호출 ' + (cu.calls || 0) + "회</span></div>" +
       (jobs.length ? '<div class="desks">' + jobs.map(jobDesk).join("") + "</div>" : '<p class="empty">지금 도는 Claude 배경 작업이 없어요. 대화 세션에서 작업을 맡기면 여기 직원이 앉아요.</p>') + "</section>" + rooms;
     $("rooms").innerHTML = rooms;
     // 상단 통계·램프
