@@ -129,7 +129,10 @@ Claude를 부르는 로직(`_run_claude_json`, `ask_assistant`, enrich/prepare/j
 
 ## 캐시·성능
 - **노트 캐시**: `load_notes(vault)`는 볼트 지문(노트 디렉터리를 `os.walk`+`stat`만으로 훑은 `(경로, mtime_ns, size)` 튜플)이 바뀌지 않으면 재파싱하지 않는다. `write_note()`가 모든 노트 쓰기의 단일 통로라 그 안에서 `invalidate_notes_cache()`를 한 번 더 불러 지문 방식 위에 belt-and-braces를 얹었다. `SECOND_BRAIN_NO_NOTE_CACHE=1`로 완전히 끌 수 있다(테스트용).
+- **링크 그래프**(v0.31): `cached_link_graph(vault, notes=None)`가 `link_graph()` 결과를 볼트 지문 기준으로 캐시한다. 지문은 따로 재스캔하지 않고 바로 앞에서 호출된 `load_notes(vault)`가 `_NOTES_CACHE`에 채워 둔 값을 그대로 읽는다(요청당 `os.walk`+`stat` 지문 스캔을 두 번 하지 않으려는 것 — 재스캔이 `link_graph` 계산 자체보다 비쌌다). `build_index`/`lint_vault`/`dash_summary`/`dash_people`/`attach_event_notes`/`retro_material`/`semantic_link_suggestions`가 이 캐시를 쓴다.
+- **검색 인덱스**(v0.31): `cached_search_docs(vault)`가 노트별 BM25 토큰(`tf`, `length`)을 같은 지문 방식으로 캐시해 `search()`가 매 호출 전체 본문을 재토큰화하지 않게 한다. `dash_search`는 추가로 facet 집계용 전체 후보 채점과 스니펫 계산을 분리해(`with_snippet=False` 후 최종 `limit` 슬라이스에만 스니펫 계산) 자유어 검색을 크게 줄였다. 상세 수치는 [docs/performance.md](performance.md).
 - **위젯**: `WidgetCache`, 60초(`WIDGET_CACHE_SEC`). 키는 위젯 설정+idx+allow_commands, 무효화 조건은 소스 mtime 변경 또는 60초 경과.
+- **위젯 로그 이력**(v0.31): `widget_history()`가 `(source, mtime_ns, size, days, today, fail_pattern)` 키로 60초 캐시(`_WIDGET_HISTORY_CACHE`). 로그가 새로 쓰이면 mtime/size가 바뀌어 60초를 기다리지 않고 즉시 무효화된다. `office_kpis`/`dash_report`/`retro_material`이 위젯마다 로그를 반복해서 다시 읽던 비용을 없앤다.
 - **일정**: 이중 캐시. brain.py의 `AgendaCache`가 프로세스 내 60초 캐시(EventKit 호출 억제용)로 감싸고, 그 안에서 부르는 agenda.py의 ICS 파일 캐시가 15분.
 - **메일**: mailer.py `CACHE_SEC = 10 * 60`, 결과를 `mail.json`에 저장, `force=True`로 즉시 재조회.
 - **날씨**: 예보 3시간, 지오코딩은 성공 시 영구 캐시·실패(미스)는 일정 시간 뒤 재시도.
@@ -184,6 +187,8 @@ python3 -m unittest discover -s tests -q
 - launchd를 다루는 테스트는 `SECOND_BRAIN_NO_LAUNCHCTL=1`로 실제 `launchctl` 호출을 막음
 - Claude를 부르는 명령을 테스트할 때는 `SECOND_BRAIN_ASK_CMD`를 stdin으로 재료를 받아 고정 JSON을 출력하는 로컬 가짜 스크립트(`sys.executable + " " + str(fake)`)로 바꿔 실제 Claude CLI를 절대 실행하지 않음
 - `tearDown`에서 건드린 환경변수를 원래 값으로 복원
+
+성능 벤치마크(합성 볼트 1000노트, 캐시 전/후 수치)는 `scripts/bench.py`로 재현하며 자세한 내용은 [docs/performance.md](performance.md) 참고.
 
 ## 야간 자율 근무 체계
 

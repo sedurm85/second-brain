@@ -569,3 +569,11 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 결과는 행 안 `aria-live="polite"` 영역에 인라인으로 뜬다: 한 일(잉크색), 문제(「문제 없음」이 아니면 `--st-crit`), 기분(무채색), 캐시면 "(캐시)"와 「다시」(강제 재조회) 버튼까지. 세션 중 재렌더(60초 자동 갱신)에도 사라지지 않도록 `S.briefs[id]`에 캐시해 두고 행을 다시 그릴 때 그 값을 그대로 넣는다. 로딩 중에는 버튼을 비활성화하고 "읽는 중…"으로 바꿨다가 끝나면 원래 문구로 되돌린다
 - 접근성: 버튼마다 위젯 제목이 들어간 `aria-label`을 붙였고 결과 영역은 `aria-live="polite"`다. 이모지 없이 해요체 유지
 - `node --check`로 `<script>` 문법 확인, `python3 -m unittest tests.test_serve -q` 통과(21건). Playwright로 임시 HOME 데모 서버(`SECOND_BRAIN_ASK_CMD`를 고정 JSON 출력 스텁으로 대체)를 띄워 실패 위젯의 「왜 실패했어?」 클릭 → 인라인에 "테스트"(did)·"문제 없음"(issue) 렌더까지 실제 브라우저로 확인
+## v0.31 성능 벤치·캐시
+
+- 신규 `scripts/bench.py`(임시 HOME에 합성 볼트+위젯 10개, warm-up 1회 후 5회 중앙값): 1000노트 기준 자유어 `dash_search`가 235.72ms → 26.11ms(약 9배), `dash_office`/`office_kpis`가 ~24ms → ~0.1~0.5ms로 줄었다. `dash_today` 69.27ms(<150ms)·`dash_summary` 26.74ms·`dash_report` 37.53ms(둘 다 <200ms) 모두 요구 기준 충족
+- `cached_link_graph(vault, notes=None)`·`cached_search_docs(vault)`·`widget_history`의 60초 mtime/size 캐시(`_WIDGET_HISTORY_CACHE`) 3종 추가. 캐시 키는 볼트 지문(`_NOTES_CACHE`에서 재조회 없이 재사용)과 로그 mtime_ns/size라 편집·로그 쓰기가 재시작 없이 바로 반영된다
+- 지문을 캐시마다 다시 스캔했던 첫 시도는 오히려 `dash_summary`/`build_index`/`lint_vault`를 최대 90% 느리게 만든 걸 벤치로 잡아내 되돌렸다(1000노트 지문 스캔 ~15ms > `link_graph` 자체 ~2ms) — `load_notes`가 이미 채운 지문을 그냥 읽는 방식으로 교체
+- `dash_search`가 facet용으로 후보 전체를 `search()`에 넘기면서 스니펫까지 전부 계산하던 것을 `with_snippet=False` + 최종 `limit` 슬라이스 뒤로 미룸(자유어 검색 개선분의 대부분이 여기서 나옴)
+- 신규 테스트 `tests/test_perf_cache.py` 9건(캐시 적중 재사용, 노트/로그 편집 즉시 반영, `SECOND_BRAIN_NO_NOTE_CACHE=1` 비활성화). 전체 스위트 580 통과(기존 571 + 신규 9)
+- 문서 `docs/performance.md` 신설(측정법·전후표·캐시별 무효화 방식), `docs/architecture.md` 캐시·성능/테스트 절 갱신

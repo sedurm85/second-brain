@@ -476,11 +476,20 @@ def _vault_note_signature(vault):
 
 
 def invalidate_notes_cache(vault=None):
-    """노트 캐시를 비운다. vault가 없으면 전체(모든 볼트), 있으면 해당 볼트만."""
+    """노트 캐시를 비운다. vault가 없으면 전체(모든 볼트), 있으면 해당 볼트만.
+
+    링크 그래프·검색 인덱스 캐시(cached_link_graph/cached_search_docs)도 노트 지문에 얹혀 있어
+    자동으로 무효화되지만, write_note()가 호출할 때마다 여기서 같이 비워 메모리를 늘 작게 둔다.
+    """
     if vault is None:
         _NOTES_CACHE.clear()
+        _LINK_GRAPH_CACHE.clear()
+        _SEARCH_INDEX_CACHE.clear()
     else:
-        _NOTES_CACHE.pop(str(Path(vault).resolve()), None)
+        key = str(Path(vault).resolve())
+        _NOTES_CACHE.pop(key, None)
+        _LINK_GRAPH_CACHE.pop(key, None)
+        _SEARCH_INDEX_CACHE.pop(key, None)
 
 
 def _load_notes_uncached(vault):
@@ -532,6 +541,39 @@ def link_graph(notes):
                 adj[n.stem].add(target)
                 adj[target].add(n.stem)
     return by_stem, adj
+
+
+_LINK_GRAPH_CACHE = {}  # 해석된 볼트 경로 -> (지문, (by_stem, adj)). load_notes와 같은 지문 규약.
+
+
+def cached_link_graph(vault, notes=None):
+    """link_graph(notes) 결과를 볼트 지문 기준으로 캐시한다.
+
+    build_index/lint_vault/dash_summary/dash_people 등 여러 함수가 같은 요청 흐름에서 반복
+    호출해도(폴링 등) 볼트가 안 바뀌었으면 재사용한다. 지문은 _vault_note_signature를 따로
+    또 돌리지 않고, 호출부가 바로 앞에서 이미 부른 load_notes(vault)가 _NOTES_CACHE에 채워
+    둔 값을 그대로 읽는다 — os.walk+stat 지문 스캔을 요청당 두 번 하지 않으려는 것이다
+    (1000노트 기준 지문 스캔 ~15ms인데 link_graph 자체는 ~2ms라 두 번째 스캔이 배보다 배꼽이
+    더 컸다). notes를 안 넘기면 이 함수가 직접 load_notes(vault)를 불러 지문을 채운다.
+
+    반환하는 by_stem/adj는 읽기 전용으로만 쓰인다(모든 호출부가 .get()만 쓰고 대괄호로 새 키를
+    넣지 않음 — 확인됨), 그래서 캐시 히트 시 같은 객체를 그대로 돌려줘도 안전하다.
+    SECOND_BRAIN_NO_NOTE_CACHE=1이면 캐시를 완전히 끈다.
+    """
+    if os.environ.get("SECOND_BRAIN_NO_NOTE_CACHE"):
+        return link_graph(notes if notes is not None else load_notes(vault))
+    key = str(Path(vault).resolve())
+    if notes is None:
+        notes = load_notes(vault)  # _NOTES_CACHE[key]를 최신 지문으로 채운다
+    entry = _NOTES_CACHE.get(key)
+    sig = entry[0] if entry else None
+    cached = _LINK_GRAPH_CACHE.get(key)
+    if sig is not None and cached is not None and cached[0] == sig:
+        return cached[1]
+    graph = link_graph(notes)
+    if sig is not None:
+        _LINK_GRAPH_CACHE[key] = (sig, graph)
+    return graph
 
 
 def write_note(path, meta, body):
@@ -772,8 +814,9 @@ def _resolve_query_date(val, today):
     return (today - timedelta(days=days)).isoformat()
 
 
-def _apply_query_filters(notes, filters, today):
-    """parse_query가 뽑은 filters로 후보 노트를 좁힌다(랭킹 전 단계)."""
+def _apply_query_filters(notes, filters, today, vault=None):
+    """parse_query가 뽑은 filters로 후보 노트를 좁힌다(랭킹 전 단계).
+    vault를 넘기면 orphan 판정용 link_graph를 볼트 지문 기준으로 캐시해서 재사용한다."""
     types_req = filters.get("type")
     tags_req = filters.get("tag")
     project_req = filters.get("project")
@@ -786,7 +829,7 @@ def _apply_query_filters(notes, filters, today):
     orphan_req = filters.get("orphan")
     neg_words = [w.lower() for w in filters.get("neg", [])]
     phrases = [p.lower() for p in filters.get("phrase", [])]
-    adj = link_graph(notes)[1] if orphan_req else None
+    adj = (cached_link_graph(vault, notes) if vault is not None else link_graph(notes))[1] if orphan_req else None
     out = []
     for n in notes:
         if types_req and n.type not in types_req:
@@ -830,9 +873,60 @@ class SearchHits(list):
         self.applied = applied or {}
 
 
-def search(vault, query, ntype=None, project=None, tag=None, since=None, limit=10, today=None, notes=None):
+_SEARCH_INDEX_CACHE = {}  # 해석된 볼트 경로 -> (지문, {rel: (tf Counter, length)}). load_notes와 같은 지문 규약.
+
+
+def _tokenize_doc(n):
+    """노트 1개의 (tf Counter, BM25 length). search()의 매 호출 재토큰화를 피하려고 분리."""
+    tf = Counter()
+    length = 0.0
+    fields = {"title": n.title, "tags": " ".join(n.tags), "summary": str(n.meta.get("summary") or ""), "body": n.body}
+    for f, text in fields.items():
+        toks = tokenize(text)
+        w = FIELD_WEIGHTS[f]
+        for t in toks:
+            tf[t] += w
+        length += w * len(toks)
+    return tf, length
+
+
+def cached_search_docs(vault):
+    """볼트의 모든 노트를 미리 토큰화한 {rel: (tf, length)}를 볼트 지문 기준으로 캐시한다.
+
+    search()가 폴링마다(대시보드 검색창) 매번 전체 노트 본문을 재토큰화하던 것을, 볼트가 안 바뀐
+    동안은 재사용하게 한다. dash_search가 후보 부분집합만 넘겨도(_apply_query_filters 결과)
+    노트별 tf/length는 그대로 재사용 가능하므로 부분집합 여부와 무관하게 항상 전체를 인덱싱해 둔다.
+
+    지문은 _vault_note_signature를 따로 돌리지 않고 _NOTES_CACHE에 있는 값을 읽는다(cached_link_graph와
+    같은 이유 — dash_search는 이 함수를 부르기 전에 이미 load_notes(vault)를 한 번 불렀으므로
+    _NOTES_CACHE[key]가 항상 최신이다). 그 항목이 아직 없으면(예: CLI가 search()를 바로 부른 경우)
+    이 함수가 직접 load_notes(vault)를 한 번 불러 채운다.
+    SECOND_BRAIN_NO_NOTE_CACHE=1이면 캐시를 완전히 끈다(호출부는 None을 받아 매번 새로 토큰화).
+    """
+    if os.environ.get("SECOND_BRAIN_NO_NOTE_CACHE"):
+        return None
+    key = str(Path(vault).resolve())
+    entry = _NOTES_CACHE.get(key)
+    if entry is None:
+        load_notes(vault)
+        entry = _NOTES_CACHE.get(key)
+        if entry is None:  # 볼트가 없거나 비정상 — 캐시 없이 진행
+            return None
+    sig, notes = entry
+    cached = _SEARCH_INDEX_CACHE.get(key)
+    if cached is not None and cached[0] == sig:
+        return cached[1]
+    docs = {n.rel: _tokenize_doc(n) for n in notes}
+    _SEARCH_INDEX_CACHE[key] = (sig, docs)
+    return docs
+
+
+def search(vault, query, ntype=None, project=None, tag=None, since=None, limit=10, today=None, notes=None,
+           with_snippet=True):
     """notes를 넘기면(예: dash_search의 연산자 필터링 결과) ntype/project/tag/since 인자 대신
-    그 후보 목록을 그대로 채점한다 — 기존 호출부(notes=None)는 동작이 그대로다."""
+    그 후보 목록을 그대로 채점한다 — 기존 호출부(notes=None)는 동작이 그대로다.
+    with_snippet=False면 snippet 키를 안 채운다(호출부가 최종 슬라이스에만 나중에 채우고 싶을 때).
+    """
     today = today or date.today()
     qtoks = tokenize(query)
     if not qtoks:
@@ -851,17 +945,11 @@ def search(vault, query, ntype=None, project=None, tag=None, since=None, limit=1
             if since and n.created < since:
                 continue
             notes.append(n)
+    doc_cache = cached_search_docs(vault) if vault else None
     docs = []
     for n in notes:
-        tf = Counter()
-        length = 0.0
-        fields = {"title": n.title, "tags": " ".join(n.tags), "summary": str(n.meta.get("summary") or ""), "body": n.body}
-        for f, text in fields.items():
-            toks = tokenize(text)
-            w = FIELD_WEIGHTS[f]
-            for t in toks:
-                tf[t] += w
-            length += w * len(toks)
+        cached_doc = doc_cache.get(n.rel) if doc_cache is not None else None
+        tf, length = cached_doc if cached_doc is not None else _tokenize_doc(n)
         docs.append((n, tf, length))
     N = len(docs)
     if N == 0:
@@ -873,7 +961,7 @@ def search(vault, query, ntype=None, project=None, tag=None, since=None, limit=1
             if tf.get(t):
                 df[t] += 1
     k1, b = 1.2, 0.75
-    results = []
+    results = []  # (dict, Note) — snippet은 정렬·limit 자르기 다음에야, 살아남은 항목에만 계산한다
     for n, tf, dl in docs:
         score = 0.0
         for t in set(qtoks):
@@ -887,10 +975,16 @@ def search(vault, query, ntype=None, project=None, tag=None, since=None, limit=1
         score *= recency_factor(n.created, today)
         d = n.to_dict()
         d["score"] = round(score, 4)
+        results.append((d, n))
+    results.sort(key=lambda pair: (-pair[0]["score"], pair[0]["path"]))
+    results = results[:limit]
+    if not with_snippet:
+        return [d for d, _ in results]
+    out = []
+    for d, n in results:
         d["snippet"] = _snippet(n.body, qtoks)
-        results.append(d)
-    results.sort(key=lambda r: (-r["score"], r["path"]))
-    return results[:limit]
+        out.append(d)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -946,7 +1040,7 @@ def build_index(vault, today=None):
     today = today or date.today()
     notes = load_notes(vault)
     update_project_hubs(vault, notes)
-    by_stem, adj = link_graph(notes)
+    by_stem, adj = cached_link_graph(vault, notes)
     t = today.isoformat()
     out = [
         "# BRAIN — 세컨드브레인 인덱스",
@@ -1015,7 +1109,7 @@ def review(vault, days=7, today=None):
     since = (today - timedelta(days=days)).isoformat()
     t = today.isoformat()
     notes = load_notes(vault)
-    by_stem, adj = link_graph(notes)
+    by_stem, adj = cached_link_graph(vault, notes)
     new = [n.to_dict() for n in sorted(notes, key=lambda n: (n.created, n.rel), reverse=True)
            if n.created >= since]
     due = [dict(n.to_dict(), revisit=str(n.meta.get("revisit"))) for n in notes
@@ -1474,7 +1568,7 @@ def lint_vault(vault, today=None):
     notes = load_notes(vault)
     stems = {n.stem for n in notes}
     titles = {n.title for n in notes}
-    by_stem, adj = link_graph(notes)
+    by_stem, adj = cached_link_graph(vault, notes)
     taken = existing_stems(vault)
     issues = []
 
@@ -1968,9 +2062,10 @@ def _journal_streak(notes, today):
     return {"current": current, "best": best}
 
 
-def _dash_stats(notes, today):
+def _dash_stats(notes, today, vault=None):
     """개요 대시보드용 12주 활동·타입 분포·태그·결정·링크·요약 커버리지 통계.
-    load_notes로 이미 캐시된 notes를 그대로 받아 한 번씩 순회하는 저비용 집계다."""
+    load_notes로 이미 캐시된 notes를 그대로 받아 한 번씩 순회하는 저비용 집계다.
+    vault를 넘기면 link_graph를 볼트 지문 기준으로 캐시해서 재사용한다."""
     week_start = today - timedelta(days=today.weekday())
     weeks = []
     for i in range(11, -1, -1):
@@ -2006,7 +2101,7 @@ def _dash_stats(notes, today):
             if days_left is not None and days_left <= 0:
                 decisions["due"] += 1
 
-    _, adj = link_graph(notes)
+    _, adj = cached_link_graph(vault, notes) if vault is not None else link_graph(notes)
     total_links = sum(len(v) for v in adj.values()) // 2
     orphans = sum(1 for n in notes if not adj.get(n.stem))
     avg_per_note = round((total_links * 2) / len(notes), 2) if notes else 0.0
@@ -2067,7 +2162,7 @@ def dash_summary(vault, today=None):
         "open_decisions": open_items,
         "recent": [{"path": n.rel, "title": n.title, "type": n.type, "created": n.created,
                     "project": n.project, "tags": n.tags} for n in recent],
-        "stats": _dash_stats(notes, today),
+        "stats": _dash_stats(notes, today, vault=vault),
     }
 
 
@@ -2100,17 +2195,19 @@ def dash_search(vault, q, limit=20, today=None):
     if not terms and not filters:
         raise BrainError("검색어에서 토큰을 찾지 못했습니다.")
     all_notes = load_notes(vault)
-    candidates = _apply_query_filters(all_notes, filters, today)
+    candidates = _apply_query_filters(all_notes, filters, today, vault=vault)
     query_str = " ".join(terms).strip()
     if query_str:
-        res = search(vault, query_str, limit=max(len(candidates), 1), today=today, notes=candidates)
+        # with_snippet=False: 후보가 많으면(예: 필터 없이 자유어 검색) BM25 채점 결과 전부에
+        # snippet(줄 단위 재토큰화)을 계산하는 게 가장 비쌌다. facets는 어차피 전체 후보가
+        # 필요하니 여기서는 점수만 받고, snippet은 아래에서 최종 limit만큼만 채운다.
+        res = search(vault, query_str, limit=max(len(candidates), 1), today=today, notes=candidates, with_snippet=False)
     else:
         ordered = sorted(candidates, key=lambda n: (n.created, n.rel), reverse=True)
         res = []
         for n in ordered:
             d = n.to_dict()
             d["score"] = round(recency_factor(n.created, today), 4)
-            d["snippet"] = _snippet(n.body, [])
             res.append(d)
 
     type_counts = Counter(r["type"] for r in res)
@@ -2124,13 +2221,13 @@ def dash_search(vault, q, limit=20, today=None):
               "tags": dict(sorted(tag_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:8])}
 
     res = res[:limit]
-    notes_by_path = None
+    qtoks_for_snippet = tokenize(query_str) if query_str else []
     for r in res:
+        n = candidates_by_path.get(r["path"])
+        if "snippet" not in r:
+            r["snippet"] = _snippet(n.body, qtoks_for_snippet) if n else []
         r["snippets"] = r.get("snippet", [])  # 대시보드 계약 키. CLI 호환 위해 snippet도 유지
         if "summary" not in r:
-            if notes_by_path is None:
-                notes_by_path = {n.rel: n for n in all_notes}
-            n = notes_by_path.get(r["path"])
             summary = str((n.meta.get("summary") if n else "") or "")
             r["summary"] = summary[:160]
     return SearchHits(res, facets=facets, applied=filters)
@@ -2345,7 +2442,7 @@ def dash_people(vault, agenda=None, today=None):
     today = today or date.today()
     ag = agenda or {}
     notes = load_notes(vault)
-    by_stem, adj = link_graph(notes)
+    by_stem, adj = cached_link_graph(vault, notes)
     events = (ag.get("today") or []) + (ag.get("upcoming") or [])
 
     def matched_events_for(rel, key):
@@ -4557,7 +4654,7 @@ def attach_event_notes(vault, ag):
     exact, ranged = event_notes_index(Path(vault))
     all_notes = load_notes(Path(vault))
     pidx = people_index(all_notes)
-    _, adj = link_graph(all_notes)
+    _, adj = cached_link_graph(vault, all_notes)
     for lst in ("today", "upcoming", "current"):
         for e in ag.get(lst) or []:
             n = exact.get(e.get("key"))
@@ -5152,9 +5249,7 @@ DATE_IN_LINE_RE = re.compile(r"(20\d{2})-(\d{2})-(\d{2})")
 HISTORY_MAX_BYTES = 2 * 1024 * 1024
 
 
-def widget_history(w, days=14, today=None):
-    """로그 위젯의 날짜별 활동: 날짜가 적힌 줄 수(runs)와 그중 실패 패턴 줄(fails). 최근 days일, 로그 끝 2MB만 읽는다."""
-    today = today or date.today()
+def _widget_history_uncached(w, days, today):
     src = os.path.expanduser(str(w.get("source") or ""))
     out = {"id": w.get("id"), "days": [{"date": (today - timedelta(days=days - 1 - i)).isoformat(), "runs": 0, "fails": 0} for i in range(days)]}
     if w.get("kind") != "log" or not src or not os.path.isfile(src):
@@ -5181,6 +5276,37 @@ def widget_history(w, days=14, today=None):
                 idx[d]["fails"] += 1
     out["total_runs"] = sum(d["runs"] for d in out["days"])
     out["total_fails"] = sum(d["fails"] for d in out["days"])
+    return out
+
+
+_WIDGET_HISTORY_CACHE = {}  # (source, mtime_ns, size, days, today, fail_pattern) -> (결과, 저장시각)
+_WIDGET_HISTORY_TTL = 60.0  # 초. office_kpis/dash_report/retro_material이 같은 요청 흐름에서
+# 위젯당 로그 파일(최대 2MB)을 반복해서 다시 읽지 않도록 60초 캐시한다. 캐시 키에 mtime_ns·size가
+# 들어 있어 로그가 새로 쓰이면 즉시 무효화되고(TTL을 기다리지 않음), TTL은 캐시가 무한히 쌓이는 것만 막는다.
+
+
+def widget_history(w, days=14, today=None):
+    """로그 위젯의 날짜별 활동: 날짜가 적힌 줄 수(runs)와 그중 실패 패턴 줄(fails). 최근 days일, 로그 끝 2MB만 읽는다.
+
+    SECOND_BRAIN_NO_NOTE_CACHE=1이면 캐시 없이 매번 새로 읽는다."""
+    today = today or date.today()
+    if os.environ.get("SECOND_BRAIN_NO_NOTE_CACHE"):
+        return _widget_history_uncached(w, days, today)
+    src = os.path.expanduser(str(w.get("source") or ""))
+    if w.get("kind") != "log" or not src:
+        return _widget_history_uncached(w, days, today)
+    try:
+        st = os.stat(src)
+    except OSError:
+        return _widget_history_uncached(w, days, today)
+    fail_pattern = (w.get("status_cfg") or {}).get("fail_pattern")
+    key = (src, st.st_mtime_ns, st.st_size, days, today.isoformat(), fail_pattern)
+    now_ts = time.monotonic()
+    hit = _WIDGET_HISTORY_CACHE.get(key)
+    if hit is not None and now_ts - hit[1] < _WIDGET_HISTORY_TTL:
+        return hit[0]
+    out = _widget_history_uncached(w, days, today)
+    _WIDGET_HISTORY_CACHE[key] = (out, now_ts)
     return out
 
 
@@ -6652,7 +6778,7 @@ def retro_material(vault, days, today, widgets=None):
     """지난 days일의 회고 재료."""
     since = (today - timedelta(days=days)).isoformat()
     notes = load_notes(vault)
-    by_stem, adj = link_graph(notes)
+    by_stem, adj = cached_link_graph(vault, notes)
     recent = [n for n in notes if n.created >= since and n.type not in ("event",)]
     new_notes = [{"type": n.type, "title": n.title, "summary": str(n.meta.get("summary") or "")[:160]} for n in recent if n.type not in ("decision", "journal")][:20]
     decisions = [{"title": n.title, "status": n.meta.get("status", "open"), "decision": _section(n, "결정"), "why": _section(n, "이유"), "revisit": str(n.meta.get("revisit") or "")}
@@ -6877,7 +7003,7 @@ def cmd_retro(args):
 def semantic_link_suggestions(vault, r, limit=25):
     """고아·최근 노트를 후보로, 카탈로그(stem|제목|요약)와 견줘 Claude가 내용상 관련 쌍을 고른다. 적용은 하지 않는다."""
     notes = load_notes(vault)
-    by_stem, adj = link_graph(notes)
+    by_stem, adj = cached_link_graph(vault, notes)
     stems = {n.stem: n for n in notes if n.type not in ("event", "journal")}
     cand_paths = [o["path"] for o in r.get("orphans", [])] + [n["path"] for n in r.get("new_notes", [])]
     seen, cands = set(), []
