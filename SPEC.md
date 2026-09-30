@@ -130,3 +130,14 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 등장 시퀀스: `html.entering`일 때만(탭이 보이고 모션 축소 아님) 보고→그래프→자동화→나머지 순 .7s, 1.6초 뒤 클래스 해제. 백그라운드 탭·캡처에서 첫 프레임에 멈추는 문제 방지
 - 수정: 결정 보드 마크업 닫힘(표현식 안 주석이 닫는 태그를 삼켰음)
 - **v0.5.1**: 사장님 "노드도 한 행을 점유하는 카드로" → 지식 그래프를 히어로 옆 5/12 칸에서 빼 전폭 유리 패널(높이 clamp 440~680px)로. 보고 패널은 좌 보고 문장 / 우 지금 볼 것·결정·할 일 2열. 내비 순서 화면 순서로(오늘→지식 그래프→자동화→개요→결정→타임라인→프로젝트)
+
+## v0.6 2차 1단계 「시간」 (2026-09-30)
+
+- 새 모듈 `scripts/agenda.py`(stdlib): ICS 파서(접힘 해제, TZID/UTC/DATE, RRULE DAILY·WEEKLY(BYDAY)·MONTHLY·YEARLY + INTERVAL·COUNT·UNTIL, EXDATE, RECURRENCE-ID 대체, STATUS:CANCELLED 제외, DURATION), ICS 소스(로컬 path 또는 url_file의 비공개 주소, 15분 캐시 `~/.cache/second-brain/`, 실패 시 캐시 stale), EventKit 소스(JXA, 최초 권한 요청, 캘린더 이름 필터)
+- 설정 `config.json` `calendar.sources[]` `{kind: ics|eventkit, name, url_file|path|calendars}`. 소스가 없으면 아무 것도 호출하지 않고 `unconfigured` + 안내(hint)만. 인증 정보(비공개 주소)는 별도 파일, 볼트 밖
+- `collect_agenda(cfg, now, days)` → `{today, upcoming, next, current, conflicts, sources, total}`; 중복(제목·시작·끝 동일) 제거, 겹침 계산(busy만)
+- brain.py: `/api/agenda?days=`, `/api/today`에 `agenda{today,next,current,conflicts,sources,total,upcoming_count,sentence}`, 서버 60초 AgendaCache. `today`/`brief` 사람용에 일정 문장, 카톡 200자에 `일정 10:00 …` 조각. CLI `agenda [--days]`, `brief [--kakao]`(헬퍼 `~/.local/k-skill-cron/notify_kakao.py` 또는 config `kakao_cmd`), `calendar list|add <ics|eventkit> <이름> [--url-file|--path|--calendars]|remove <이름>|test`
+- 대시보드: 보고 문장에 "오늘 일정 N개: 10:00 …, 15:00 … 등, 종일 …", 히어로 하단 「오늘 시간표」 스트립(06~24시 축, 블록, 지금 표시, 겹침은 호박 테두리, 지난 일정 흐림) + 목록, 새 섹션 「이번 주」(7열, 오늘 강조), 내비에 「이번 주」. 미연결이면 스트립 자리에 연결 방법 안내
+- 스킬 brain-today: 일정 줄 추가, 카톡은 `brief --kakao`로, 구글 연결 안내(비공개 주소는 대화에 붙이지 말고 파일에 저장)
+- 테스트 +11(파서·반복·수집·API·CLI), 총 114
+- 남은 것(1단계 완료 기준): 사장님 구글 비공개 ICS 등록 → 아침 7시 `brief --kakao` 크론(승인 뒤)

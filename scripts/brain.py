@@ -19,6 +19,9 @@ from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import agenda as agenda_mod  # noqa: E402 - 일정 어댑터(같은 폴더)
+
 VERSION = "0.1.0"
 
 EXIT_OK = 0
@@ -1917,6 +1920,9 @@ def _dleft(d):
 def kakao_brief(t):
     """카톡용 요약(≤200자)."""
     parts = [f"[{t['date']} {t['weekday'][0]}] {t['greeting']}"]
+    ag_bit = agenda_mod.agenda_kakao(t.get("agenda") or {})
+    if ag_bit:
+        parts.append(ag_bit)
     if t["revisit"]:
         parts.append("결정 " + ", ".join(f"{d['title']}({_dleft(d)})" for d in t["revisit"][:3]))
     bad = [w for w in t["top_widgets"] if w["status"] in ("fail", "stale")]
@@ -1931,8 +1937,36 @@ def kakao_brief(t):
     return _clip(" / ".join(parts), KAKAO_MAX)
 
 
-def dash_today(vault, today=None, now=None, widgets=None):
-    """/api/today. vault=None이면 볼트 항목은 비움(위젯만)."""
+class AgendaCache:
+    """일정 60초 캐시(ICS는 어댑터가 15분 캐시, EventKit 호출을 줄이기 위한 층). days별로 따로."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._data = {}
+
+    def get(self, days=7):
+        with self._lock:
+            hit = self._data.get(days)
+            if hit and time.monotonic() - hit[0] < 60:
+                return hit[1]
+        data = collect_agenda_safe(days)
+        with self._lock:
+            self._data[days] = (time.monotonic(), data)
+        return data
+
+
+def collect_agenda_safe(days=7, now=None):
+    """설정을 읽어 일정 수집. 모듈 오류가 나도 서버·브리핑은 살아야 하므로 실패는 sources에 담는다."""
+    try:
+        return agenda_mod.collect_agenda(load_config(), now=now, days=days)
+    except Exception as e:  # noqa: BLE001
+        log(f"경고: 일정 수집 실패({type(e).__name__}: {e})")
+        return {"today": [], "upcoming": [], "next": None, "current": [], "conflicts": [], "total": 0, "days": days,
+                "sources": [{"name": "agenda", "kind": "-", "status": "fail", "count": 0, "error": f"{type(e).__name__}: {e}"}]}
+
+
+def dash_today(vault, today=None, now=None, widgets=None, agenda=None):
+    """/api/today. vault=None이면 볼트 항목은 비움(위젯만). agenda=None이면 설정대로 수집."""
     now = now or datetime.now().astimezone()
     today = today or now.date()
     notes = load_notes(vault) if vault else []
@@ -1957,6 +1991,10 @@ def dash_today(vault, today=None, now=None, widgets=None):
         "widgets_total": len(widgets),
         "top_widgets": top,
     }
+    ag = agenda if agenda is not None else collect_agenda_safe(7, now=now)
+    t["agenda"] = {k: ag.get(k) for k in ("today", "next", "current", "conflicts", "sources", "total")}
+    t["agenda"]["upcoming_count"] = len(ag.get("upcoming") or [])
+    t["agenda"]["sentence"] = agenda_mod.agenda_sentence(ag)
     t["kakao"] = kakao_brief(t)
     return t
 
@@ -1964,6 +2002,12 @@ def dash_today(vault, today=None, now=None, widgets=None):
 def today_human(t):
     """사람용 브리핑(6줄 이내) + 카톡용 블록."""
     out = [f"{t['greeting']}! {t['date']} {t['weekday']}"]
+    ag = t.get("agenda") or {}
+    if ag.get("sentence"):
+        out.append(ag["sentence"])
+    bad_src = [s_ for s_ in (ag.get("sources") or []) if s_.get("status") != "ok"]
+    if bad_src and not ag.get("today"):
+        out.append("일정 연결 안 됨: " + "; ".join(f"{s_['name']} {s_['status']}" for s_ in bad_src[:2]))
     if t["revisit"]:
         out.append(f"되돌아볼 결정 {len(t['revisit'])}: " +
                    ", ".join(f"{d['title']}({_dleft(d)})" for d in t["revisit"][:3]))
@@ -2065,7 +2109,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._json(200, collect_widgets(self.server.widget_cache))
             if route == "/api/today":
                 widgets = collect_widgets(self.server.widget_cache)
-                return self._json(200, dash_today(vault, self.server.today, widgets=widgets))
+                return self._json(200, dash_today(vault, self.server.today, widgets=widgets,
+                                                  agenda=self.server.agenda_cache.get()))
+            if route == "/api/agenda":
+                return self._json(200, self.server.agenda_cache.get(_int_param(qs, "days", 7, hi=60)))
             return self._json(404, {"error": f"없는 경로입니다: {u.path}"})
         except BrainError as e:
             return self._json(400, {"error": str(e)})
@@ -2088,6 +2135,7 @@ def make_server(vault, port=7777, web_dir=None, today=None, quiet=False):
     srv = ThreadingHTTPServer(("127.0.0.1", port), DashboardHandler)
     srv.daemon_threads = True
     srv.vault = Path(vault)
+    srv.agenda_cache = AgendaCache()
     srv.web_dir = Path(web_dir) if web_dir else WEB_DIR
     srv.today = today
     srv.quiet = quiet
@@ -2355,6 +2403,103 @@ def cmd_today(args):
     return EXIT_OK
 
 
+def cmd_agenda(args):
+    ag = collect_agenda_safe(args.days)
+    emit(args, ag, agenda_mod.agenda_human(ag))
+    return EXIT_OK
+
+
+def kakao_helper_path(cfg=None):
+    cfg = cfg or load_config()
+    p = Path(os.path.expanduser(cfg.get("kakao_cmd") or "~/.local/k-skill-cron/notify_kakao.py"))
+    return p if p.is_file() else None
+
+
+def cmd_brief(args):
+    """아침 브리핑: today와 같은 내용. --kakao면 200자 카톡 발송(헬퍼 있을 때)."""
+    try:
+        v = vault_path()
+        if not vault_exists(v):
+            v = None
+    except BrainError:
+        v = None
+    t = dash_today(v)
+    if args.kakao:
+        helper = kakao_helper_path()
+        if not helper:
+            log("카톡 헬퍼가 없어요(~/.local/k-skill-cron/notify_kakao.py 또는 config kakao_cmd).")
+            emit(args, dict(t, sent=False), today_human(t))
+            return EXIT_INPUT
+        r = subprocess.run([sys.executable, str(helper), t["kakao"]], capture_output=True, text=True, timeout=60)
+        t["sent"] = r.returncode == 0
+        if r.returncode != 0:
+            log(f"카톡 발송 실패: {(r.stderr or r.stdout).strip()[:200]}")
+        emit(args, t, today_human(t) + ("\n\n카톡 발송 완료" if t["sent"] else "\n\n카톡 발송 실패"))
+        return EXIT_OK if t["sent"] else EXIT_INPUT
+    emit(args, t, today_human(t))
+    return EXIT_OK
+
+
+def cmd_calendar(args):
+    # 위치 인자 해석: add <kind> <name> / remove <name>
+    args.kind, args.name = (args.arg1, args.arg2) if args.action == "add" else (None, args.arg1)
+    if args.action == "add" and args.kind not in ("ics", "eventkit"):
+        raise BrainError("사용법: calendar add <ics|eventkit> <이름> [--url-file F | --path P | --calendars a,b]")
+    cfg = load_config()
+    cal = cfg.get("calendar") if isinstance(cfg.get("calendar"), dict) else {}
+    srcs = [x for x in (cal.get("sources") or []) if isinstance(x, dict)]
+    if args.action == "list":
+        data = agenda_mod.normalize_sources(cfg)
+        emit(args, data, "\n".join(f"- {x['name']} ({x['kind']})" + (" [기본]" if x.get("_default") else "") +
+                                  (f" {x.get('url_file') or x.get('path') or ''}" if x["kind"] == "ics" else
+                                   (f" 캘린더: {', '.join(x['calendars'])}" if x.get("calendars") else "")) for x in data) or "소스 없음")
+        return EXIT_OK
+    if args.action == "add":
+        if not args.kind or not args.name:
+            raise BrainError("사용법: calendar add <ics|eventkit> <이름> [--url-file F | --path P | --calendars a,b]")
+        src = {"kind": args.kind, "name": args.name}
+        if args.kind == "ics":
+            if args.url_file:
+                src["url_file"] = args.url_file
+            elif args.path:
+                src["path"] = args.path
+            else:
+                raise BrainError("ics 소스는 --url-file(비공개 ICS 주소가 든 파일) 또는 --path(.ics 파일)가 필요합니다")
+            for k in ("url_file", "path"):
+                if k in src:
+                    p = Path(os.path.expanduser(src[k]))
+                    if not p.is_file():
+                        raise BrainError(f"파일이 없어요: {p}")
+        elif args.calendars:
+            src["calendars"] = [c.strip() for c in args.calendars.split(",") if c.strip()]
+        srcs = [x for x in srcs if x.get("name") != args.name] + [src]
+        cfg["calendar"] = dict(cal, sources=srcs)
+        save_config(cfg)
+        emit(args, src, f"일정 소스 추가: {args.name} ({args.kind}). `brain.py agenda`로 확인해 보세요.")
+        return EXIT_OK
+    if args.action == "remove":
+        if not args.name:
+            raise BrainError("사용법: calendar remove <이름>")
+        new = [x for x in srcs if x.get("name") != args.name]
+        if len(new) == len(srcs):
+            raise BrainError(f"그런 소스가 없어요: {args.name}")
+        cfg["calendar"] = dict(cal, sources=new)
+        save_config(cfg)
+        emit(args, {"removed": args.name}, f"일정 소스 제거: {args.name}")
+        return EXIT_OK
+    if args.action == "test":
+        ag = collect_agenda_safe(args.days)
+        lines = []
+        for src in ag["sources"]:
+            lines.append(f"{'OK ' if src['status'] == 'ok' else '!! '}{src['name']} ({src['kind']}): {src['status']}, 일정 {src['count']}개"
+                         + (f" — {src['error']}" if src.get("error") else "")
+                         + (f"\n     캘린더: {', '.join(src['calendars'])}" if src.get("calendars") else "")
+                         + (f"\n     {src['hint']}" if src.get("hint") else ""))
+        emit(args, ag["sources"], "\n".join(lines))
+        return EXIT_OK if all(x["status"] == "ok" for x in ag["sources"]) else EXIT_INPUT
+    raise BrainError("action은 list · add · remove · test 중 하나")
+
+
 def cmd_config(args):
     if args.action == "init-widgets":
         p, created = init_widgets_config()
@@ -2475,8 +2620,23 @@ def build_parser():
     s.add_argument("--open", action="store_true", help="브라우저 자동 열기")
     s.add_argument("--demo", action="store_true", help="가공 샘플 데모 볼트로 서빙")
 
-    add("today", "오늘 브리핑: 되돌아볼 결정·자동화 상태·inbox·이번 주 신규(+카톡용 200자)", cmd_today)
+    add("today", "오늘 브리핑: 일정·되돌아볼 결정·자동화 상태·inbox·이번 주 신규(+카톡용 200자)", cmd_today)
     add("widgets", "위젯(~/.config/second-brain/widgets.json) 상태 조회", cmd_widgets)
+
+    s = add("agenda", "일정: 오늘·다가오는 N일(설정된 캘린더 소스에서)", cmd_agenda)
+    s.add_argument("--days", type=int, default=7, help="며칠치(기본 7)")
+
+    s = add("brief", "아침 브리핑(today와 같음). --kakao면 카톡으로 200자 발송", cmd_brief)
+    s.add_argument("--kakao", action="store_true", help="카톡 나에게 보내기(헬퍼 필요)")
+
+    s = add("calendar", "일정 소스 관리: list · add <ics|eventkit> <이름> · remove <이름> · test", cmd_calendar)
+    s.add_argument("action", choices=("list", "add", "remove", "test"))
+    s.add_argument("arg1", nargs="?", help="add: 종류(ics|eventkit) · remove: 소스 이름")
+    s.add_argument("arg2", nargs="?", help="add: 소스 이름(예: 구글)")
+    s.add_argument("--url-file", help="ics: 비공개 ICS 주소가 첫 줄에 적힌 파일(예: ~/.config/second-brain/google.ics.url)")
+    s.add_argument("--path", help="ics: 로컬 .ics 파일")
+    s.add_argument("--calendars", help="eventkit: 읽을 캘린더 이름(쉼표). 비우면 전부")
+    s.add_argument("--days", type=int, default=7, help="test일 때 며칠치")
     return p
 
 

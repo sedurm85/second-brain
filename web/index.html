@@ -99,8 +99,8 @@ body::after {
 .glass { background: var(--glass), var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--rp); box-shadow: var(--glass-edge), var(--panel-shadow); backdrop-filter: blur(14px); }
 /* 첫 로드 한 번의 등장 시퀀스: 보고 → 그래프 → 자동화 → 나머지 */
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-html.entering .hero-text, html.entering .graph-section, html.entering #automation, html.entering #content > .section { animation: rise .7s cubic-bezier(.2, .7, .2, 1) both; }
-html.entering .graph-section { animation-delay: .10s; } html.entering #automation { animation-delay: .22s; }
+html.entering .hero-text, html.entering .week-section, html.entering .graph-section, html.entering #automation, html.entering #content > .section { animation: rise .7s cubic-bezier(.2, .7, .2, 1) both; }
+html.entering .week-section { animation-delay: .06s; } html.entering .graph-section { animation-delay: .12s; } html.entering #automation { animation-delay: .22s; }
 html.entering #content > .section:nth-child(1) { animation-delay: .34s; } html.entering #content > .section:nth-child(2) { animation-delay: .42s; }
 html.entering #content > .section:nth-child(3) { animation-delay: .50s; } html.entering #content > .section:nth-child(4) { animation-delay: .58s; }
 html { scroll-behavior: smooth; scroll-padding-top: 72px; }
@@ -165,6 +165,49 @@ h1, h2, h3 { text-wrap: balance; }
 .hero-text .header { grid-column: 1 / -1; margin-bottom: 8px; }
 .hero-text .report { margin-bottom: 8px; }
 .hero-text .today-grid { align-self: start; margin-top: 10px; }
+/* 오늘 시간표 스트립: 06~24시 축, 일정 블록, 지금 표시 */
+.daybar { grid-column: 1 / -1; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--rule-strong); }
+.daybar:empty { display: none; }
+.daybar .db-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; font-size: 13.5px; color: var(--ink-2); }
+.daybar .db-head b { font-weight: 600; color: var(--ink); }
+.daybar .db-head .src { margin-left: auto; color: var(--muted); font-size: 12.5px; }
+.db-track { position: relative; height: 46px; border-radius: var(--r); background: color-mix(in srgb, var(--bg) 70%, transparent); box-shadow: inset 0 0 0 1px var(--rule); overflow: hidden; }
+.db-hour { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--rule); }
+.db-hour span { position: absolute; top: 2px; left: 4px; font-size: 10.5px; color: var(--muted); }
+.db-ev { position: absolute; top: 16px; height: 24px; border-radius: 4px; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); color: var(--ink); font-size: 12px; line-height: 22px; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: default; }
+.db-ev.past { opacity: .45; }
+.db-ev.now { box-shadow: 0 0 12px var(--accent-soft); border-color: var(--accent); }
+.db-ev.conflict { border-color: var(--st-warn); }
+.db-now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--st-crit); box-shadow: 0 0 8px var(--st-crit); }
+.db-now::after { content: ""; position: absolute; top: -1px; left: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--st-crit); }
+.db-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 2px 24px; }
+.db-list li { display: flex; gap: 10px; font-size: 13.5px; padding: 3px 0; min-width: 0; }
+.db-list .t { color: var(--accent); font-weight: 600; flex: none; width: 92px; font-variant-numeric: tabular-nums; }
+.db-list .t.allday { color: var(--ink-2); }
+.db-list .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-list .n small { color: var(--muted); margin-left: 6px; }
+.db-list li.past { opacity: .5; }
+.db-empty { font-size: 13.5px; color: var(--muted); }
+.db-src { font-size: 12.5px; color: var(--st-warn); margin-top: 8px; }
+.db-src code { font-family: var(--font-mono); font-size: 12px; background: var(--surface-3); padding: 1px 5px; border-radius: 4px; }
+/* 이번 주: 7열 */
+.week-section { margin-top: 20px; }
+.week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0; padding: 6px 0; }
+.week .wd { padding: 12px 14px; border-left: 1px solid var(--rule); min-width: 0; }
+.week .wd:first-child { border-left: 0; }
+.week .wd h3 { margin: 0 0 8px; font-size: 13.5px; font-weight: 600; color: var(--ink-2); display: flex; gap: 6px; align-items: baseline; }
+.week .wd h3 b { color: var(--ink); font-weight: 700; font-size: 18px; }
+.week .wd.today h3 b { color: var(--accent); text-shadow: 0 0 14px var(--accent-soft); }
+.week .wd.weekend h3 { color: var(--muted); }
+.week ul { list-style: none; margin: 0; padding: 0; }
+.week li { font-size: 12.5px; padding: 3px 0; display: flex; gap: 6px; min-width: 0; }
+.week li .t { color: var(--accent); flex: none; font-variant-numeric: tabular-nums; }
+.week li .t.allday { color: var(--muted); }
+.week li .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.week .wd .none { font-size: 12.5px; color: var(--muted); }
+.week .more { font-size: 12px; color: var(--muted); }
+@media (max-width: 1000px) { .week { grid-template-columns: repeat(4, minmax(0, 1fr)); } .week .wd:nth-child(5) { border-left: 0; } }
+@media (max-width: 560px) { .week { grid-template-columns: repeat(2, minmax(0, 1fr)); } .week .wd:nth-child(odd) { border-left: 0; } .db-list .t { width: 84px; } }
 .hero-text.glass { position: relative; overflow: hidden; }
 .hero-text.glass::after { content: ""; position: absolute; right: -80px; top: -80px; width: 260px; height: 260px; border-radius: 50%; background: radial-gradient(circle, var(--accent-soft), transparent 70%); pointer-events: none; }
 .header { margin-bottom: 18px; }
@@ -476,6 +519,7 @@ h1, h2, h3 { text-wrap: balance; }
     <nav class="nav" aria-label="섹션 이동">
       <ul>
       <li><a href="#today-section" class="active"><span class="dot"></span>오늘</a></li>
+      <li><a href="#week"><span class="dot"></span>이번 주</a></li>
       <li><a href="#graph-section"><span class="dot"></span>지식 그래프</a></li>
       <li><a href="#automation"><span class="dot"></span>자동화</a></li>
       <li><a href="#overview"><span class="dot"></span>개요</a></li>
@@ -509,7 +553,13 @@ h1, h2, h3 { text-wrap: balance; }
       </header>
       <div class="report" id="report" aria-live="polite"><p class="loading">오늘 보고를 준비하고 있어요.</p></div>
       <div class="today-grid" id="todayGrid"><div class="loading">오늘 불러오는 중</div></div>
+      <div class="daybar" id="daybar" aria-label="오늘 시간표"></div>
     </div>
+  </section>
+
+  <section class="section week-section" id="week" aria-labelledby="week-h">
+    <div class="section-head"><h2 id="week-h">이번 주</h2><p id="weekSub">오늘부터 7일.</p></div>
+    <div class="week glass" id="week7"><div class="loading">일정 불러오는 중</div></div>
   </section>
 
   <section class="section graph-section" id="graph-section" aria-labelledby="graph-h">
@@ -1320,6 +1370,7 @@ h1, h2, h3 { text-wrap: balance; }
       var word = tops[0].status === "fail" ? "실패" : tops[0].status === "stale" ? "오래된" : tops[0].status === "missing" ? "기록 없는" : "주의";
       out.push("자동화 " + (ws.ok || 0) + "개가 정상이고, " + names + (tops.length > 2 ? " 외 " + (tops.length - 2) + "개" : "") + (word === "실패" ? "가 실패 상태예요." : "가 " + word + " 상태예요."));
     }
+    if (t.agenda && t.agenda.sentence) out.push(t.agenda.sentence);
     var chores = [];
     if (rv.length) chores.push("되돌아볼 결정 " + rv.length + "건");
     if (inbox.length) chores.push("할 일 " + inbox.length + "건");
@@ -1361,10 +1412,59 @@ h1, h2, h3 { text-wrap: balance; }
       var text = typeof it === "string" ? it : (it && (it.text || it.title)) || "";
       return '<li class="inbox-item"><span class="box" aria-hidden="true"></span><span>' + esc(text) + "</span></li>";
     }).join("") + "</ul>" : '<p class="t-empty">inbox.md에 <code>- [ ] 항목</code>으로 적으면 여기 떠요.</p>';
+    renderDaybar(t.agenda || {}, t.now);
     $("todayGrid").innerHTML =
       '<div class="tcard wide"><h3>지금 볼 것</h3>' + auHtml + "</div>" +
       '<div class="tcard"><h3>되돌아볼 결정 <span class="count">' + rv.length + "</span></h3>" + rvHtml + "</div>" +
       '<div class="tcard"><h3>할 일 <span class="count">' + inbox.length + "</span></h3>" + ibHtml + "</div>";
+  }
+
+  /* ───────── 일정: 오늘 시간표 스트립 · 이번 주 ───────── */
+  function hm(iso) { return iso && iso.length >= 16 ? iso.slice(11, 16) : ""; }
+  function minsOf(iso) { var d = new Date(iso); return d.getHours() * 60 + d.getMinutes(); }
+  function renderDaybar(ag, nowIso) {
+    var el = $("daybar"), today = ag.today || [], srcs = ag.sources || [];
+    var bad = srcs.filter(function (s) { return s.status !== "ok"; });
+    if (!today.length && !srcs.length) { el.innerHTML = ""; return; }
+    var H0 = 6, H1 = 24, span = (H1 - H0) * 60;
+    var now = nowIso ? new Date(nowIso) : new Date(), nowM = now.getHours() * 60 + now.getMinutes();
+    var conf = {}; (ag.conflicts || []).forEach(function (p) { conf[p[0]] = conf[p[1]] = true; });
+    function pct(m) { return Math.max(0, Math.min(100, ((m - H0 * 60) / span) * 100)); }
+    var hours = "";
+    for (var hh = H0; hh < H1; hh += 3) hours += '<div class="db-hour" style="left:' + pct(hh * 60) + '%"><span>' + hh + "</span></div>";
+    var timed = today.filter(function (e) { return !e.all_day; }), allday = today.filter(function (e) { return e.all_day; });
+    var blocks = timed.map(function (e) {
+      var a = minsOf(e.start), b = Math.max(a + 20, minsOf(e.end)), cls = "db-ev" + (b <= nowM ? " past" : a <= nowM && nowM < b ? " now" : "") + (conf[e.id] ? " conflict" : "");
+      return '<div class="' + cls + '" style="left:' + pct(a) + "%;width:" + Math.max(1.5, pct(b) - pct(a)) + '%" title="' + esc(hm(e.start) + "-" + hm(e.end) + " " + e.title) + '">' + esc(e.title) + "</div>";
+    }).join("");
+    var nowMark = (nowM >= H0 * 60 && nowM <= H1 * 60) ? '<div class="db-now" style="left:' + pct(nowM) + '%" aria-label="지금"></div>' : "";
+    var list = today.length ? '<ul class="db-list">' + today.map(function (e) {
+      var past = !e.all_day && minsOf(e.end) <= nowM;
+      return '<li class="' + (past ? "past" : "") + '"><span class="t' + (e.all_day ? " allday" : "") + '">' + (e.all_day ? "종일" : esc(hm(e.start) + "–" + hm(e.end))) + '</span><span class="n">' + esc(e.title) + (e.location ? "<small>" + esc(e.location) + "</small>" : "") + "</span></li>";
+    }).join("") + "</ul>" : '<p class="db-empty">오늘은 잡힌 일정이 없어요.</p>';
+    var srcNote = bad.length ? '<p class="db-src">일정 연결 안 됨: ' + bad.map(function (s) { return esc(s.name) + " (" + esc(s.status) + ")"; }).join(", ") +
+      (bad[0].hint ? "<br>" + esc(bad[0].hint).replace(/`([^`]+)`/g, "<code>$1</code>") : (bad[0].error ? "<br>" + esc(bad[0].error) : "")) + "</p>" : "";
+    var head = '<div class="db-head"><b>오늘 시간표</b><span>' + (today.length ? today.length + "개" : "") + (allday.length ? " · 종일 " + allday.length : "") + (ag.next ? '</span><span>다음: ' + esc(hm(ag.next.start) + " " + ag.next.title) : "") +
+      '</span><span class="src">' + esc(srcs.filter(function (s) { return s.status === "ok"; }).map(function (s) { return s.name; }).join(", ")) + "</span></div>";
+    el.innerHTML = head + '<div class="db-track">' + hours + blocks + nowMark + "</div>" + list + srcNote;
+  }
+  var WD_KO = ["일", "월", "화", "수", "목", "금", "토"];
+  function renderWeek(ag) {
+    var el = $("week7"), days = ag.days || 7, start = new Date((ag.now || new Date().toISOString()).slice(0, 10) + "T00:00:00");
+    var byDay = {};
+    (ag.today || []).concat(ag.upcoming || []).forEach(function (e) { var k = e.start.slice(0, 10); (byDay[k] = byDay[k] || []).push(e); });
+    var html = "";
+    for (var i = 0; i < Math.min(7, days); i++) {
+      var d = new Date(start.getTime() + i * 86400000), k = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+      var items = byDay[k] || [], wd = d.getDay();
+      html += '<div class="wd' + (i === 0 ? " today" : "") + (wd === 0 || wd === 6 ? " weekend" : "") + '"><h3><b>' + d.getDate() + "</b>" + WD_KO[wd] + (i === 0 ? " 오늘" : i === 1 ? " 내일" : "") + "</h3>" +
+        (items.length ? "<ul>" + items.slice(0, 5).map(function (e) {
+          return '<li><span class="t' + (e.all_day ? " allday" : "") + '">' + (e.all_day ? "종일" : esc(hm(e.start))) + '</span><span class="n" title="' + esc(e.title) + '">' + esc(e.title) + "</span></li>";
+        }).join("") + (items.length > 5 ? '<li class="more">외 ' + (items.length - 5) + "개</li>" : "") + "</ul>" : '<p class="none">없음</p>') + "</div>";
+    }
+    el.innerHTML = html;
+    var total = (ag.today || []).length + (ag.upcoming || []).length;
+    $("weekSub").textContent = total ? "오늘부터 7일, 일정 " + total + "개." : "오늘부터 7일. 연결된 캘린더에 일정이 없어요.";
   }
 
   /* 스파크라인 (단일 시리즈: 2px 선, 마지막 점 강조, 최소·최대 라벨) */
@@ -1491,6 +1591,7 @@ h1, h2, h3 { text-wrap: balance; }
     S.live.last = Date.now();
     var a = api("today").then(function (t) { renderToday(t); return true; })
       .catch(function (err) { if (!S.live.okToday) fail($("todayGrid"), "오늘", err); else console.error("[세컨드브레인] 오늘 갱신 실패", err); return false; });
+    api("agenda", { days: 7 }).then(renderWeek).catch(function (err) { $("week7").innerHTML = '<div class="loading">일정을 불러오지 못했어요: ' + esc(String(err && err.message || err)) + "</div>"; });
     var b = api("widgets").then(function (w) { renderWidgets(w); if (S.wm.open && S.widgets[S.wm.id]) openWidget(S.wm.id); return true; })
       .catch(function (err) { if (!S.live.okWidgets) fail($("widgets"), "위젯", err); else console.error("[세컨드브레인] 위젯 갱신 실패", err); return false; });
     Promise.all([a, b]).then(function (r) {
@@ -1564,7 +1665,7 @@ h1, h2, h3 { text-wrap: balance; }
           links.forEach(function (a) { a.classList.toggle("active", a.getAttribute("href") === "#" + id); });
         });
       }, { rootMargin: "-40% 0px -55% 0px" });
-      ["today-section", "automation", "overview", "graph-section", "decisions", "timeline", "projects"].forEach(function (id) { io.observe($(id)); });
+      ["today-section", "week", "graph-section", "automation", "overview", "decisions", "timeline", "projects"].forEach(function (id) { io.observe($(id)); });
     }
   }
 

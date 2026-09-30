@@ -30,6 +30,9 @@ v0.5 화면은 관제실입니다. 깊은 남색 바탕에 유리 패널, 비서
 
 ```bash
 python3 scripts/brain.py config init-widgets   # 예시 widgets.json 생성
+python3 scripts/brain.py calendar add ics 구글 --url-file ~/.config/second-brain/google.ics.url   # 구글 캘린더 비공개 ICS 주소 파일 등록
+python3 scripts/brain.py agenda                  # 오늘·7일 일정
+python3 scripts/brain.py brief --kakao           # 아침 브리핑 카톡(헬퍼 필요)
 python3 scripts/brain.py today                 # 터미널에서 브리핑
 ```
 
