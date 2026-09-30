@@ -10,8 +10,10 @@ import os
 import re
 import subprocess
 import sys
+import urllib.parse
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 VERSION = "0.1.0"
@@ -1058,6 +1060,447 @@ def init_vault(vault, git=False):
 
 
 # ---------------------------------------------------------------------------
+# 대시보드 데이터 (v0.2) — 모두 순수 함수: (vault, today) → JSON 직렬화 가능한 값
+# ---------------------------------------------------------------------------
+
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+DEMO_DIR_PARTS = (".cache", "second-brain", "demo")
+CONTENT_TYPES = {
+    ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
+    ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml",
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+    ".webp": "image/webp", ".ico": "image/x-icon", ".woff2": "font/woff2", ".woff": "font/woff",
+    ".txt": "text/plain; charset=utf-8", ".md": "text/markdown; charset=utf-8",
+}
+
+
+def _resolved_links(notes):
+    """노트별 '존재하는' 대상 stem 집합(위키링크+프론트매터 links 등). 제목 링크도 해석."""
+    by_stem = {n.stem: n for n in notes}
+    title_map = {n.title: n.stem for n in notes}
+    out = {}
+    for n in notes:
+        targets = set()
+        for t in n.out_links():
+            s = t if t in by_stem else title_map.get(t)
+            if s and s != n.stem:
+                targets.add(s)
+        out[n.stem] = targets
+    return out
+
+
+def _days_left(revisit, today):
+    try:
+        return (parse_date(str(revisit)[:10]) - today).days if revisit else None
+    except BrainError:
+        return None
+
+
+def _decision_item(n, today):
+    rv = str(n.meta.get("revisit") or "") or None
+    return {"path": n.rel, "title": n.title, "created": n.created, "revisit": rv,
+            "days_left": _days_left(rv, today), "project": n.project,
+            "supersedes": [link_target(x) for x in as_list(n.meta.get("supersedes"))]}
+
+
+def _decision_status(n):
+    s = str(n.meta.get("status") or "open")
+    return s if s in DECISION_STATUSES else "open"
+
+
+def dash_summary(vault, today=None):
+    today = today or date.today()
+    notes = load_notes(vault)
+    week_ago = (today - timedelta(days=7)).isoformat()
+    counts = {"notes": 0, "decisions": 0, "projects": 0, "people": 0}
+    for n in notes:
+        if n.type == "decision":
+            counts["decisions"] += 1
+        elif n.type == "project":
+            counts["projects"] += 1
+        elif n.type == "person":
+            counts["people"] += 1
+        else:
+            counts["notes"] += 1
+    counts["total"] = len(notes)
+    recent_week = [n for n in notes if n.created >= week_ago]
+    opens = [n for n in notes if n.type == "decision" and _decision_status(n) == "open"]
+    opens.sort(key=lambda n: (str(n.meta.get("revisit") or "9999-99-99"), n.rel))
+    open_items = []
+    for n in opens:
+        rv = str(n.meta.get("revisit") or "") or None
+        open_items.append({"path": n.rel, "title": n.title, "revisit": rv,
+                           "days_left": _days_left(rv, today)})
+    recent = sorted(notes, key=lambda n: (n.created, n.rel), reverse=True)[:30]
+    return {
+        "vault": str(vault),
+        "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "counts": counts,
+        "this_week": {"new_notes": sum(1 for n in recent_week if n.type != "decision"),
+                      "new_decisions": sum(1 for n in recent_week if n.type == "decision")},
+        "open_decisions": open_items,
+        "recent": [{"path": n.rel, "title": n.title, "type": n.type, "created": n.created,
+                    "project": n.project, "tags": n.tags} for n in recent],
+    }
+
+
+def dash_graph(vault):
+    notes = load_notes(vault)
+    links = _resolved_links(notes)
+    edges, seen = [], set()
+    degree = Counter()
+    for n in notes:
+        for t in sorted(links[n.stem]):
+            key = tuple(sorted((n.stem, t)))
+            if key in seen:
+                continue
+            seen.add(key)
+            edges.append({"source": n.stem, "target": t})
+            degree[n.stem] += 1
+            degree[t] += 1
+    nodes = [{"id": n.stem, "path": n.rel, "title": n.title, "type": n.type, "project": n.project,
+              "created": n.created, "tags": n.tags, "degree": degree[n.stem]} for n in notes]
+    return {"nodes": nodes, "edges": edges}
+
+
+def dash_search(vault, q, limit=20, today=None):
+    res = search(vault, q, limit=limit, today=today)
+    for r in res:
+        r["snippets"] = r.get("snippet", [])  # 대시보드 계약 키. CLI 호환 위해 snippet도 유지
+    return res
+
+
+def safe_vault_path(vault, rel):
+    """쿼리로 받은 볼트 상대 경로 검증. 절대경로·'..'·볼트 밖(심볼릭 링크 포함) 거부."""
+    rel = str(rel or "").strip()
+    if not rel:
+        raise BrainError("path 파라미터가 필요합니다.")
+    pp = Path(rel)
+    if pp.is_absolute() or rel.startswith(("/", "\\", "~")) or ".." in pp.parts or "\\" in rel:
+        raise BrainError(f"허용되지 않는 경로입니다: {rel}")
+    if pp.suffix != ".md":
+        raise BrainError(f".md 노트만 열 수 있습니다: {rel}")
+    return ensure_in_vault(vault, vault / pp)
+
+
+def dash_note(vault, rel):
+    p = safe_vault_path(vault, rel)
+    if not p.is_file():
+        raise FileNotFoundError(rel)
+    notes = load_notes(vault)
+    links = _resolved_links(notes)
+    n = Note(vault, p)
+    links_in = sorted(s for s, ts in links.items() if n.stem in ts)
+    return {"path": n.rel, "title": n.title, "type": n.type, "frontmatter": n.meta,
+            "body": n.body, "links_out": sorted(links.get(n.stem, set())), "links_in": links_in}
+
+
+def dash_timeline(vault, days=30, today=None):
+    today = today or date.today()
+    since = (today - timedelta(days=max(days, 1) - 1)).isoformat()
+    groups = defaultdict(list)
+    for n in load_notes(vault):
+        if since <= n.created <= today.isoformat():
+            groups[n.created].append(n)
+    out = []
+    for d in sorted(groups, reverse=True):
+        items = sorted(groups[d], key=lambda n: n.rel)
+        out.append({"date": d, "items": [{"path": n.rel, "title": n.title, "type": n.type,
+                                          "project": n.project} for n in items]})
+    return out
+
+
+def dash_decisions(vault, today=None):
+    today = today or date.today()
+    out = {s: [] for s in DECISION_STATUSES}
+    for n in load_notes(vault):
+        if n.type == "decision":
+            out[_decision_status(n)].append(_decision_item(n, today))
+    out["open"].sort(key=lambda d: (d["revisit"] or "9999-99-99", d["path"]))
+    for k in ("decided", "superseded"):
+        out[k].sort(key=lambda d: (d["created"], d["path"]), reverse=True)
+    return out
+
+
+def dash_projects(vault):
+    notes = load_notes(vault)
+    hubs = _project_hubs(notes)
+    groups = {}
+    for n in notes:
+        if n.type == "project":
+            groups.setdefault(n.stem, {"hub": n, "name": n.title, "members": []})
+    for n in notes:
+        if n.type == "project" or not n.project:
+            continue
+        hub = hubs.get(slugify(n.project)) or hubs.get(link_target(n.project))
+        key = hub.stem if hub else "~" + slugify(n.project)
+        g = groups.setdefault(key, {"hub": hub, "name": hub.title if hub else n.project,
+                                    "members": []})
+        g["members"].append(n)
+    out = []
+    for g in groups.values():
+        members = sorted(g["members"], key=lambda n: (n.created, n.rel), reverse=True)
+        dates = [n.created for n in members] + ([g["hub"].created] if g["hub"] else [])
+        item = {"name": g["name"],
+                "note_count": sum(1 for n in members if n.type != "decision"),
+                "decision_count": sum(1 for n in members if n.type == "decision"),
+                "last_activity": max(dates) if dates else None,
+                "recent": [{"path": n.rel, "title": n.title, "type": n.type} for n in members[:5]]}
+        if g["hub"]:
+            item["path"] = g["hub"].rel
+        out.append(item)
+    out.sort(key=lambda p: (p["last_activity"] or "", p["name"]), reverse=True)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 데모 볼트 (전부 가공 데이터)
+# ---------------------------------------------------------------------------
+
+def demo_vault_path():
+    return home_dir().joinpath(*DEMO_DIR_PARTS)
+
+
+def build_demo_vault(vault=None, today=None):
+    """가공 데이터로 데모 볼트를 새로 만든다(기존 데모 폴더는 지움). 경로 반환."""
+    import shutil
+    today = today or date.today()
+    vault = ensure_in_home(vault or demo_vault_path(), "데모 볼트 경로")
+    if vault.exists():
+        shutil.rmtree(vault)
+    for d in ("notes", "decisions", "projects", "people"):
+        (vault / d).mkdir(parents=True)
+
+    def ago(k):
+        return (today - timedelta(days=k)).isoformat()
+
+    P1, P2, P3 = "아침브리핑", "세컨드브레인", "카페 운영"
+    stems = {}
+
+    def mk(key, ntype, title, days_ago, body, **kw):
+        p = create_note(vault, ntype, title, created=ago(days_ago), body=f"# {title}\n\n{body}\n", **kw)
+        stems[key] = p
+        return p
+
+    # 프로젝트 3
+    mk("p1", "project", P1, 58, "## 목표\n매일 아침 7시에 뉴스·일정·날씨를 한 장으로 받기.", tags=["자동화"])
+    mk("p2", "project", P2, 55, "## 목표\n대화 중 기록을 쌓고 결정 맥락을 다시 찾기.", tags=["pkm"])
+    mk("p3", "project", P3, 50, "## 목표\n가상의 동네 커뮤니티 카페를 월 50명까지 키우기.", tags=["커뮤니티"])
+    # 사람 2 (가공 인물)
+    mk("u1", "person", "한가람", 52, "## 맥락\n가상의 스터디 동료. 자동화 스크립트 리뷰를 자주 해줌.")
+    mk("u2", "person", "서도윤", 40, "## 맥락\n가상의 카페 공동 운영자. 게시판 기획 담당.")
+    # 노트 18
+    N = [
+        ("n1", "note", "브리핑 소스 후보 정리", 57, P1, ["뉴스", "rss"], "RSS 5개와 날씨 API 1개를 후보로 적어둠."),
+        ("n2", "idea", "브리핑을 음성으로 듣기", 49, P1, ["tts", "아이디어"], "출근길에 3분짜리 음성 요약으로 듣는 아이디어."),
+        ("n3", "source", "RSS 파싱 라이브러리 비교 메모", 46, P1, ["rss", "python"], "표준 라이브러리 xml로 충분한지 비교."),
+        ("n4", "meeting", "브리핑 포맷 회의", 41, P1, ["회의"], "한 화면 5줄 원칙으로 합의."),
+        ("n5", "note", "크론 실패 원인 기록", 33, P1, ["cron", "장애"], "노트북 잠자기 모드에서 크론이 건너뛰어짐."),
+        ("n6", "note", "브리핑 첫 주 회고", 20, P1, ["회고"], "읽는 데 평균 2분. 날씨는 거의 안 봄."),
+        ("n7", "idea", "노트를 그래프로 보기", 54, P2, ["그래프", "아이디어"], "링크가 많은 노트가 한눈에 보이면 좋겠다."),
+        ("n8", "source", "제텔카스텐 개념 요약", 51, P2, ["pkm", "제텔카스텐"], "원자 노트와 링크 중심 사고."),
+        ("n9", "note", "프론트매터 필드 설계", 44, P2, ["스키마"], "title·type·created·tags·links 다섯 개로 시작."),
+        ("n10", "meeting", "검색 품질 점검", 30, P2, ["검색", "회의"], "한글 2-gram이 짧은 검색어에 강함을 확인."),
+        ("n11", "note", "고아 노트 줄이는 법", 18, P2, ["링크"], "주간 리뷰에서 링크 제안을 3개씩만 승인."),
+        ("n12", "idea", "결정 되돌아보기 알림", 9, P2, ["결정", "아이디어"], "revisit 날짜 전날 알림."),
+        ("n13", "note", "카페 첫 공지 초안", 48, P3, ["공지"], "가입 인사 게시판부터 열기."),
+        ("n14", "meeting", "게시판 구조 회의", 38, P3, ["회의", "게시판"], "게시판은 5개 이하로 시작."),
+        ("n15", "source", "커뮤니티 리텐션 글 메모", 27, P3, ["리텐션"], "첫 주 댓글 경험이 재방문을 좌우한다는 가상의 사례."),
+        ("n16", "note", "주간 미션 반응 정리", 12, P3, ["미션", "리텐션"], "참여 12명, 인증 글 7개(가상 수치)."),
+        ("n17", "idea", "신규 회원 환영 자동화", 4, P3, ["자동화", "아이디어"], "가입 시 환영 댓글 템플릿."),
+        ("n18", "note", "이번 주 할 일", 1, None, ["할일"], "브리핑 음성화 실험, 대시보드 확인, 카페 공지 갱신."),
+    ]
+    for key, t, title, d, proj, tags, body in N:
+        mk(key, t, title, d, body, project=proj, tags=tags)
+    # 결정 6 (open 2 · decided 3 · superseded 1, revisit 임박 1)
+    mk("d1", "decision", "브리핑은 텍스트로 먼저 낸다", 45, "## 결정\n음성은 보류하고 텍스트부터.", project=P1,
+       status="superseded", tags=["포맷"])
+    mk("d2", "decision", "브리핑에 음성 요약을 붙인다", 15, "## 결정\n텍스트 + 1분 음성.", project=P1,
+       status="decided", tags=["포맷", "tts"])
+    mk("d3", "decision", "볼트는 마크다운 파일로 둔다", 53, "## 결정\nDB 대신 Obsidian 호환 마크다운.", project=P2,
+       status="decided", tags=["스키마"])
+    mk("d4", "decision", "검색은 외부 서비스 없이 로컬로", 29, "## 결정\nBM25-lite 로컬 검색.", project=P2,
+       status="decided", tags=["검색"])
+    mk("d5", "decision", "대시보드를 로컬 서버로 띄울지", 6, "## 상황\n정적 HTML과 로컬 서버 중 고민.", project=P2,
+       status="open", revisit=(today + timedelta(days=2)).isoformat(), tags=["그래프"])
+    mk("d6", "decision", "카페 게시판을 5개로 제한할지", 36, "## 상황\n게시판이 많으면 글이 흩어짐.", project=P3,
+       status="open", revisit=(today + timedelta(days=24)).isoformat(), tags=["게시판"])
+    supersede(vault, stems["d1"], stems["d2"])  # d1↔d2 links + supersedes
+
+    # 링크: (출발, 도착, 방식) — fm=프론트매터 links, wl=본문 위키링크
+    L = [
+        ("n1", "p1", "fm"), ("n2", "p1", "fm"), ("n3", "n1", "wl"), ("n4", "p1", "wl"),
+        ("n4", "u1", "fm"), ("n5", "p1", "fm"), ("n6", "n4", "wl"), ("n6", "d2", "wl"),
+        ("n2", "d2", "fm"), ("d1", "n4", "wl"), ("n7", "p2", "fm"), ("n8", "n7", "wl"),
+        ("n9", "d3", "fm"), ("n9", "p2", "wl"), ("n10", "d4", "fm"), ("n10", "u1", "wl"),
+        ("n11", "n8", "wl"), ("n12", "d5", "fm"), ("d5", "n7", "wl"), ("d3", "n8", "wl"),
+        ("n13", "p3", "fm"), ("n14", "p3", "fm"), ("n14", "u2", "fm"), ("d6", "n14", "wl"),
+        ("n15", "n16", "wl"), ("n16", "p3", "fm"), ("n17", "n16", "wl"), ("n17", "u2", "wl"),
+        ("n18", "n2", "wl"), ("n18", "d5", "wl"), ("n18", "n13", "wl"), ("u1", "p1", "fm"),
+    ]
+    by_src = defaultdict(list)
+    for a, b, how in L:
+        by_src[a].append((b, how))
+    for a, lst in by_src.items():
+        pa = stems[a]
+        meta, body = parse_frontmatter(pa.read_text(encoding="utf-8"))
+        fm = as_list(meta.get("links"))
+        wl = []
+        for b, how in lst:
+            target = wikilink(stems[b].stem)
+            if how == "fm" and target not in fm:
+                fm.append(target)
+            elif how == "wl":
+                wl.append(target)
+        if fm:
+            meta["links"] = fm
+        if wl:
+            body = body.rstrip("\n") + "\n\n관련: " + ", ".join(wl) + "\n"
+        write_note(pa, meta, body)
+    build_index(vault, today)
+    return vault
+
+
+# ---------------------------------------------------------------------------
+# HTTP 서버
+# ---------------------------------------------------------------------------
+
+def _int_param(qs, name, default, lo=1, hi=10000):
+    raw = (qs.get(name) or [None])[0]
+    if raw in (None, ""):
+        return default
+    try:
+        v = int(raw)
+    except ValueError:
+        raise BrainError(f"{name}는 정수여야 합니다: {raw}")
+    return max(lo, min(hi, v))
+
+
+class DashboardHandler(BaseHTTPRequestHandler):
+    server_version = "second-brain/" + VERSION
+
+    def log_message(self, fmt, *args):  # 요청 로그는 stderr 한 줄
+        if getattr(self.server, "quiet", False):
+            return
+        sys.stderr.write(f"[{datetime.now().strftime('%H:%M:%S')}] {self.address_string()} "
+                         f"{fmt % args}\n")
+
+    def _send(self, status, body, ctype):
+        self.send_response(status)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _json(self, status, data):
+        self._send(status, json.dumps(data, ensure_ascii=False).encode("utf-8"),
+                   "application/json; charset=utf-8")
+
+    def _static(self, rel):
+        web = Path(os.path.realpath(str(self.server.web_dir)))
+        target = Path(os.path.realpath(str(web / rel)))
+        if (web not in target.parents) or ".." in Path(rel).parts or not target.is_file():
+            return self._json(404, {"error": f"파일이 없습니다: {rel}"})
+        ctype = CONTENT_TYPES.get(target.suffix.lower(), "application/octet-stream")
+        self._send(200, target.read_bytes(), ctype)
+
+    def do_GET(self):
+        try:
+            raw = self.path
+            try:  # 인코딩 안 된 UTF-8 요청줄(latin-1로 디코딩됨) 복원
+                raw = raw.encode("latin-1").decode("utf-8")
+            except UnicodeError:
+                pass
+            u = urllib.parse.urlsplit(raw)
+            route = u.path.rstrip("/") or "/"
+            qs = urllib.parse.parse_qs(u.query)
+            vault, today = self.server.vault, self.server.today or date.today()
+            if route in ("/", "/index.html"):
+                return self._static("index.html")
+            if route.startswith("/web/"):
+                return self._static(urllib.parse.unquote(route[len("/web/"):]))
+            if route == "/api/summary":
+                return self._json(200, dash_summary(vault, today))
+            if route == "/api/graph":
+                return self._json(200, dash_graph(vault))
+            if route == "/api/search":
+                q = (qs.get("q") or [""])[0]
+                return self._json(200, dash_search(vault, q, _int_param(qs, "limit", 20, hi=200), today))
+            if route == "/api/note":
+                return self._json(200, dash_note(vault, (qs.get("path") or [""])[0]))
+            if route == "/api/timeline":
+                return self._json(200, dash_timeline(vault, _int_param(qs, "days", 30, hi=3650), today))
+            if route == "/api/decisions":
+                return self._json(200, dash_decisions(vault, today))
+            if route == "/api/projects":
+                return self._json(200, dash_projects(vault))
+            return self._json(404, {"error": f"없는 경로입니다: {u.path}"})
+        except BrainError as e:
+            return self._json(400, {"error": str(e)})
+        except FileNotFoundError as e:
+            return self._json(404, {"error": f"노트가 없습니다: {e}"})
+        except (BrokenPipeError, ConnectionResetError):
+            return None
+        except Exception as e:  # 서버는 죽지 않는다
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            try:
+                return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+            except OSError as e2:
+                log(f"응답 전송 실패: {e2}")
+                return None
+
+
+def make_server(vault, port=7777, web_dir=None, today=None, quiet=False):
+    """127.0.0.1 전용 서버 생성(port=0이면 임의 포트). 호출자가 serve_forever 실행."""
+    srv = ThreadingHTTPServer(("127.0.0.1", port), DashboardHandler)
+    srv.daemon_threads = True
+    srv.vault = Path(vault)
+    srv.web_dir = Path(web_dir) if web_dir else WEB_DIR
+    srv.today = today
+    srv.quiet = quiet
+    return srv
+
+
+def _open_browser(url):
+    opener = "open" if sys.platform == "darwin" else "xdg-open"
+    try:
+        subprocess.Popen([opener, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as e:
+        log(f"브라우저를 열지 못했습니다({e}). 직접 여세요: {url}")
+
+
+def cmd_serve(args):
+    if args.demo:
+        v = build_demo_vault()
+        log(f"데모 볼트(가공 샘플 데이터): {v}")
+    else:
+        v = require_vault()
+    if not 0 <= args.port <= 65535:
+        raise BrainError(f"포트 범위 오류: {args.port}")
+    try:
+        srv = make_server(v, args.port)
+    except OSError as e:
+        raise BrainError(f"포트 {args.port}에 바인딩하지 못했습니다({e}). --port로 다른 포트를 지정하세요.")
+    url = f"http://127.0.0.1:{srv.server_address[1]}"
+    print(url, flush=True)
+    if args.open:
+        _open_browser(url)
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        log("서버 종료")
+    finally:
+        srv.server_close()
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -1344,6 +1787,11 @@ def build_parser():
     s.add_argument("action", choices=("get", "set"), help="get 또는 set")
     s.add_argument("key", nargs="?", help="vault | git_autocommit | index_head")
     s.add_argument("value", nargs="?", help="set할 값")
+
+    s = add("serve", "로컬 대시보드 서버(127.0.0.1 전용)", cmd_serve)
+    s.add_argument("--port", type=int, default=7777, help="포트(기본 7777, 0이면 임의)")
+    s.add_argument("--open", action="store_true", help="브라우저 자동 열기")
+    s.add_argument("--demo", action="store_true", help="가공 샘플 데모 볼트로 서빙")
     return p
 
 

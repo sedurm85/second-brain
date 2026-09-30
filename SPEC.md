@@ -48,3 +48,21 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 
 ## 완료 기준
 `python3 -m unittest` 통과 · 로컬에서 `/plugin marketplace add <로컬경로>`로 설치 후 6개 스킬 각 1회 동작 · 볼트 삭제 후 재설치해도 데이터 안전(볼트는 플러그인 밖) · GitHub 공개 · README
+
+## v0.2 대시보드
+
+`brain.py serve [--port 7777] [--open] [--demo]` — `ThreadingHTTPServer`, 127.0.0.1 전용, 읽기 전용. 시작 시 stdout 한 줄 `http://127.0.0.1:<port>`, 요청 로그는 stderr 한 줄. `--demo`는 `~/.cache/second-brain/demo`에 가공 데이터 볼트(프로젝트 3·노트 18·결정 6·사람 2·링크 25+, 최근 60일)를 새로 만들어 서빙. 스킬 `brain-view`가 백그라운드로 띄운다. 프론트는 `web/index.html` 단일 파일.
+
+모든 API: `application/json; charset=utf-8`, `ensure_ascii=False`, `Cache-Control: no-store`. 오류는 `{error}` JSON — 입력 오류 400, 없음 404, 예외 500(서버는 계속 동작).
+
+| 메서드·경로 | 파라미터 | 응답 |
+|---|---|---|
+| `GET /` | — | `web/index.html` (없으면 404 JSON) |
+| `GET /web/<file>` | — | `web/` 아래 정적 파일, 확장자별 content-type, 밖으로 탈출 시 404 |
+| `GET /api/summary` | — | `{vault, generated_at, counts:{notes,decisions,projects,people,total}, this_week:{new_notes,new_decisions}, open_decisions:[{path,title,revisit,days_left}], recent:[{path,title,type,created,project,tags}]}` (recent 최대 30) |
+| `GET /api/graph` | — | `{nodes:[{id,path,title,type,project,created,tags,degree}], edges:[{source,target}]}` — id=파일 stem, 위키링크+프론트매터 links/supersedes/people에서 추출, 무방향 중복 제거, 없는 대상 제외 |
+| `GET /api/search` | `q`, `limit`(기본 20) | `[{path,title,type,created,tags,project,score,snippets:[...]}]` (CLI `search --json` 결과와 동일 순서, `snippet` 키도 유지) |
+| `GET /api/note` | `path`(볼트 상대 `.md`) | `{path,title,type,frontmatter,body,links_out:[stem],links_in:[stem]}` — 절대경로·`..`·볼트 밖(심볼릭 링크 포함) 400 |
+| `GET /api/timeline` | `days`(기본 30) | `[{date,items:[{path,title,type,project}]}]` 날짜 내림차순, 오늘 포함 최근 days일 |
+| `GET /api/decisions` | — | `{open,decided,superseded}` 각 `[{path,title,created,revisit,days_left,project,supersedes}]` — open은 revisit 오름차순 |
+| `GET /api/projects` | — | `[{name,path?,note_count,decision_count,last_activity,recent:[{path,title,type}]}]` last_activity 내림차순, 허브 없는 프로젝트는 path 생략 |
