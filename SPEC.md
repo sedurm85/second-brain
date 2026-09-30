@@ -199,3 +199,14 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `POST /api/config`(토큰, 화이트리스트 assistant_name 1~24자). 코어에서 "이름은 자비스로 해/너를 자비스라고 부를게"로 즉시 변경
 - 저녁 마감: `task_action carry`(오늘 묶음 미완료를 전부 내일 마감으로, 기다림 제외), CLI `task carry`, 코어 "남은 할 일 내일로". `brief --evening [--kakao]` = "[날짜 저녁 마감] 남은 할 일 N: … → 내일로 옮길까요? / 내일 첫 일정". launchd `com.secondbrain.evening` 21:30. 위젯 brain-evening
 - 테스트 +3, 총 136
+
+## v0.13 지금 실행·멈춤·재개 (2026-09-30)
+
+1차에서 킵해 둔 버튼. 사장님 "멈추지 말고 계속" 지시로 마지막 항목으로 구현.
+
+- `widget_commands(widgets)`: 위젯 source(로그 경로)를 crontab `>> 로그` 명령 또는 launchd plist `StandardOutPath`와 짝지어 실행 방법을 얻음 → `{id: {kind: cron, cmd} | {kind: launchd, label}}`. 같은 로그를 쓰는 위젯도 실행법을 공유
+- `run_widget`: cron은 같은 명령을 `/bin/sh -c`로 백그라운드(새 세션, stdout→그 로그), launchd는 `launchctl kickstart -k gui/<uid>/<label>`. `SECOND_BRAIN_RUN_DRY=1` 또는 `dry: true`면 실행 없이 방법만
+- `set_widget_state`: widgets.json의 `state`를 active|paused로 저장(크론 줄은 건드리지 않음. 이 환경에서 crontab 쓰기가 멈추는 문제도 있어 launchd/크론 자체 정지는 사용자 몫)
+- `POST /api/widget {action: run|pause|resume, id}`(토큰). run은 widgets.json `"allow_run": true`일 때만(기본 false). 성공 시 위젯 캐시 무효화. `/api/widgets`에 `runnable`, `/api/office`에 `runnable{id: kind}`
+- 보드: 자동화 행 호버 시 「지금 실행」(실행 가능할 때) · 「멈춤/다시 켜기」. 사무실: 책상 호버 시 ▶, 누르면 팀장의 한마디로 결과 안내, 5초 뒤 갱신(가동 감지로 타이핑 시작)
+- 테스트 +3, 총 139. 실사용: brain-remind launchd를 버튼으로 실행해 로그 갱신 확인

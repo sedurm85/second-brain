@@ -1559,7 +1559,7 @@ def widgets_config_path():
 def load_widgets_config():
     """widgets.json 로드. 없거나 깨졌으면 빈 목록(깨진 경우 error 포함)."""
     p = widgets_config_path()
-    empty = {"allow_commands": False, "widgets": [], "path": str(p), "error": None}
+    empty = {"allow_commands": False, "allow_run": False, "widgets": [], "path": str(p), "error": None}
     if not p.is_file():
         return empty
     try:
@@ -1572,7 +1572,7 @@ def load_widgets_config():
     items = data.get("widgets")
     if not isinstance(items, list):
         items = []
-    return {"allow_commands": data.get("allow_commands") is True,
+    return {"allow_commands": data.get("allow_commands") is True, "allow_run": data.get("allow_run") is True,
             "widgets": [w for w in items if isinstance(w, dict)], "path": str(p), "error": None}
 
 
@@ -1850,6 +1850,10 @@ def _evaluate_active(w, idx=0, allow_commands=False, now=None):
 
 class WidgetCache:
     """위젯별 60초 캐시. 키=위젯 설정, 무효화=mtime 변경 또는 60초 경과. parses=실제 평가 횟수."""
+
+    def clear(self):
+        with self._lock:
+            self._store.clear()
 
     def __init__(self, ttl=WIDGET_CACHE_SEC):
         self.ttl = ttl
@@ -2321,6 +2325,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 res = event_note_action(vault, body)
                 self.server.agenda_cache.invalidate()
                 return self._json(200, res)
+            if route == "/api/widget":
+                res = widget_action(body, collect_widgets(self.server.widget_cache))
+                if self.server.widget_cache:
+                    self.server.widget_cache.clear()
+                return self._json(200, res)
             if route == "/api/task":
                 res = task_action(vault, body, self.server.today or date.today())
                 return self._json(200, res)
@@ -2383,7 +2392,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if route in ("/office", "/office.html"):
                 return self._static("office.html")
             if route == "/api/office":
-                return self._json(200, dash_office(collect_widgets(self.server.widget_cache)))
+                d = dash_office(collect_widgets(self.server.widget_cache))
+                allow = bool(load_widgets_config().get("allow_run"))
+                cmds = widget_commands(d["widgets"])
+                d["runnable"] = {k: v["kind"] for k, v in cmds.items()} if allow else {}
+                return self._json(200, d)
             if route == "/api/tasks":
                 widgets = collect_widgets(self.server.widget_cache)
                 ag = dict(self.server.agenda_cache.get())
@@ -2407,7 +2420,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if route == "/api/projects":
                 return self._json(200, dash_projects(vault))
             if route == "/api/widgets":
-                return self._json(200, collect_widgets(self.server.widget_cache))
+                ws = collect_widgets(self.server.widget_cache)
+                cmds = widget_commands(ws)
+                allow = bool(load_widgets_config().get("allow_run"))
+                for w in ws:
+                    w["runnable"] = allow and w["id"] in cmds
+                return self._json(200, ws)
             if route == "/api/today":
                 widgets = collect_widgets(self.server.widget_cache)
                 return self._json(200, dash_today(vault, self.server.today, widgets=widgets,
@@ -2996,6 +3014,121 @@ def _ps_lines():
         return r.stdout.splitlines() if r.returncode == 0 else []
     except (OSError, subprocess.TimeoutExpired):
         return []
+
+
+def launch_agents_dir():
+    d = os.environ.get("SECOND_BRAIN_LAUNCH_AGENTS")
+    return Path(os.path.expanduser(d)) if d else home_dir() / "Library" / "LaunchAgents"
+
+
+def _cron_commands(cron_lines):
+    """크론 줄 → {로그 절대경로: 전체 명령(스케줄 5칸 뒤)}. 로그 리다이렉트가 없으면 {스크립트 stem: 명령}."""
+    out = {}
+    for line in cron_lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split(None, 5)
+        if len(parts) < 6:
+            continue
+        cmd = parts[5]
+        m = re.search(r">>?\s*(\S+\.log)", cmd)
+        run = re.split(r"\s*>>?\s*\S+\.log", cmd)[0].strip() if m else cmd.split("#")[0].strip()
+        if m:
+            out[os.path.expanduser(m.group(1))] = run
+        else:
+            script = next((c for c in cmd.split() if c.endswith((".py", ".sh"))), None)
+            if script:
+                out[Path(script).stem] = run
+    return out
+
+
+def _launchd_commands(plist_dir=None):
+    """~/Library/LaunchAgents/*.plist → {StandardOutPath 절대경로: Label}."""
+    import plistlib
+    d = plist_dir or launch_agents_dir()
+    out = {}
+    if not d.is_dir():
+        return out
+    for pl in d.glob("*.plist"):
+        try:
+            data = plistlib.loads(pl.read_bytes())
+        except Exception:  # noqa: BLE001 - 깨진 plist는 건너뜀
+            continue
+        label, log_path = data.get("Label"), data.get("StandardOutPath")
+        if label and log_path:
+            out[os.path.expanduser(str(log_path))] = str(label)
+    return out
+
+
+def widget_commands(widgets, cron_lines=None, plist_dir=None):
+    """위젯별 실행 방법: {id: {kind: cron|launchd, cmd|label}}. 로그 경로가 크론 리다이렉트 또는 launchd StandardOutPath와 같을 때만."""
+    cron = _cron_commands(_crontab_lines() if cron_lines is None else cron_lines)
+    agents = _launchd_commands(plist_dir)
+    out = {}
+    for w in widgets:
+        src = os.path.expanduser(str(w.get("source") or ""))
+        if not src:
+            continue
+        if src in agents:
+            out[w["id"]] = {"kind": "launchd", "label": agents[src]}
+        elif src in cron:
+            out[w["id"]] = {"kind": "cron", "cmd": cron[src]}
+        elif Path(src).stem in cron:
+            out[w["id"]] = {"kind": "cron", "cmd": cron[Path(src).stem]}
+    return out
+
+
+def run_widget(wid, widgets, dry=False, cron_lines=None, plist_dir=None):
+    """위젯 자동화를 지금 한 번 실행. cron은 같은 명령을 백그라운드 셸로, launchd는 kickstart. 실행 전 allow_run 확인은 호출자가 한다."""
+    cmds = widget_commands(widgets, cron_lines, plist_dir)
+    if wid not in cmds:
+        raise BrainError("이 자동화는 실행 방법을 몰라요(크론 로그 경로나 launchd StandardOutPath와 위젯 source가 같아야 해요)")
+    how = cmds[wid]
+    if dry or os.environ.get("SECOND_BRAIN_RUN_DRY"):
+        return dict(how, started=False, dry=True)
+    env = dict(os.environ)
+    env["PATH"] = "/Users/" + os.environ.get("USER", "") + "/.local/bin:/opt/homebrew/bin:/opt/miniconda3/bin:/usr/local/bin:" + env.get("PATH", "/usr/bin:/bin")
+    if how["kind"] == "launchd":
+        uid = os.getuid()
+        r = subprocess.run(["launchctl", "kickstart", "-k", f"gui/{uid}/{how['label']}"], capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            raise BrainError(f"launchctl 실패: {(r.stderr or r.stdout).strip()[:160]}")
+        return dict(how, started=True)
+    w = next(x for x in widgets if x["id"] == wid)
+    log_path = os.path.expanduser(str(w.get("source") or ""))
+    log_f = open(log_path, "ab") if log_path.endswith(".log") else subprocess.DEVNULL
+    subprocess.Popen(["/bin/sh", "-c", how["cmd"]], stdout=log_f, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                     start_new_session=True, env=env, cwd=str(home_dir()))
+    return dict(how, started=True)
+
+
+def set_widget_state(wid, state):
+    """widgets.json의 해당 위젯 state를 active|paused로 바꿔 저장."""
+    if state not in WIDGET_STATES:
+        raise BrainError("state는 active 또는 paused")
+    p = widgets_config_path()
+    if not p.is_file():
+        raise BrainError("widgets.json이 없어요")
+    data = json.loads(p.read_text(encoding="utf-8"))
+    hit = next((w for w in data.get("widgets", []) if str(w.get("id")) == wid), None)
+    if not hit:
+        raise BrainError(f"위젯이 없어요: {wid}")
+    hit["state"] = state
+    p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {"ok": True, "id": wid, "state": state}
+
+
+def widget_action(body, widgets):
+    action, wid = body.get("action"), str(body.get("id") or "")
+    cfg = load_widgets_config()
+    if action == "run":
+        if not cfg.get("allow_run"):
+            raise BrainError("실행 버튼은 widgets.json에 \"allow_run\": true 를 적어야 켜져요")
+        return dict(run_widget(wid, widgets, dry=bool(body.get("dry"))), action="run")
+    if action in ("pause", "resume"):
+        return dict(set_widget_state(wid, "paused" if action == "pause" else "active"), action=action)
+    raise BrainError("action은 run · pause · resume 중 하나")
 
 
 def running_widgets(widgets, ps_lines=None, cron_lines=None):

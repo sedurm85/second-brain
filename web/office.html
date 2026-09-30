@@ -64,6 +64,9 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 .desk.fail .nm { color: var(--crit); }
 .desk.run .nm { color: var(--accent); }
 .desk.paused { opacity: .55; }
+.runbtn { position: absolute; right: 6px; top: 6px; width: 22px; height: 22px; border-radius: 6px; background: rgba(79, 209, 255, .18); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); color: var(--accent); font-size: 11px; line-height: 20px; text-align: center; display: none; cursor: pointer; }
+.desk:hover .runbtn, .desk:focus-within .runbtn { display: block; }
+.runbtn:hover { background: var(--accent); color: var(--bg); }
 /* 말풍선 */
 .say { position: absolute; left: 50%; top: -2px; transform: translateX(-50%); max-width: 150px; background: #f5f8fb; color: #16212c; border-radius: 8px; padding: 4px 8px; font-size: 11px; line-height: 1.35; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 4px 14px rgba(0, 0, 0, .4); pointer-events: none; }
 .say::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 8px; height: 8px; background: #f5f8fb; transform: translateX(-50%) rotate(45deg); }
@@ -166,12 +169,14 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
   function lastLine(w) { var d = w.data || {}; if (d.lines && d.lines.length) return d.lines[d.lines.length - 1]; if (d.text) return String(d.text).split("\n")[0]; return w.summary || ""; }
   function deskHtml(w, running) {
     var st = running ? "run" : (ST_KO[w.status] ? w.status : "unknown");
+    var runnable = S.data && S.data.runnable && S.data.runnable[w.id] && !running;
+    var runBtn = runnable ? '<span class="runbtn" role="button" tabindex="0" data-run="' + esc(w.id) + '" title="지금 한 번 실행" aria-label="' + esc(shortTitle(w.title)) + ' 지금 실행">▶</span>' : "";
     var say = "";
     if (running) say = '<div class="say think">' + esc(running.etime ? running.etime + " 일하는 중" : "일하는 중…") + "</div>";
     else if (w.status === "fail") say = '<div class="say bad">' + esc((w.summary || "실패").slice(0, 40)) + "</div>";
     else if (w.status === "stale") say = '<div class="say zzz">zzz… ' + esc(ago(w.age_minutes)) + "</div>";
     else if (w.status === "ok" && w.age_minutes != null && w.age_minutes < 90) say = '<div class="say">' + esc(lastLine(w).slice(0, 34)) + "</div>";
-    return '<button type="button" class="desk ' + st + '" data-wid="' + esc(w.id) + '" aria-label="' + esc(shortTitle(w.title) + ", " + (ST_KO[st] || st)) + '">' + say +
+    return '<button type="button" class="desk ' + st + '" data-wid="' + esc(w.id) + '" aria-label="' + esc(shortTitle(w.title) + ", " + (ST_KO[st] || st)) + '">' + say + runBtn +
       sprite(w.id, st, S.frame) + '<div class="nm">' + esc(shortTitle(w.title)) + '</div><div class="st">' + esc(sched(w.title) || ST_KO[st] || "") + "</div></button>";
   }
   function jobDesk(j) {
@@ -225,6 +230,17 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
   function openDetail(title, meta, body) { $("dTitle").textContent = title; $("dMeta").textContent = meta; $("dBody").textContent = body || "(내용 없음)"; $("detail").classList.add("open"); }
   $("dClose").addEventListener("click", function () { $("detail").classList.remove("open"); });
   document.addEventListener("click", function (ev) {
+    var rb = ev.target.closest(".runbtn[data-run]");
+    if (rb) {
+      ev.stopPropagation(); ev.preventDefault();
+      var wid = rb.getAttribute("data-run"); rb.textContent = "…";
+      fetch("/api/session").then(function (r) { return r.json(); }).then(function (s) {
+        return fetch("/api/widget", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": s.token }, body: JSON.stringify({ action: "run", id: wid }) })
+          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); });
+      }).then(function () { $("leadSay").textContent = shortTitle((S.widgets[wid] || {}).title) + " 담당에게 지금 일을 시켰어요. 잠시 뒤 타이핑을 시작할 거예요."; setTimeout(load, 5000); })
+        .catch(function (err) { rb.textContent = "▶"; $("leadSay").textContent = "실행 실패: " + (err.message || err); });
+      return;
+    }
     var b = ev.target.closest(".desk"); if (!b) return;
     if (b.getAttribute("data-wid")) {
       var w = S.widgets[b.getAttribute("data-wid")]; if (!w) return;

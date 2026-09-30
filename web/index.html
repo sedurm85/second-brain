@@ -407,6 +407,12 @@ h1, h2, h3 { text-wrap: balance; }
 .w-head { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .w-head h3 { margin: 0; font-size: 15px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .w-age { font-size: 12.5px; color: var(--muted); flex: none; }
+.w-acts { display: none; gap: 4px; flex: none; }
+.wcard:hover .w-acts, .wcard:focus-within .w-acts { display: inline-flex; }
+.w-acts button { background: none; border: 1px solid var(--rule-strong); border-radius: 4px; color: var(--ink-2); font-size: 11.5px; padding: 1px 7px; }
+.w-acts button:hover { color: var(--ink); border-color: var(--accent); }
+.w-acts button[data-wact="run"] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.w-acts button:disabled { opacity: .6; cursor: default; }
 .w-sum { font-size: 13.5px; color: var(--ink-2); overflow-wrap: anywhere; }
 .w-view { min-width: 0; }
 .wcard.ok .w-view, .wcard.paused .w-view { display: none; }
@@ -1782,8 +1788,10 @@ h1, h2, h3 { text-wrap: balance; }
     function row(w) {
       S.widgets[w.id] = w;
       var st = ST_KO[w.status] ? w.status : "unknown";
+      var acts = '<span class="w-acts">' + (w.runnable ? '<button type="button" data-wact="run" title="지금 한 번 실행">지금 실행</button>' : "") +
+        (w.state === "paused" ? '<button type="button" data-wact="resume" title="다시 켜기(위젯 상태만)">다시 켜기</button>' : '<button type="button" data-wact="pause" title="멈춤으로 표시(경고 제외)">멈춤</button>') + "</span>";
       return '<article class="wcard ' + st + '" tabindex="0" data-wid="' + esc(w.id) + '" aria-haspopup="dialog" aria-label="' + esc(w.title) + ", " + ST_KO[st] + ', 눌러서 전체 보기">' +
-        '<div class="w-head">' + stPill(st) + "<h3>" + esc(w.title) + '</h3><span class="w-age">' + esc(fmtAge(w.age_minutes)) + "</span></div>" +
+        '<div class="w-head">' + stPill(st) + "<h3>" + esc(w.title) + "</h3>" + acts + '<span class="w-age">' + esc(fmtAge(w.age_minutes)) + "</span></div>" +
         (w.summary ? '<div class="w-sum">' + esc(w.summary) + "</div>" : "") +
         '<div class="w-view">' + widgetView(w, false) + "</div></article>";
     }
@@ -1865,8 +1873,19 @@ h1, h2, h3 { text-wrap: balance; }
       if (!document.hidden && Date.now() - S.live.last > 60000) refreshLive(true);
     });
     document.addEventListener("click", function (ev) {
+      var ab = ev.target.closest("button[data-wact]");
+      if (ab) {
+        ev.stopPropagation();
+        var card = ab.closest("[data-wid]"), wid = card.getAttribute("data-wid"), act = ab.getAttribute("data-wact");
+        ab.disabled = true; ab.textContent = act === "run" ? "실행 중…" : "저장 중…";
+        post("widget", { action: act, id: wid }).then(function (r) {
+          ab.textContent = act === "run" ? "실행 요청됨" : "완료";
+          setTimeout(function () { refreshLive(true); }, act === "run" ? 4000 : 300);
+        }).catch(function (err) { ab.disabled = false; ab.textContent = "실패"; alert((err.message || err)); });
+        return;
+      }
       var w = ev.target.closest("[data-wid]");
-      if (w && !ev.target.closest("#wmodal")) openWidget(w.getAttribute("data-wid"));
+      if (w && !ev.target.closest("#wmodal") && !ev.target.closest("button.top-w")) openWidget(w.getAttribute("data-wid"));
     });
     $("widgets").addEventListener("keydown", function (ev) {
       var w = ev.target.closest(".wcard");
