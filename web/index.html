@@ -99,8 +99,8 @@ body::after {
 .glass { background: var(--glass), var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--rp); box-shadow: var(--glass-edge), var(--panel-shadow); backdrop-filter: blur(14px); }
 /* 첫 로드 한 번의 등장 시퀀스: 보고 → 그래프 → 자동화 → 나머지 */
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-html.entering .hero-text, html.entering .hero-graph, html.entering #automation, html.entering #content > .section { animation: rise .7s cubic-bezier(.2, .7, .2, 1) both; }
-html.entering .hero-graph { animation-delay: .10s; } html.entering #automation { animation-delay: .22s; }
+html.entering .hero-text, html.entering .graph-section, html.entering #automation, html.entering #content > .section { animation: rise .7s cubic-bezier(.2, .7, .2, 1) both; }
+html.entering .graph-section { animation-delay: .10s; } html.entering #automation { animation-delay: .22s; }
 html.entering #content > .section:nth-child(1) { animation-delay: .34s; } html.entering #content > .section:nth-child(2) { animation-delay: .42s; }
 html.entering #content > .section:nth-child(3) { animation-delay: .50s; } html.entering #content > .section:nth-child(4) { animation-delay: .58s; }
 html { scroll-behavior: smooth; scroll-padding-top: 72px; }
@@ -160,8 +160,11 @@ h1, h2, h3 { text-wrap: balance; }
 
 /* ───────── 히어로: 비서의 보고 (7) + 살아 있는 지식 그래프 (5) ───────── */
 .main { padding: 28px 24px 96px; min-width: 0; }
-.hero { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 20px 24px; align-items: stretch; }
-.hero-text { padding: 26px 28px 22px; }
+.hero { display: grid; grid-template-columns: minmax(0, 1fr); }
+.hero-text { padding: 26px 28px 22px; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 8px 44px; align-items: start; }
+.hero-text .header { grid-column: 1 / -1; margin-bottom: 8px; }
+.hero-text .report { margin-bottom: 8px; }
+.hero-text .today-grid { align-self: start; margin-top: 10px; }
 .hero-text.glass { position: relative; overflow: hidden; }
 .hero-text.glass::after { content: ""; position: absolute; right: -80px; top: -80px; width: 260px; height: 260px; border-radius: 50%; background: radial-gradient(circle, var(--accent-soft), transparent 70%); pointer-events: none; }
 .header { margin-bottom: 18px; }
@@ -224,9 +227,9 @@ h1, h2, h3 { text-wrap: balance; }
 .chip[aria-pressed="false"] svg { opacity: .35; }
 .chip .c { color: var(--muted); }
 .chip svg { width: 9px; height: 9px; flex: none; }
-.hero-graph .graph-card { padding: 16px 18px 14px; height: 100%; display: flex; flex-direction: column; }
-.hero-graph .graph-wrap { flex: 1; }
-.graph-wrap { position: relative; height: clamp(340px, 46vh, 480px); border-radius: 10px; background: radial-gradient(ellipse at 50% 42%, var(--accent-soft), transparent 62%), color-mix(in srgb, var(--bg) 70%, transparent); box-shadow: inset 0 0 0 1px var(--rule); overflow: hidden; }
+.graph-section .graph-card { padding: 16px 20px 14px; }
+.graph-section { margin-top: 20px; }
+.graph-wrap { position: relative; height: clamp(440px, 62vh, 680px); border-radius: 10px; background: radial-gradient(ellipse at 50% 42%, var(--accent-soft), transparent 62%), color-mix(in srgb, var(--bg) 70%, transparent); box-shadow: inset 0 0 0 1px var(--rule); overflow: hidden; }
 #graph { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; border-radius: 10px; }
 #graph.dragging { cursor: grabbing; }
 #graph.hover { cursor: pointer; }
@@ -417,7 +420,7 @@ h1, h2, h3 { text-wrap: balance; }
 
 /* ───────── 반응형 ───────── */
 @media (max-width: 1000px) {
-  .hero { grid-template-columns: minmax(0, 1fr); }
+  .hero-text { grid-template-columns: minmax(0, 1fr); }
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .board { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .wgrid, .wgrid.attention { grid-template-columns: minmax(0, 1fr); }
@@ -436,7 +439,7 @@ h1, h2, h3 { text-wrap: balance; }
   .today-grid { grid-template-columns: minmax(0, 1fr); }
   .report { max-width: none; }
   .report p { font-size: 21px; }
-  .graph-wrap { height: 60vh; min-height: 320px; }
+  .graph-wrap { height: 60vh; min-height: 360px; }
   .tiles { grid-template-columns: minmax(0, 1fr); }
   .tile-value { font-size: 32px; }
   .tl-day { grid-template-columns: minmax(0, 1fr); gap: 6px; }
@@ -473,9 +476,9 @@ h1, h2, h3 { text-wrap: balance; }
     <nav class="nav" aria-label="섹션 이동">
       <ul>
       <li><a href="#today-section" class="active"><span class="dot"></span>오늘</a></li>
+      <li><a href="#graph-section"><span class="dot"></span>지식 그래프</a></li>
       <li><a href="#automation"><span class="dot"></span>자동화</a></li>
       <li><a href="#overview"><span class="dot"></span>개요</a></li>
-      <li><a href="#graph-section"><span class="dot"></span>지식 그래프</a></li>
       <li><a href="#decisions"><span class="dot"></span>결정</a></li>
       <li><a href="#timeline"><span class="dot"></span>타임라인</a></li>
       <li><a href="#projects"><span class="dot"></span>프로젝트</a></li>
@@ -507,24 +510,25 @@ h1, h2, h3 { text-wrap: balance; }
       <div class="report" id="report" aria-live="polite"><p class="loading">오늘 보고를 준비하고 있어요.</p></div>
       <div class="today-grid" id="todayGrid"><div class="loading">오늘 불러오는 중</div></div>
     </div>
-    <section class="hero-graph" id="graph-section" aria-labelledby="graph-h">
-      <h2 id="graph-h" class="sr-only">지식 그래프</h2>
-      <div class="graph-card glass">
-        <div class="graph-top">
-          <div class="graph-stats" id="graphStats">그래프 준비 중</div>
-          <div class="chips" id="chips" role="group" aria-label="타입 필터"></div>
-        </div>
-        <div class="graph-wrap" id="graphWrap">
-          <canvas id="graph" tabindex="0" role="img" aria-label="지식 그래프. 점 하나가 기록 하나, 선은 링크. 노드 목록 버튼으로 텍스트 목록을 볼 수 있어요." aria-describedby="graphTip"></canvas>
-          <div class="tooltip" id="graphTip" role="tooltip"></div>
-        </div>
-        <div class="graph-bottom">
-          <span>드래그로 이동, 휠로 확대, 더블클릭이면 처음 위치. 점을 누르면 노트가 열려요.</span>
-          <button class="text-btn" id="listBtn" type="button" aria-expanded="false" aria-controls="nodeList">노드 목록 보기</button>
-        </div>
-        <ul class="node-list" id="nodeList" hidden aria-label="그래프 노드 목록"></ul>
+  </section>
+
+  <section class="section graph-section" id="graph-section" aria-labelledby="graph-h">
+    <div class="section-head"><h2 id="graph-h">지식 그래프</h2><p>점 하나가 기록 하나, 선은 링크. 크기는 연결 수. 점을 누르면 노트가 열려요.</p></div>
+    <div class="graph-card glass">
+      <div class="graph-top">
+        <div class="graph-stats" id="graphStats">그래프 준비 중</div>
+        <div class="chips" id="chips" role="group" aria-label="타입 필터"></div>
       </div>
-    </section>
+      <div class="graph-wrap" id="graphWrap">
+        <canvas id="graph" tabindex="0" role="img" aria-label="지식 그래프. 점 하나가 기록 하나, 선은 링크. 노드 목록 버튼으로 텍스트 목록을 볼 수 있어요." aria-describedby="graphTip"></canvas>
+        <div class="tooltip" id="graphTip" role="tooltip"></div>
+      </div>
+      <div class="graph-bottom">
+        <span>드래그로 이동, 휠로 확대, 더블클릭이면 처음 위치.</span>
+        <button class="text-btn" id="listBtn" type="button" aria-expanded="false" aria-controls="nodeList">노드 목록 보기</button>
+      </div>
+      <ul class="node-list" id="nodeList" hidden aria-label="그래프 노드 목록"></ul>
+    </div>
   </section>
 
   <section class="section" id="automation" aria-labelledby="auto-h">
