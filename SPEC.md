@@ -557,3 +557,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `retro_questions`/`week_plan`은 여전히 최근 주간 회고를 우선하되, 가장 최근 회고가 월간(또는 주간이 아예 없음)이면 월간의 질문/「다음 달」도 이어 붙인다(기존 limit로 그대로 자름) — 주간이 없어도 월간만으로 보드·코어에 노출됨
 - `AGENT_SPECS["retro-monthly"]`(매월 1일 9:10, `StartCalendarInterval`의 `Day` 필드로 launchd가 이미 지원)를 추가, `agents install`(이름 없이 실행 시 기본 대상)에 `retro`처럼 자동 포함되고 위젯 정상 패턴에 "월간 회고"를 추가
 - 신규 테스트 `tests/test_retro.py::MonthlyRetroTest` 4건(재료 period=monthly, CLI가 월간 노트 생성 + 중복·`--force`, 주간 회고 없이도 질문/다음 달이 노출, 에이전트 스펙)과 `tests/test_agents.py`의 `retro-monthly` plist `Day=1` 검증 1건. 전체 스위트 586 통과(기존 573 + 신규 13, 기존 테스트 회귀 없음)
+## v0.31 브라우저 회귀 스위트
+
+- `tests/e2e/`(`_base.py` + `test_board.py`/`test_office.py`/`test_core.py`/`test_report.py`) 신규: playwright(chromium)로 `brain.py serve --demo`(임시 HOME·격리 캐시·`SECOND_BRAIN_OFFLINE=1`)를 서브프로세스로 띄워 보드·사무실·코어·리포트 4화면을 실제 브라우저로 검증. 매 테스트가 `page.on("pageerror")`/`console.error`를 수집해 처리되지 않은 JS 예외 0건을 확인하는 것이 핵심 가치
+- 보드: 히어로 보고 3문장 이상·내비·`/`검색 포커스·명령 팔레트·`?`도움말·「다가오는 일정」 제안 채택 시 `/api/today` 건수 감소·할 일 추가·노트 메모·개요 타일 5개·사람 카드·390px 무-스크롤. 사무실: 방/KPI/근무표·데스크 상세("이번 주 한 줄")·모바일 바텀시트화. 코어: 음성 질문 3종(오늘·회사 현황·제안 채택)·설정 다이얼로그. 리포트: `<h2>` 5개 이상·인쇄 스타일. 총 16건
+- CI에는 playwright가 없으므로 모듈 최상단에서 `@unittest.skipUnless(HAS_PLAYWRIGHT, …)`로 통째로 skip — `python3 -m unittest discover -s tests -q`가 로컬(16건 실행)·CI(16건 skip) 모두 초록불. 로컬에서 skip 경로만 확인하려면 `SECOND_BRAIN_E2E_DISABLE=1`
+- 안내 문서 `docs/testing.md` 추가(설치·실행법·범위·skip 동작). 실제 브라우저로 돌려본 결과 `web/*.html`에서 새로 발견된 버그는 없었음(선택자 오류 3건은 테스트 코드 쪽 수정으로 해결)
