@@ -103,3 +103,4 @@
 - 19:35 wt/inpage-remind 머지(테스트 573, /api/remind-peek). 워커 추가: wt/e2e-suite(Playwright 회귀 스위트, 없으면 skip), wt/monthly-retro(월간 회고·매월 1일 에이전트). 가동 중: agenda-gaps, onboarding-qa, perf-bench, e2e-suite, monthly-retro
 - 19:40 wt/agenda-gaps 머지(빠듯/이동 경고, 테스트 576). 가동 중: onboarding-qa, perf-bench, e2e-suite, monthly-retro
 - 19:45 wt/onboarding-qa 머지(결함 2건 수정: 미리알림 enabled 가드·agents status 모순, --help 4단 그룹, 테스트 583). 워커 추가: wt/board-staff-brief(보드 자동화 섹션에서 실패 원인 한 줄), wt/ask-guard(Claude 호출 동시성·시간당 상한)
+- 19:50 wt/monthly-retro 머지(테스트 596) → 실제 설치(매월 1일 9:10, 내일 첫 실행) + 관리자가 9월 월간 회고를 지금 생성. 가동 중: perf-bench, e2e-suite, board-staff-brief, ask-guard
