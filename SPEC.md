@@ -405,3 +405,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 노트 패널(`renderNotePanel`)은 표시용으로 잘라낸 H1 제목 줄 수를 `lineOffset`으로 넘겨, 화면에 보이는 본문과 `dash_note`가 돌려준 원본 `n.body`(=`event_note_action check`가 줄 번호로 참조하는 문자열) 사이 줄 인덱스가 어긋나지 않게 함
 - 체크박스 `change` 시 `POST /api/event-note {action:"check", path, line, done}` → 성공하면 `/api/note`로 다시 읽어 패널 재렌더링 + `refreshLive(true)`(회고 질문/이번 주 계획 카드 동기화), 실패하면 체크 상태를 되돌리고 `.note-actions .ev-status`에 오류 표시
 - Playwright로 임시 볼트에 체크박스 2개짜리 노트를 만들어 보드에서 검색→열기→체크→파일에 `- [x]`로 저장까지 실기동 확인. 전체 스위트 264 통과
+## v0.28 코어: 회사 현황·직원·미리알림
+
+- `web/core.html`의 `answer(q)`에 로컬 규칙 두 개 추가: 「회사/사무실/직원들/자동화 현황/KPI/성공률」은 `/api/office`(60초 캐시, `officeData()`)의 `kpis.total`로 이번 주 실행·실패·성공률을 말하고 실패가 있으면 가장 힘든 팀을 덧붙임(실행 0이면 "아직 첫 기록이 없어요"). 「누가 일해/지금 뭐 하고/일하는 직원/가동」은 `running`으로 가동 중인 직원 이름을, 없으면 위젯 제목의 근무 시각(`nextShiftText`)을, `jobs`의 `working` 개수를 Claude 작업으로 덧붙여 말함. 두 규칙 모두 기존 「사무실/직원 열기」 내비게이션보다 먼저 검사해 우선함
+- 기존 「할 일」 규칙에 `tasks.today`의 `kind === "reminder"` 개수를 세어 "미리알림 N개도 있어요" 한 줄 추가. `proactive(t)`에 `suggestions.count`·`retro_questions.length`를 각각 한 문장으로, 기존 `S.spoken` 가드로 페이지 로드당 한 번만 말하게 추가
+- HUD 입력창 placeholder에 "회사 현황 / 누가 일해" 예시 추가
+- Playwright로 데모 서버에서 `#askForm` 제출 → `#caption`에 "성공률"/"첫 기록", "다음 근무" 문구가 실제로 뜨는 것 확인. `python3 -m unittest tests.test_core` 3건 유지

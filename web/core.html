@@ -93,7 +93,7 @@ button { cursor: pointer; }
     </div>
     <div class="talk">
       <button type="button" class="mic" id="micBtn" title="말하기" aria-label="말하기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
-      <form id="askForm"><input id="ask" type="text" placeholder="오늘 뭐 있어? / 이번 주 / 자동화 / 보드 열어" autocomplete="off" aria-label="비서에게 묻기"><button type="submit" class="primary">묻기</button></form>
+      <form id="askForm"><input id="ask" type="text" placeholder="오늘 뭐 있어? / 이번 주 / 자동화 / 보드 열어 / 회사 현황 / 누가 일해" autocomplete="off" aria-label="비서에게 묻기"><button type="submit" class="primary">묻기</button></form>
     </div>
   </div>
 </div>
@@ -281,6 +281,35 @@ button { cursor: pointer; }
     var t = S.today || {}, ag = S.agenda || t.agenda || {};
     q = q.trim(); if (!q) return;
     caption("“" + q + "”", false);
+    if (/회사|사무실|직원들|자동화 현황|KPI|성공률/.test(q)) {
+      return officeData().then(function (o) {
+        var tot = ((o || {}).kpis || {}).total || {};
+        if (!tot.runs) return speak(["아직 첫 기록이 없어요."]);
+        var lines = ["이번 주 자동화 직원 " + (tot.members || 0) + "명이 " + tot.runs + "번 일했고 실패는 " + tot.fails + "번, 성공률 " + tot.rate + "%예요."];
+        var teams = ((o || {}).kpis || {}).teams || {}, worst = null;
+        Object.keys(teams).forEach(function (name) {
+          var tm = teams[name];
+          if (tm.fails && (!worst || tm.fails > worst.fails)) worst = { name: name, fails: tm.fails };
+        });
+        if (worst) lines.push(worst.name + "이 실패 " + worst.fails + "번으로 가장 힘들어해요.");
+        return speak(lines);
+      }).catch(function () { return speak(["사무실 상황을 가져오지 못했어요."]); });
+    }
+    if (/누가\s*(일|근무)|지금 뭐 하고|일하는 직원|가동/.test(q)) {
+      return officeData().then(function (o) {
+        var running = (o || {}).running || {}, widgets = (o || {}).widgets || [];
+        var names = Object.keys(running).map(function (id) {
+          var w = widgets.filter(function (x) { return x.id === id; })[0];
+          return w ? shortTitle(w.title) : id;
+        });
+        var lines = [];
+        if (names.length) lines.push("지금 " + names.join(", ") + "가 일하고 있어요.");
+        else { var ns = nextShiftText(widgets); lines.push("지금은 모두 자리에서 쉬고 있어요." + (ns ? " 다음 근무는 " + ns + "예요." : "")); }
+        var jobs = (o || {}).jobs || [], nWorking = jobs.filter(function (j) { return j.state === "working"; }).length;
+        if (nWorking) lines.push("그리고 Claude 작업 " + nWorking + "개가 진행 중이에요.");
+        return speak(lines);
+      }).catch(function () { return speak(["사무실 상황을 가져오지 못했어요."]); });
+    }
     if (/보드|대시보드|자세히/.test(q)) { speak(["보드를 열어요."]); setTimeout(function () { location.href = "/"; }, 900); return; }
     if (/사무실|직원/.test(q)) { speak(["사무실을 열어요."]); setTimeout(function () { location.href = "/office"; }, 900); return; }
     var nm = /(?:이름은|이름을|너를|널)\s*(\S+?)\s*(?:으로|로|라고|이라고)?\s*(?:부를|불러|바꿔|해|할게|하자|정해)/.exec(q);
@@ -330,6 +359,8 @@ button { cursor: pointer; }
     if (/할\s*일|인박스|투두/.test(q)) {
       var tk = t.tasks || {}, td = tk.today || [], wp = t.week_plan || [];
       var out = [td.length ? "오늘 할 일 " + td.length + "건. " + td.map(function (x) { return x.text; }).slice(0, 4).join(", ") + "." + ((tk.counts || {}).waiting ? " 기다리는 답이 " + tk.counts.waiting + "건 있어요." : "") : "오늘 할 일은 없어요." + ((tk.counts || {}).someday ? " 언젠가 할 것이 " + tk.counts.someday + "건 있어요." : "")];
+      var nRem = td.filter(function (x) { return x.kind === "reminder"; }).length;
+      if (nRem) out.push("미리알림 " + nRem + "개도 있어요.");
       if (wp.length) out.push("이번 주 계획은 " + wp.slice(0, 2).map(function (x) { return x.text; }).join(", ") + "이에요.");
       return speak(out);
     }
@@ -393,6 +424,19 @@ button { cursor: pointer; }
   addEventListener("keydown", function (ev) { if (ev.code === "Space" && document.activeElement === document.body) { ev.preventDefault(); S.listening ? stopListen() : startListen(); } if (ev.key === "Escape") { synth && synth.cancel(); stopListen(); } });
 
   /* ───────── 데이터 ───────── */
+  /* 사무실 KPI·가동 현황: 60초에 한 번만 다시 받아온다 */
+  function officeData() {
+    var now = Date.now();
+    if (S.office && now - (S.officeAt || 0) < 60000) return Promise.resolve(S.office);
+    return fetch("/api/office").then(function (r) { return r.json(); }).then(function (o) { S.office = o; S.officeAt = now; return o; });
+  }
+  function nextShiftText(widgets) {
+    for (var i = 0; i < (widgets || []).length; i++) {
+      var m = /\(([^)]*)\)\s*$/.exec(widgets[i].title || "");
+      if (m && m[1]) return m[1];
+    }
+    return "";
+  }
   /* 선제 알림: 새로 실패한 자동화, 15분 안 시작하는 일정·동선을 스스로 말한다. 브라우저 정책상 첫 상호작용 뒤부터 소리가 난다 */
   function proactive(t) {
     var fails = {};
@@ -400,6 +444,8 @@ button { cursor: pointer; }
     var lines = [];
     if (S.seenFails) Object.keys(fails).forEach(function (id) { if (!S.seenFails[id]) lines.push(shortTitle(fails[id].title) + "가 방금 실패했어요. " + (fails[id].summary || "")); });
     S.seenFails = fails;
+    if (!S.spoken.suggestions && t.suggestions && t.suggestions.count) { S.spoken.suggestions = 1; lines.push("준비 제안 " + t.suggestions.count + "건이 보드에서 채택을 기다려요."); }
+    if (!S.spoken.retro && t.retro_questions && t.retro_questions.length) { S.spoken.retro = 1; lines.push("회고 질문 " + t.retro_questions.length + "개가 남아 있어요."); }
     var now = new Date(), ag = t.agenda || {};
     (ag.today || []).forEach(function (e) {
       if (e.all_day) return;
