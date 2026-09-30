@@ -210,3 +210,10 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `POST /api/widget {action: run|pause|resume, id}`(토큰). run은 widgets.json `"allow_run": true`일 때만(기본 false). 성공 시 위젯 캐시 무효화. `/api/widgets`에 `runnable`, `/api/office`에 `runnable{id: kind}`
 - 보드: 자동화 행 호버 시 「지금 실행」(실행 가능할 때) · 「멈춤/다시 켜기」. 사무실: 책상 호버 시 ▶, 누르면 팀장의 한마디로 결과 안내, 5초 뒤 갱신(가동 감지로 타이핑 시작)
 - 테스트 +3, 총 139. 실사용: brain-remind launchd를 버튼으로 실행해 로그 갱신 확인
+
+## v0.14 agents 명령 (2026-09-30)
+
+- `brain.py agents install [brief remind evening] [--dry-run] [--force]` / `status` / `remove`: 아침 브리핑(07:00)·출발 알림(600초)·저녁 마감(21:30) launchd 사용자 에이전트를 `~/Library/LaunchAgents/com.secondbrain.*.plist`로 생성·bootstrap. 파이썬·brain.py 경로는 실행 중인 것을, `CLAUDE_CONFIG_DIR`은 설정돼 있으면 그대로 넘김. 로그는 `~/.cache/second-brain/agents/<name>.log`, 위젯(brain-brief 등, 운영팀) 자동 추가. 이미 있으면 건너뜀(`--force`로 덮어쓰기). `SECOND_BRAIN_LAUNCH_AGENTS`로 폴더 대체(테스트)
+- brain-setup 스킬에 「비서 설정」 절: 캘린더·이름·카톡·에이전트·allow_run·화면 안내
+- 사장님 환경의 기존 에이전트(k-skill-cron 로그 경로)는 그대로 두고 건너뜀
+- 테스트 +3, 총 142

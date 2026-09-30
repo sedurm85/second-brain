@@ -3515,6 +3515,138 @@ def cmd_brief(args):
     return EXIT_OK
 
 
+AGENT_SPECS = {
+    "brief": {"label": "com.secondbrain.brief", "args": ["brief", "--kakao"], "calendar": {"Hour": 7, "Minute": 0}, "title": "아침 브리핑 카톡 (매일 7시)"},
+    "remind": {"label": "com.secondbrain.remind", "args": ["remind", "--kakao"], "interval": 600, "title": "출발·시작 알림 (10분마다)"},
+    "evening": {"label": "com.secondbrain.evening", "args": ["brief", "--evening", "--kakao"], "calendar": {"Hour": 21, "Minute": 30}, "title": "저녁 마감 카톡 (매일 21:30)"},
+}
+
+
+def agents_log_dir():
+    d = agenda_mod.cache_dir() / "agents"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def agent_plist(name, spec, brain_path=None, python=None):
+    """launchd plist(dict). 파이썬·brain.py 경로는 지금 실행 중인 것을 쓴다."""
+    import plistlib
+    brain_path = brain_path or str(Path(__file__).resolve())
+    python = python or sys.executable
+    env = {"HOME": str(home_dir()), "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")}
+    if os.environ.get("CLAUDE_CONFIG_DIR"):
+        env["CLAUDE_CONFIG_DIR"] = os.environ["CLAUDE_CONFIG_DIR"]
+    log = str(agents_log_dir() / f"{name}.log")
+    d = {"Label": spec["label"], "ProgramArguments": [python, brain_path] + spec["args"], "EnvironmentVariables": env,
+         "StandardOutPath": log, "StandardErrorPath": log, "RunAtLoad": False}
+    if "calendar" in spec:
+        d["StartCalendarInterval"] = spec["calendar"]
+    else:
+        d["StartInterval"] = spec["interval"]
+    return plistlib.dumps(d), log
+
+
+def _launchctl(*args):
+    try:
+        r = subprocess.run(["launchctl", *args], capture_output=True, text=True, timeout=20)
+        return r.returncode, (r.stdout + r.stderr).strip()
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return 1, str(e)
+
+
+def agents_install(names, dry=False, force=False):
+    """plist를 ~/Library/LaunchAgents에 쓰고 bootstrap. 이미 같은 Label이 있으면 --force 없이는 건너뜀. 위젯도 추가."""
+    out = []
+    uid = os.getuid()
+    plist_dir = launch_agents_dir()
+    plist_dir.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        spec = AGENT_SPECS[name]
+        target = plist_dir / f"{spec['label']}.plist"
+        data, log = agent_plist(name, spec)
+        rec = {"name": name, "label": spec["label"], "plist": str(target), "log": log, "action": "install"}
+        if target.exists() and not force:
+            rec["action"] = "skip(이미 있음, --force로 덮어쓰기)"
+            out.append(rec)
+            continue
+        if dry:
+            rec["action"] = "dry"
+            out.append(rec)
+            continue
+        target.write_bytes(data)
+        _launchctl("bootout", f"gui/{uid}/{spec['label']}")
+        rc, msg = _launchctl("bootstrap", f"gui/{uid}", str(target))
+        rec["bootstrap"] = "ok" if rc == 0 else msg[:160]
+        if not Path(log).exists():
+            Path(log).write_text(f"{datetime.now():%F %T} 등록됨\n", encoding="utf-8")
+        out.append(rec)
+    # 위젯: 있으면 그대로
+    if not dry:
+        p = widgets_config_path()
+        try:
+            cfg = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {"allow_commands": False, "widgets": []}
+        except ValueError:
+            cfg = None
+        if isinstance(cfg, dict):
+            ids = {str(w.get("id")) for w in cfg.get("widgets", []) if isinstance(w, dict)}
+            for rec in out:
+                wid = f"brain-{rec['name']}"
+                if wid in ids or rec["action"].startswith("skip"):
+                    continue
+                cfg.setdefault("widgets", []).insert(0, {"id": wid, "title": AGENT_SPECS[rec["name"]]["title"], "kind": "log", "source": rec["log"], "team": "운영팀",
+                                                          "status": {"ok_pattern": "카톡 발송 완료|알릴 것 없음|발송", "fail_pattern": "Traceback|실패", "stale_minutes": 1560 if rec["name"] != "remind" else 40}, "lines": 3})
+                rec["widget"] = wid
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out
+
+
+def agents_status():
+    uid = os.getuid()
+    out = []
+    for name, spec in AGENT_SPECS.items():
+        target = launch_agents_dir() / f"{spec['label']}.plist"
+        rc, msg = _launchctl("print", f"gui/{uid}/{spec['label']}")
+        state = "loaded" if rc == 0 else "not loaded"
+        out.append({"name": name, "label": spec["label"], "installed": target.exists(), "state": state, "title": spec["title"]})
+    return out
+
+
+def agents_remove(names):
+    uid = os.getuid()
+    out = []
+    for name in names:
+        spec = AGENT_SPECS[name]
+        target = launch_agents_dir() / f"{spec['label']}.plist"
+        _launchctl("bootout", f"gui/{uid}/{spec['label']}")
+        if target.exists():
+            target.unlink()
+        out.append({"name": name, "label": spec["label"], "removed": True})
+    return out
+
+
+def cmd_agents(args):
+    names = [n for n in (args.names or list(AGENT_SPECS)) if n in AGENT_SPECS]
+    if not names:
+        raise BrainError(f"에이전트 이름은 {', '.join(AGENT_SPECS)} 중에서")
+    if sys.platform != "darwin" and args.action in ("install", "remove") and not args.dry_run:
+        raise BrainError("launchd 에이전트는 macOS에서만 설치할 수 있어요(다른 OS는 cron에 brief/remind를 직접 등록)")
+    if args.action == "install":
+        res = agents_install(names, dry=args.dry_run, force=args.force)
+        lines = [f"- {r['name']}: {r['action']}" + (f" → {r['plist']}" if r["action"] in ("install", "dry") else "") + (f" (bootstrap {r['bootstrap']})" if r.get("bootstrap") else "") for r in res]
+        if not args.dry_run and any(r["action"] == "install" for r in res):
+            lines.append("카톡을 쓰려면 `config set kakao_cmd <나에게 보내기 헬퍼 경로>`. 없으면 로그에만 남아요.")
+        emit(args, res, "\n".join(lines))
+        return EXIT_OK
+    if args.action == "status":
+        res = agents_status()
+        emit(args, res, "\n".join(f"- {r['name']} ({r['title']}): {'설치됨' if r['installed'] else '미설치'} · {r['state']}" for r in res))
+        return EXIT_OK
+    res = agents_remove(names)
+    emit(args, res, "\n".join(f"- {r['name']}: 제거" for r in res))
+    return EXIT_OK
+
+
 def cmd_calendar(args):
     # 위치 인자 해석: add <kind> <name> / remove <name>
     args.kind, args.name = (args.arg1, args.arg2) if args.action == "add" else (None, args.arg1)
@@ -3728,6 +3860,12 @@ def build_parser():
     s.add_argument("--body-file", help="내용 파일('-'면 stdin)")
     s.add_argument("--end", help="여러 날 일정이면 종료일 YYYY-MM-DD(같은 이름의 날짜들에 함께 붙음)")
     s.add_argument("--location", help="장소 메모")
+
+    s = add("agents", "비서 알림 에이전트(launchd): install [brief remind evening] · status · remove", cmd_agents)
+    s.add_argument("action", choices=("install", "status", "remove"))
+    s.add_argument("names", nargs="*", help="brief(07:00 브리핑) remind(10분 알림) evening(21:30 마감). 비우면 셋 다")
+    s.add_argument("--dry-run", action="store_true", help="쓰지 않고 만들 파일만 보여줌")
+    s.add_argument("--force", action="store_true", help="이미 있는 plist 덮어쓰기")
 
     s = add("calendar", "일정 소스 관리: list · add <ics|eventkit> <이름> · remove <이름> · test", cmd_calendar)
     s.add_argument("action", choices=("list", "add", "remove", "test"))

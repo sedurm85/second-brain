@@ -1,7 +1,7 @@
 ---
 name: brain-setup
-description: 세컨드브레인 볼트 설정(위치, git 자동 커밋, 세션 시작 인덱스 줄 수)을 확인·변경하고 볼트를 만든다.
-when_to_use: 사용자가 "브레인 설정", "볼트 위치 바꿔", "세컨드브레인 셋업"이라고 할 때 또는 /second-brain:brain-setup 호출 시.
+description: 세컨드브레인 볼트 설정(위치, git 자동 커밋, 인덱스 줄 수)과 비서 설정(캘린더 연결, 비서 이름, 카톡 헬퍼, 아침·알림·저녁 launchd 에이전트, 위젯 실행 허용)을 확인·변경하고 볼트를 만든다.
+when_to_use: 사용자가 "브레인 설정", "볼트 위치 바꿔", "세컨드브레인 셋업", "캘린더 붙여줘", "아침 브리핑 켜줘", "비서 이름"이라고 할 때 또는 /second-brain:brain-setup 호출 시.
 allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py *) Read
 ---
 
@@ -31,3 +31,14 @@ allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py *) Read
 3. `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py widgets` 로 각 위젯 상태(ok/warn/fail/stale/missing/unknown)를 확인한다.
 
 자세한 표는 플러그인 `docs/vault-format.md`의 "위젯 설정" 절에 있다.
+
+## 비서 설정 (2차)
+
+한 번에 하나씩, 사용자가 원하는 것만.
+
+- **캘린더**: 구글만 쓰면 구글 캘린더 설정 → 해당 캘린더 → "iCal 형식의 비공개 주소"를 복사해 `~/.config/second-brain/google.ics.url` 첫 줄에 직접 저장하도록 안내한다(주소는 비밀이라 대화에 붙이지 말라고 말한다). 파일이 생기면 `calendar add ics 구글 --url-file ~/.config/second-brain/google.ics.url` → `calendar test`. 맥 캘린더 앱에 계정이 있으면 `calendar add eventkit 맥`(첫 실행 때 권한 허용).
+- **비서 이름**: `config set assistant_name <이름>` (코어 화면·자유 질문의 자기 호칭).
+- **카톡**: 카카오 "나에게 보내기" 헬퍼 스크립트가 있으면 `config set kakao_cmd <경로>`. 없으면 알림은 로그에만 남는다고 설명한다.
+- **알림 에이전트(macOS)**: `agents install`(셋 다) 또는 `agents install brief`처럼 골라서. `--dry-run`으로 만들 파일을 먼저 보여줄 수 있다. `agents status`로 확인, `agents remove`로 제거. 위젯(brain-brief 등)이 자동으로 추가된다. 다른 OS면 cron에 `brain.py brief --kakao`(07:00)·`remind --kakao`(*/10)·`brief --evening --kakao`(21:30)를 직접 등록하도록 안내.
+- **지금 실행 버튼**: 보드·사무실에서 자동화를 바로 돌리려면 `~/.config/second-brain/widgets.json`에 `"allow_run": true`. 크론 `>> 로그` 또는 launchd `StandardOutPath`가 위젯 `source`와 같은 것만 실행할 수 있다.
+- **화면**: `serve` 뒤 `/`(보드) · `/core`(코어) · `/office`(사무실).
