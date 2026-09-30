@@ -62,6 +62,7 @@ python3 scripts/brain.py event step "2026-10-03|제주도" "14:00 집 출발 (�
 python3 scripts/brain.py config set assistant_name 자비스
 python3 scripts/brain.py backup                        # 볼트 zip 백업(14개 보관)
 python3 scripts/brain.py restore [zip] [--dry-run]     # 백업에서 복구(덮어쓰기 전 안전 백업 자동)
+python3 scripts/brain.py export --html brain.html [--since YYYY-MM-DD] [--type decision,journal] [--project 이름] [--no-body]  # 오프라인 공유·인쇄용 단일 HTML(외부 자산 없음)
 python3 scripts/brain.py import --apple-notes [--folder 이름 …] [--since YYYY-MM-DD] [--dry-run]  # 맥 메모 앱 가져오기(JXA, 읽기 전용, imported_from 기준 idempotent)
 python3 scripts/brain.py enrich [--dry-run]            # Claude가 노트 제목·요약·태그·관련 링크 정제(가져온 노트 우선)
 python3 scripts/brain.py prepare [--days 7]           # 다가오는 일정에 준비 체크리스트·동선 초안 제안(보드에서 채택)

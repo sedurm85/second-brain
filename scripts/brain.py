@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import html
 import json
 import math
 import os
@@ -6742,6 +6743,515 @@ def cmd_restore(args):
     return EXIT_OK
 
 
+# ---------------------------------------------------------------------------
+# export --html: 오프라인 공유·인쇄용 단일 HTML 파일 (외부 자산 없음, 인라인 CSS/작은 JS만)
+# ---------------------------------------------------------------------------
+
+_EXPORT_TYPE_LABELS = {
+    "note": "노트", "idea": "아이디어", "source": "소스", "meeting": "미팅",
+    "event": "일정", "journal": "일지", "decision": "결정", "project": "프로젝트", "person": "사람",
+}
+_EXPORT_DECISION_STATUS_LABELS = {"open": "열림", "decided": "결정됨", "superseded": "대체됨"}
+_EXPORT_BODY_LIMIT = 20000
+
+_MD_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
+_MD_LIST_RE = re.compile(r"^[-*]\s+(.*)$")
+_MD_OLIST_RE = re.compile(r"^\d+\.\s+(.*)$")
+_MD_LINK_RE = re.compile(r"\[([^\[\]]+)\]\(([^()\s]+)\)")
+_MD_BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
+_MD_ITALIC_STAR_RE = re.compile(r"(?<!\*)\*([^*\n]+)\*(?!\*)")
+_MD_ITALIC_US_RE = re.compile(r"(?<!_)_([^_\n]+)_(?!_)")
+_MD_CODE_RE = re.compile(r"`([^`]+)`")
+
+
+def _export_esc(s):
+    """일반 텍스트(제목·태그·메타)를 HTML에 안전하게 넣기 위한 escape."""
+    return html.escape(str(s if s is not None else ""), quote=True)
+
+
+def _export_truncate(text):
+    """본문이 너무 길면(500개 노트 기준 ~2MB 목표) 20,000자에서 잘라 안내 문구를 붙인다."""
+    if len(text) > _EXPORT_BODY_LIMIT:
+        return text[:_EXPORT_BODY_LIMIT] + "\n\n> (본문이 길어 20,000자에서 잘렸습니다)"
+    return text
+
+
+def _strip_leading_h1(body):
+    """default_body가 항상 넣는 「# 제목」 첫 줄을 제거한다(카드 제목과 중복 방지)."""
+    parts = body.split("\n", 1)
+    if parts and parts[0].strip().startswith("# "):
+        return parts[1] if len(parts) > 1 else ""
+    return body
+
+
+def _export_wikilink_html(raw, resolve):
+    """이미 html.escape된 위키링크 원문(raw)을 앵커 또는 무채색 텍스트로 변환.
+
+    resolve(stem)이 제목을 돌려주면(=이번 내보내기에 그 노트가 포함됨) 인페이지 앵커,
+    아니면 흐린 색 텍스트로 남긴다(다른 워커가 건드리지 않는 순수 로컬 함수).
+    """
+    if "|" in raw:
+        body, label = raw.split("|", 1)
+    else:
+        body, label = raw, None
+    target = link_target(body)
+    title = resolve(target) if resolve else None
+    href_target = target.replace('"', "&quot;")
+    if title is not None:
+        text = label if label else html.escape(title, quote=False)
+        return f'<a href="#n-{href_target}">{text}</a>'
+    text = label if label else target
+    return f'<span class="wikilink-broken">{text}</span>'
+
+
+def _export_inline(text, resolve=None):
+    """인라인 마크다운(볼드/이탤릭/코드/링크/위키링크) → HTML. 그 외 전부 escape."""
+    text = html.escape(text or "", quote=False)
+    codes = []
+
+    def _stash_code(m):
+        codes.append(m.group(1))
+        return f"\x00{len(codes) - 1}\x00"
+
+    text = _MD_CODE_RE.sub(_stash_code, text)
+
+    def _wl_repl(m):
+        return _export_wikilink_html(m.group(1), resolve)
+
+    text = WIKILINK_RE.sub(_wl_repl, text)
+
+    def _link_repl(m):
+        url = m.group(2).replace('"', "&quot;")
+        return f'<a href="{url}">{m.group(1)}</a>'
+
+    text = _MD_LINK_RE.sub(_link_repl, text)
+    text = _MD_BOLD_RE.sub(r"<strong>\1</strong>", text)
+    text = _MD_ITALIC_STAR_RE.sub(r"<em>\1</em>", text)
+    text = _MD_ITALIC_US_RE.sub(r"<em>\1</em>", text)
+    for i, code in enumerate(codes):
+        text = text.replace(f"\x00{i}\x00", f"<code>{code}</code>")
+    return text
+
+
+def md_to_html(text, resolve=None):
+    """작은 서버사이드 마크다운 렌더러: 헤딩·문단·목록·체크박스(☐/☑ 텍스트)·
+
+    볼드/이탤릭·인라인 코드·링크·인용, 그 외는 전부 escape. web/report.html의
+    클라이언트 렌더링과는 별개로 HTML 내보내기 전용(자바스크립트 불필요).
+    """
+    lines = (text or "").replace("\r\n", "\n").split("\n")
+    out = []
+    para = []
+    n = len(lines)
+    i = 0
+
+    def flush_para():
+        if para:
+            joined = " ".join(l.strip() for l in para if l.strip())
+            if joined:
+                out.append(f"<p>{_export_inline(joined, resolve)}</p>")
+            para.clear()
+
+    while i < n:
+        raw_ln = lines[i]
+        s = raw_ln.strip()
+        if not s:
+            flush_para()
+            i += 1
+            continue
+        m = _MD_HEADING_RE.match(s)
+        if m:
+            flush_para()
+            level = min(len(m.group(1)) + 3, 6)
+            out.append(f"<h{level}>{_export_inline(m.group(2).strip(), resolve)}</h{level}>")
+            i += 1
+            continue
+        if s.startswith(">"):
+            flush_para()
+            buf = []
+            while i < n and lines[i].strip().startswith(">"):
+                buf.append(re.sub(r"^\s*>\s?", "", lines[i].strip()))
+                i += 1
+            joined = " ".join(x.strip() for x in buf if x.strip())
+            out.append(f"<blockquote><p>{_export_inline(joined, resolve)}</p></blockquote>")
+            continue
+        cb = CHECKBOX_RE.match(raw_ln)
+        if cb:
+            flush_para()
+            items = []
+            while i < n:
+                m2 = CHECKBOX_RE.match(lines[i])
+                if not m2:
+                    break
+                mark = "☑" if m2.group(2).lower() == "x" else "☐"
+                items.append(f"<li>{mark} {_export_inline(m2.group(4).strip(), resolve)}</li>")
+                i += 1
+            out.append('<ul class="checklist">' + "".join(items) + "</ul>")
+            continue
+        lm = _MD_LIST_RE.match(s)
+        if lm:
+            flush_para()
+            items = []
+            while i < n:
+                s2 = lines[i].strip()
+                m3 = _MD_LIST_RE.match(s2)
+                if not m3 or CHECKBOX_RE.match(lines[i]):
+                    break
+                items.append(f"<li>{_export_inline(m3.group(1).strip(), resolve)}</li>")
+                i += 1
+            out.append("<ul>" + "".join(items) + "</ul>")
+            continue
+        om = _MD_OLIST_RE.match(s)
+        if om:
+            flush_para()
+            items = []
+            while i < n:
+                s2 = lines[i].strip()
+                m4 = _MD_OLIST_RE.match(s2)
+                if not m4:
+                    break
+                items.append(f"<li>{_export_inline(m4.group(1).strip(), resolve)}</li>")
+                i += 1
+            out.append("<ol>" + "".join(items) + "</ol>")
+            continue
+        if s in ("---", "***", "___"):
+            flush_para()
+            out.append("<hr>")
+            i += 1
+            continue
+        para.append(raw_ln)
+        i += 1
+    flush_para()
+    return "\n".join(out)
+
+
+def _export_decision(n, resolve, with_body):
+    status = _decision_status(n)
+    status_label = _EXPORT_DECISION_STATUS_LABELS.get(status, status)
+    revisit = str(n.meta.get("revisit") or "")
+    tags = ", ".join(n.tags)
+    search = _export_esc(" ".join([n.title, tags, n.project, status]).lower())
+    out = [f'<article class="entry decision status-{_export_esc(status)}" id="n-{_export_esc(n.stem)}" data-search="{search}">']
+    out.append(f'<h3>{_export_esc(n.title)} <span class="badge badge-{_export_esc(status)}">{_export_esc(status_label)}</span></h3>')
+    meta_bits = [f"작성일 {n.created}"]
+    if revisit:
+        meta_bits.append(f"되돌아볼 날 {revisit}")
+    if n.project:
+        meta_bits.append(f"프로젝트 {n.project}")
+    if tags:
+        meta_bits.append(f"태그 {tags}")
+    out.append(f'<p class="entry-meta">{_export_esc(" · ".join(meta_bits))}</p>')
+    if with_body:
+        sections = note_sections(n.body)
+        for label in ("상황", "고려한 선택지", "결정", "이유", "되돌아볼 날짜"):
+            body_txt = sections.get(label, "").strip()
+            if body_txt:
+                out.append(f"<h4>{_export_esc(label)}</h4>")
+                out.append(md_to_html(_export_truncate(body_txt), resolve))
+    out.append("</article>")
+    return "\n".join(out)
+
+
+def _export_project(key, name, members, project_note, resolve, with_body):
+    article_id = f"n-{_export_esc(project_note.stem)}" if project_note else f"proj-{_export_esc(key)}"
+    search = _export_esc(name.lower())
+    out = [f'<article class="entry project" id="{article_id}" data-search="{search}">']
+    out.append(f"<h3>{_export_esc(name)}</h3>")
+    out.append(f'<p class="entry-meta">소속 노트 {len(members)}개</p>')
+    if project_note and with_body:
+        goal = note_sections(project_note.body).get("목표", "").strip()
+        if goal:
+            out.append("<h4>목표</h4>")
+            out.append(md_to_html(_export_truncate(goal), resolve))
+    if members:
+        out.append("<ul>")
+        for m in sorted(members, key=lambda x: (x.created, x.rel), reverse=True):
+            out.append(f'<li><a href="#n-{_export_esc(m.stem)}">{_export_esc(m.title)}</a> '
+                       f'<span class="badge badge-type">{_export_esc(_EXPORT_TYPE_LABELS.get(m.type, m.type))}</span></li>')
+        out.append("</ul>")
+    out.append("</article>")
+    return "\n".join(out)
+
+
+def _export_journal(n, resolve, with_body):
+    is_weekly = n.stem.endswith("-weekly")
+    kind_label = "주간 회고" if is_weekly else "일지"
+    search = _export_esc(" ".join([n.title, kind_label]).lower())
+    out = [f'<article class="entry journal" id="n-{_export_esc(n.stem)}" data-search="{search}">']
+    out.append(f'<h3>{_export_esc(n.title)} <span class="badge badge-journal">{_export_esc(kind_label)}</span></h3>')
+    out.append(f'<p class="entry-meta">날짜 {n.created}</p>')
+    if with_body:
+        sections = note_sections(n.body)
+        labels = ("이번 주", "눈에 띄는 것", "되돌아볼 질문", "다음 주") if is_weekly else ("오늘", "잘한 것", "내일 첫 일")
+        for label in labels:
+            body_txt = sections.get(label, "").strip()
+            if body_txt:
+                out.append(f"<h4>{_export_esc(label)}</h4>")
+                out.append(md_to_html(_export_truncate(body_txt), resolve))
+    out.append("</article>")
+    return "\n".join(out)
+
+
+def _export_note(n, resolve, with_body):
+    tags = ", ".join(n.tags)
+    summary = str(n.meta.get("summary") or "").strip()
+    search = _export_esc(" ".join([n.title, tags, summary, n.project]).lower())
+    out = [f'<article class="entry note-card type-{_export_esc(n.type)}" id="n-{_export_esc(n.stem)}" data-search="{search}">']
+    out.append(f'<h3>{_export_esc(n.title)} <span class="badge badge-type">{_export_esc(_EXPORT_TYPE_LABELS.get(n.type, n.type))}</span></h3>')
+    meta_bits = [f"작성일 {n.created}"]
+    if n.project:
+        meta_bits.append(f"프로젝트 {n.project}")
+    if tags:
+        meta_bits.append(f"태그 {tags}")
+    out.append(f'<p class="entry-meta">{_export_esc(" · ".join(meta_bits))}</p>')
+    if summary:
+        out.append(f'<p class="summary">{_export_esc(summary)}</p>')
+    if with_body:
+        body_txt = _strip_leading_h1(n.body).strip()
+        if body_txt:
+            out.append(md_to_html(_export_truncate(body_txt), resolve))
+    out.append("</article>")
+    return "\n".join(out)
+
+
+def _export_event(n, resolve, with_body):
+    day = str(n.meta.get("event_date") or n.created)[:10]
+    location = str(n.meta.get("location") or "").strip()
+    search = _export_esc(" ".join([n.title, location]).lower())
+    out = [f'<article class="entry event" id="n-{_export_esc(n.stem)}" data-search="{search}">']
+    out.append(f'<h3>{_export_esc(n.title)} <span class="badge badge-event">일정</span></h3>')
+    meta_bits = [f"날짜 {day}"]
+    if location:
+        meta_bits.append(f"장소 {location}")
+    out.append(f'<p class="entry-meta">{_export_esc(" · ".join(meta_bits))}</p>')
+    if with_body:
+        sections = note_sections(n.body)
+        for label in ("준비", "동선", "메모"):
+            body_txt = sections.get(label, "").strip()
+            if body_txt:
+                out.append(f"<h4>{_export_esc(label)}</h4>")
+                out.append(md_to_html(_export_truncate(body_txt), resolve))
+    out.append("</article>")
+    return "\n".join(out)
+
+
+_EXPORT_CSS = """
+:root {
+  --fg: #1b1f23; --muted: #6b7280; --bg: #ffffff; --card-bg: #f8f9fb;
+  --border: #e2e5ea; --accent: #2563eb; --badge-open: #f59e0b; --badge-decided: #16a34a;
+  --badge-superseded: #9ca3af; --badge-type: #6366f1; --badge-journal: #0891b2; --badge-event: #db2777;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 24px; max-width: 960px; margin-left: auto; margin-right: auto;
+  font-family: 'IBM Plex Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', -apple-system,
+               BlinkMacSystemFont, sans-serif;
+  color: var(--fg); background: var(--bg); line-height: 1.6;
+}
+h1 { font-size: 1.9rem; margin-bottom: 4px; }
+h2 { font-size: 1.4rem; margin-top: 2.2rem; border-bottom: 2px solid var(--border); padding-bottom: 6px; }
+h3 { font-size: 1.15rem; margin-top: 1.4rem; }
+h4 { font-size: 1rem; color: var(--muted); margin: 1rem 0 0.3rem; }
+.export-header .meta { color: var(--muted); margin: 2px 0; font-size: 0.9rem; }
+.toc ul { margin: 4px 0 12px 0; padding-left: 20px; }
+.filter-box { margin: 16px 0; }
+.filter-box input {
+  width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem;
+}
+.entry {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px 18px; margin: 14px 0;
+}
+.entry-meta { color: var(--muted); font-size: 0.85rem; margin: 2px 0 8px; }
+.summary { font-style: italic; color: #374151; }
+.badge {
+  display: inline-block; font-size: 0.72rem; padding: 2px 8px; border-radius: 999px;
+  color: #fff; vertical-align: middle; margin-left: 6px;
+}
+.badge-open { background: var(--badge-open); }
+.badge-decided { background: var(--badge-decided); }
+.badge-superseded { background: var(--badge-superseded); }
+.badge-type { background: var(--badge-type); }
+.badge-journal { background: var(--badge-journal); }
+.badge-event { background: var(--badge-event); }
+.wikilink-broken { color: var(--muted); border-bottom: 1px dashed var(--muted); }
+blockquote { border-left: 3px solid var(--border); margin: 8px 0; padding: 4px 12px; color: #374151; }
+code { background: #eef0f3; padding: 1px 5px; border-radius: 4px; font-size: 0.9em; }
+ul.checklist { list-style: none; padding-left: 4px; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+@media print {
+  @page { size: A4; margin: 15mm; }
+  body { max-width: none; padding: 0; }
+  .filter-box { display: none; }
+  .entry.decision { page-break-before: always; }
+}
+"""
+
+_EXPORT_JS = """
+function filterExportEntries() {
+  var q = (document.getElementById('export-filter').value || '').toLowerCase();
+  var entries = document.querySelectorAll('.entry');
+  for (var i = 0; i < entries.length; i++) {
+    var e = entries[i];
+    var hay = e.getAttribute('data-search') || '';
+    e.style.display = (q === '' || hay.indexOf(q) !== -1) ? '' : 'none';
+  }
+}
+"""
+
+
+def export_html(vault, out_path, since=None, types=None, projects=None, with_body=True, today=None):
+    """볼트(또는 필터링된 일부)를 오프라인 공유·인쇄용 단일 HTML 파일로 내보낸다.
+
+    외부 자산이 전혀 없고(폰트도 시스템 폴백 스택만), 위키링크는 이번 내보내기에
+    포함된 노트끼리만 페이지 내 앵커(#n-<stem>)로 연결한다. 나머지는 흐린 텍스트.
+    """
+    vault = Path(vault)
+    out_path = Path(out_path).expanduser()
+    today = today or date.today()
+    if since:
+        parse_date(since, "--since")
+
+    notes = load_notes(vault)
+    if since:
+        notes = [n for n in notes if n.created >= since]
+    if types:
+        tset = set(types)
+        notes = [n for n in notes if n.type in tset]
+    if projects:
+        pslugs = {slugify(p) for p in projects}
+        notes = [n for n in notes if n.project and slugify(n.project) in pslugs]
+
+    title_by_stem = {n.stem: n.title for n in notes}
+
+    def resolve(stem):
+        return title_by_stem.get(stem)
+
+    by_type = defaultdict(list)
+    for n in notes:
+        by_type[n.type].append(n)
+
+    now_s = datetime.now().strftime("%Y-%m-%d %H:%M")
+    filters = []
+    if since:
+        filters.append(f"{since} 이후")
+    if types:
+        filters.append("타입: " + ", ".join(types))
+    if projects:
+        filters.append("프로젝트: " + ", ".join(projects))
+    if not with_body:
+        filters.append("본문 생략")
+    filter_s = " · ".join(filters) if filters else "전체"
+
+    parts = ["<!doctype html>", '<html lang="ko">', "<head>",
+             '<meta charset="utf-8">',
+             '<meta name="viewport" content="width=device-width, initial-scale=1">',
+             f"<title>{_export_esc('세컨드브레인 내보내기')}</title>",
+             f"<style>{_EXPORT_CSS}</style>", "</head>", "<body>"]
+
+    parts.append('<header class="export-header">')
+    parts.append(f"<h1>{_export_esc('세컨드브레인 내보내기')}</h1>")
+    parts.append(f'<p class="meta">볼트: {_export_esc(str(vault))}</p>')
+    parts.append(f'<p class="meta">생성 시각: {_export_esc(now_s)}</p>')
+    parts.append(f'<p class="meta">필터: {_export_esc(filter_s)}</p>')
+    parts.append("</header>")
+
+    parts.append('<nav class="toc"><h2>목차</h2><ul>')
+    for t in ALL_TYPES:
+        cnt = len(by_type.get(t, []))
+        if cnt:
+            parts.append(f"<li>{_export_esc(_EXPORT_TYPE_LABELS.get(t, t))} {cnt}개</li>")
+    parts.append("</ul>")
+
+    proj_counts = defaultdict(int)
+    proj_names = {}
+    for n in notes:
+        if n.project:
+            key = slugify(n.project)
+            proj_counts[key] += 1
+            proj_names.setdefault(key, n.project)
+    if proj_counts:
+        parts.append("<ul>")
+        for key, cnt in sorted(proj_counts.items(), key=lambda kv: (-kv[1], kv[0])):
+            parts.append(f"<li>프로젝트 · {_export_esc(proj_names[key])} {cnt}개</li>")
+        parts.append("</ul>")
+    parts.append("</nav>")
+
+    parts.append('<div class="filter-box"><input id="export-filter" type="search" '
+                 'placeholder="제목·태그·요약으로 필터링" oninput="filterExportEntries()"></div>')
+
+    dec_notes = sorted(by_type.get("decision", []), key=lambda n: (n.created, n.rel), reverse=True)
+    if dec_notes:
+        parts.append('<section id="sec-decisions"><h2>결정</h2>')
+        for n in dec_notes:
+            parts.append(_export_decision(n, resolve, with_body))
+        parts.append("</section>")
+
+    if proj_counts:
+        parts.append('<section id="sec-projects"><h2>프로젝트 허브</h2>')
+        proj_notes_by_key = defaultdict(list)
+        for n in notes:
+            if n.project:
+                proj_notes_by_key[slugify(n.project)].append(n)
+        project_type_notes = {slugify(n.title): n for n in by_type.get("project", [])}
+        for key, cnt in sorted(proj_counts.items(), key=lambda kv: (-kv[1], kv[0])):
+            parts.append(_export_project(key, proj_names[key], proj_notes_by_key.get(key, []),
+                                         project_type_notes.get(key), resolve, with_body))
+        parts.append("</section>")
+
+    journal_notes = sorted(by_type.get("journal", []), key=lambda n: n.created, reverse=True)
+    if journal_notes:
+        parts.append('<section id="sec-journals"><h2>일지·회고</h2>')
+        for n in journal_notes:
+            parts.append(_export_journal(n, resolve, with_body))
+        parts.append("</section>")
+
+    generic_types = ("note", "idea", "source", "meeting")
+    generic_notes = sorted((n for t in generic_types for n in by_type.get(t, [])),
+                           key=lambda n: (n.created, n.rel), reverse=True)
+    if generic_notes:
+        parts.append('<section id="sec-notes"><h2>노트</h2>')
+        for n in generic_notes:
+            parts.append(_export_note(n, resolve, with_body))
+        parts.append("</section>")
+
+    people_notes = sorted(by_type.get("person", []), key=lambda n: n.title)
+    if people_notes:
+        parts.append('<section id="sec-people"><h2>사람</h2>')
+        for n in people_notes:
+            parts.append(_export_note(n, resolve, with_body))
+        parts.append("</section>")
+
+    event_notes = sorted(by_type.get("event", []), key=lambda n: n.created, reverse=True)
+    if event_notes:
+        parts.append('<section id="sec-events"><h2>일정 노트</h2>')
+        for n in event_notes:
+            parts.append(_export_event(n, resolve, with_body))
+        parts.append("</section>")
+
+    parts.append(f"<script>{_EXPORT_JS}</script>")
+    parts.append("</body></html>")
+
+    html_doc = "\n".join(parts)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(html_doc, encoding="utf-8")
+    return {"path": str(out_path), "notes": len(notes), "bytes": out_path.stat().st_size}
+
+
+def cmd_export(args):
+    v = require_vault()
+    types = split_csv(args.type)
+    for t in types:
+        if t not in ALL_TYPES:
+            raise BrainError(f"알 수 없는 타입: {t} (가능: {', '.join(ALL_TYPES)})")
+    projects = split_csv(args.project)
+    res = export_html(v, args.html, since=args.since, types=types or None,
+                      projects=projects or None, with_body=not args.no_body)
+    emit(args, res, f"내보내기 완료: {res['path']} ({res['notes']}개 노트, {res['bytes'] // 1024}KB)")
+    return EXIT_OK
+
+
 def cmd_agents(args):
     names = [n for n in (args.names or DEFAULT_AGENT_NAMES) if n in AGENT_SPECS]
     if not names:
@@ -7106,6 +7616,13 @@ def build_parser():
     s.add_argument("--dry-run", action="store_true", help="실제로 바꾸지 않고 계획만 보여줌")
     s.add_argument("--replace", action="store_true", help="zip에 없는 기존 파일을 삭제(기본은 보존)")
     s.add_argument("--no-safety-backup", action="store_true", help="복구 전 안전 백업을 만들지 않음")
+
+    s = add("export", "볼트를 오프라인 공유·인쇄용 단일 HTML로 내보내기(외부 자산 없음)", cmd_export)
+    s.add_argument("--html", required=True, help="출력 HTML 파일 경로")
+    s.add_argument("--since", help="이 날짜 이후 생성만(YYYY-MM-DD)")
+    s.add_argument("--type", help="타입 필터(쉼표 구분, 예: decision,journal)")
+    s.add_argument("--project", help="프로젝트 필터(쉼표 구분)")
+    s.add_argument("--no-body", action="store_true", help="본문 생략(제목·메타만)")
 
     s = add("agents","비서 알림 에이전트(launchd): install [brief remind evening backup prepare retro serve] · status · remove", cmd_agents)
     s.add_argument("action", choices=("install", "status", "remove"))

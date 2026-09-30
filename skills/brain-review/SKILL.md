@@ -17,5 +17,6 @@ allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py *) Bash(pytho
    - 링크 제안: 연결 후보 쌍과 이유 1줄. 사용자가 승인한 쌍만 `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py link A B` 실행.
 3. `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py index` 로 BRAIN.md 갱신.
 4. `test -f ~/.local/k-skill-cron/notify_kakao.py` 가 성공하면 "요약을 카톡으로 보낼까요?"라고 제안만 한다. 승인 시에만 `python3 ~/.local/k-skill-cron/notify_kakao.py "<5줄 이내 요약>"` 실행. 자동 전송 금지.
+5. 사용자가 리뷰 내용을 인쇄하거나 브레인을 안 쓰는 사람에게 공유하고 싶어 하면(예: "내보내기", "한 파일로", "인쇄해서 주고 싶어") `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py export --html <경로> [--since ...] [--type ...] [--project ...]`로 외부 자산 없는 단일 HTML을 만들어 안내한다.
 
 해당 절에 항목이 없으면 "없음" 한 단어로 둔다. 볼트가 없으면(종료 코드 3) init 을 제안한다.
