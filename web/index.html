@@ -1615,7 +1615,9 @@ h1, h2, h3 { text-wrap: balance; }
     if (t.agenda && t.agenda.sentence) out.push(t.agenda.sentence);
     if (t.mail && t.mail.sentence) out.push(t.mail.sentence);
     var chores = [];
+    if (t.suggestions && t.suggestions.count) chores.push("채택을 기다리는 준비 제안 " + t.suggestions.count + "건");
     if (rv.length) chores.push("되돌아볼 결정 " + rv.length + "건");
+    if (t.retro_questions && t.retro_questions.length) chores.push("회고 질문 " + t.retro_questions.length + "개");
     if (inbox.length) chores.push("할 일 " + inbox.length + "건");
     out.push(chores.length ? chores.join(", ") + "이 있어요." : "오늘 챙길 결정이나 할 일은 없어요.");
     var wk = t.this_week || {};

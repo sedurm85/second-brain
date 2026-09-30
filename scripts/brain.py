@@ -4552,6 +4552,69 @@ def cmd_enrich(args):
     return EXIT_OK if not failed else EXIT_INPUT
 
 
+def doctor_report(today=None):
+    """설치·연결 점검. 각 항목 {name, ok, detail, fix}. 외부 호출 없음(캘린더는 캐시·설정만 본다)."""
+    import shutil
+    items = []
+    def add(name, ok, detail, fix=None):
+        items.append({"name": name, "ok": bool(ok), "detail": detail, "fix": fix})
+    cfg = load_config()
+    try:
+        v = vault_path()
+        ok = vault_exists(v)
+        add("볼트", ok, f"{v}" + ("" if ok else " (없음)"), None if ok else "brain-setup 또는 `brain.py init`")
+        if ok:
+            notes = load_notes(v)
+            add("노트", True, f"{len(notes)}개 · 요약 있는 노트 {sum(1 for n in notes if n.meta.get('summary'))}개", None if len(notes) else "「기억해둬」로 첫 노트를 남겨 보세요")
+            imported = [n for n in notes if n.meta.get("imported_from") and not n.meta.get("summary")]
+            if imported:
+                add("정제 대기", False, f"가져온 노트 {len(imported)}개에 요약이 없음", "`brain.py enrich`")
+    except BrainError as e:
+        add("볼트", False, str(e), "brain-setup")
+    py = sys.version_info
+    add("Python", py >= (3, 9), f"{py.major}.{py.minor}.{py.micro}", None if py >= (3, 9) else "3.9 이상 필요")
+    ask_cmd = os.environ.get("SECOND_BRAIN_ASK_CMD") or cfg.get("ask_cmd") or "claude -p --output-format text"
+    exe = ask_cmd.split()[0]
+    found = shutil.which(exe) or (os.path.isfile(os.path.expanduser(exe)) and exe)
+    add("Claude CLI", bool(found), f"{exe} → {found or '못 찾음'}", None if found else "claude 설치 후 PATH에 넣거나 `config set ask_cmd <경로> -p --output-format text`")
+    srcs = agenda_mod.normalize_sources(cfg)
+    if srcs:
+        add("캘린더", True, ", ".join(f"{s['name']}({s['kind']})" for s in srcs), None)
+        for s in srcs:
+            if s["kind"] == "ics" and s.get("url_file") and not os.path.isfile(os.path.expanduser(str(s["url_file"]))):
+                add("캘린더 주소 파일", False, f"{s['url_file']} 없음", "구글 캘린더 비공개 ICS 주소를 그 파일 첫 줄에 저장")
+    else:
+        add("캘린더", False, "연결된 캘린더 없음", "`calendar add ics 구글 --url-file ~/.config/second-brain/google.ics.url`")
+    helper = kakao_helper_path(cfg)
+    add("카톡 헬퍼", bool(helper), str(helper) if helper else "없음(알림은 로그에만)", None if helper else "`config set kakao_cmd <나에게 보내기 스크립트>`")
+    wp = widgets_config_path()
+    if wp.is_file():
+        try:
+            ws = collect_widgets()
+            bad = [w["title"] for w in ws if w.get("state") != "paused" and w.get("status") in ("fail", "stale", "missing")]
+            add("자동화 위젯", not bad, f"{len(ws)}개" + (f" · 문제 {len(bad)}: " + ", ".join(bad[:3]) if bad else " · 모두 정상"), "보드 「자동화」에서 확인" if bad else None)
+        except BrainError as e:
+            add("자동화 위젯", False, str(e), "widgets.json 문법 확인")
+    else:
+        add("자동화 위젯", False, "widgets.json 없음", "`config init-widgets`")
+    if sys.platform == "darwin":
+        st = agents_status()
+        loaded = [a["name"] for a in st if a["state"] == "loaded"]
+        missing = [a["name"] for a in st if a["installed"] and a["state"] != "loaded"]
+        add("알림 에이전트", not missing, f"실행 중 {len(loaded)}/{len(st)}: " + (", ".join(loaded) or "없음") + (f" · 설치됐지만 안 뜸: {', '.join(missing)}" if missing else ""),
+            "`agents install --force`" if missing else (None if loaded else "`agents install`"))
+    cache = agenda_mod.cache_dir()
+    add("캐시 폴더", os.access(cache, os.W_OK) if cache.exists() else True, str(cache), None)
+    return {"date": (today or date.today()).isoformat(), "items": items, "ok": all(i["ok"] for i in items)}
+
+
+def cmd_doctor(args):
+    r = doctor_report()
+    lines = [("✓ " if i["ok"] else "✗ ") + f"{i['name']}: {i['detail']}" + (f"  → {i['fix']}" if i.get("fix") and not i["ok"] else "") for i in r["items"]]
+    emit(args, r, "\n".join(lines) + ("\n\n모두 정상이에요." if r["ok"] else "\n\n✗ 항목의 → 안내대로 고치면 돼요."))
+    return EXIT_OK if r["ok"] else EXIT_INPUT
+
+
 def cmd_backup(args):
     v = require_vault()
     res = backup_vault(v, args.dest, args.keep)
@@ -4829,6 +4892,8 @@ def build_parser():
     s.add_argument("--force", action="store_true", help="요약이 있어도 다시")
     s.add_argument("--limit", type=int, help="최대 N개")
     s.add_argument("--dry-run", action="store_true", help="대상만 보여주고 호출하지 않음")
+
+    s = add("doctor", "설치·연결 점검: 볼트·Python·Claude CLI·캘린더·카톡·위젯·알림 에이전트", cmd_doctor)
 
     s = add("backup", "볼트를 zip으로 백업(~/.cache/second-brain/backups/, 기본 14개 보관)", cmd_backup)
     s.add_argument("--dest", help="백업 폴더(기본 ~/.cache/second-brain/backups)")

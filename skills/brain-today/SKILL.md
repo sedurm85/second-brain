@@ -13,6 +13,7 @@ allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py *) Bash(pytho
    - 되돌아볼 결정(`revisit`): 제목 + `days_left`(0이면 "오늘", 음수면 "N일 지남"). 최대 3개.
    - 멈춘 자동화(`top_widgets` 중 status `fail`/`stale`): 제목 + summary 핵심만. `missing`은 "파일 없음"으로 짧게.
    - inbox 할 일(`inbox`): 개수 + 앞 3개.
+   - 준비 제안(`suggestions.count`): "채택을 기다리는 준비 제안 N건 — 보드의 일정 카드에서 채택/무시" 한 줄. 회고 질문(`retro_questions`)이 있으면 첫 질문을 그대로 읽어 준다.
    - 이번 주 신규(`this_week`): 노트 N · 결정 M.
 3. 위젯이 하나도 없으면(`widgets_total`이 0) 마지막에 한 줄 안내: "`brain.py config init-widgets`로 예시 widgets.json을 만들면 내 자동화 상태도 같이 볼 수 있어요."
 4. `test -f ~/.local/k-skill-cron/notify_kakao.py` 가 성공하면 "카톡으로도 보낼까요?"라고 한 번만 묻는다. 승인하면 `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py brief --kakao`를 실행한다(200자 요약을 헬퍼로 발송). 묻지 않고 보내지 않는다.
