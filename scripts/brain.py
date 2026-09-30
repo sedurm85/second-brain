@@ -9,6 +9,7 @@ import json
 import math
 import os
 import re
+import secrets
 import subprocess
 import sys
 import threading
@@ -28,7 +29,7 @@ EXIT_OK = 0
 EXIT_INPUT = 2
 EXIT_NO_VAULT = 3
 
-NOTE_TYPES = ("note", "idea", "source", "meeting")
+NOTE_TYPES = ("note", "idea", "source", "meeting", "event")
 ALL_TYPES = NOTE_TYPES + ("decision", "project", "person")
 DECISION_STATUSES = ("open", "decided", "superseded")
 SKIP_FILES = {"BRAIN.md", "inbox.md"}
@@ -518,6 +519,8 @@ def target_path(vault, ntype, title, created, taken=None):
     if ntype == "person":
         return vault / "people" / f"{stem}.md"
     y, m = created[:4], created[5:7]
+    if ntype == "event":
+        return vault / "events" / y / f"{created[:10]}-{stem}.md"
     return vault / "notes" / y / m / f"{stem}.md"
 
 
@@ -536,6 +539,8 @@ def default_body(ntype, title):
         return f"# {title}\n\n## 목표\n\n## 메모\n"
     if ntype == "person":
         return f"# {title}\n\n## 맥락\n"
+    if ntype == "event":
+        return f"# {title}\n\n## 준비\n\n## 메모\n"
     return f"# {title}\n"
 
 
@@ -1944,6 +1949,10 @@ class AgendaCache:
         self._lock = threading.Lock()
         self._data = {}
 
+    def invalidate(self):
+        with self._lock:
+            self._data.clear()
+
     def get(self, days=7):
         with self._lock:
             hit = self._data.get(days)
@@ -1991,8 +2000,11 @@ def dash_today(vault, today=None, now=None, widgets=None, agenda=None):
         "widgets_total": len(widgets),
         "top_widgets": top,
     }
-    ag = agenda if agenda is not None else collect_agenda_safe(7, now=now)
+    ag = dict(agenda if agenda is not None else collect_agenda_safe(7, now=now))
+    if vault:
+        attach_event_notes(vault, ag)
     t["agenda"] = {k: ag.get(k) for k in ("today", "next", "current", "conflicts", "sources", "total")}
+    t["agenda"]["upcoming"] = (ag.get("upcoming") or [])[:6]
     t["agenda"]["upcoming_count"] = len(ag.get("upcoming") or [])
     t["agenda"]["sentence"] = agenda_mod.agenda_sentence(ag)
     t["kakao"] = kakao_brief(t)
@@ -2063,6 +2075,49 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _write_allowed(self):
+        """쓰기 요청 검사: 같은 서버가 낸 토큰 + Host가 루프백. 실패 시 (False, 응답) 반환."""
+        tok = self.headers.get("X-Brain-Token", "")
+        host = (self.headers.get("Host") or "").split(":")[0]
+        if host not in ("127.0.0.1", "localhost", "[::1]"):
+            return False, self._json(403, {"error": "로컬에서만 쓸 수 있어요"})
+        if not tok or not secrets.compare_digest(tok, self.server.token):
+            return False, self._json(403, {"error": "세션 토큰이 없거나 달라요. 페이지를 새로 고쳐 주세요"})
+        return True, None
+
+    def _read_json(self, limit=65536):
+        n = int(self.headers.get("Content-Length") or 0)
+        if n <= 0 or n > limit:
+            raise BrainError("요청 본문이 비었거나 너무 커요")
+        try:
+            return json.loads(self.rfile.read(n).decode("utf-8"))
+        except (UnicodeError, ValueError):
+            raise BrainError("JSON 본문이 아니에요")
+
+    def do_POST(self):
+        try:
+            route = urllib.parse.urlsplit(self.path).path.rstrip("/")
+            ok, resp = self._write_allowed()
+            if not ok:
+                return resp
+            vault = self.server.vault
+            if not vault_exists(vault):
+                return self._json(400, {"error": "볼트가 없어요. brain-setup으로 먼저 만들어 주세요"})
+            body = self._read_json()
+            if route == "/api/event-note":
+                res = event_note_action(vault, body)
+                self.server.agenda_cache.invalidate()
+                return self._json(200, res)
+            return self._json(404, {"error": f"없는 경로입니다: {route}"})
+        except BrainError as e:
+            return self._json(400, {"error": str(e)})
+        except (BrokenPipeError, ConnectionResetError):
+            return None
+        except Exception as e:  # noqa: BLE001 - 서버는 죽지 않는다
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+
     def _json(self, status, data):
         self._send(status, json.dumps(data, ensure_ascii=False).encode("utf-8"),
                    "application/json; charset=utf-8")
@@ -2112,7 +2167,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._json(200, dash_today(vault, self.server.today, widgets=widgets,
                                                   agenda=self.server.agenda_cache.get()))
             if route == "/api/agenda":
-                return self._json(200, self.server.agenda_cache.get(_int_param(qs, "days", 7, hi=60)))
+                ag = dict(self.server.agenda_cache.get(_int_param(qs, "days", 7, hi=60)))
+                attach_event_notes(vault, ag)
+                return self._json(200, ag)
+            if route == "/api/session":
+                return self._json(200, {"token": self.server.token, "writable": vault_exists(vault)})
             return self._json(404, {"error": f"없는 경로입니다: {u.path}"})
         except BrainError as e:
             return self._json(400, {"error": str(e)})
@@ -2136,6 +2195,7 @@ def make_server(vault, port=7777, web_dir=None, today=None, quiet=False):
     srv.daemon_threads = True
     srv.vault = Path(vault)
     srv.agenda_cache = AgendaCache()
+    srv.token = secrets.token_hex(16)  # 쓰기 요청용 세션 토큰(페이지가 /api/session으로 받아 헤더로 보냄)
     srv.web_dir = Path(web_dir) if web_dir else WEB_DIR
     srv.today = today
     srv.quiet = quiet
@@ -2403,8 +2463,168 @@ def cmd_today(args):
     return EXIT_OK
 
 
+CHECKBOX_RE = re.compile(r"^(\s*[-*]\s+\[)( |x|X)(\]\s+)(.*)$")
+
+
+def _checklist(body):
+    items = []
+    for i, line in enumerate(body.split("\n")):
+        m = CHECKBOX_RE.match(line)
+        if m:
+            items.append({"line": i, "done": m.group(2).lower() == "x", "text": m.group(4).strip()})
+    return items
+
+
+def _event_note_payload(n):
+    items = _checklist(n.body)
+    memo = n.body.split("## 메모", 1)[1].strip() if "## 메모" in n.body else ""
+    return {"path": n.rel, "title": n.title, "checklist": items,
+            "done": sum(1 for x in items if x["done"]), "total": len(items),
+            "memo": memo[:1200], "location": n.meta.get("location") or ""}
+
+
+def event_notes_index(vault):
+    """event 타입 노트를 event_key → Note로. 기간 노트(event_end)는 (start, end, slug)도 함께."""
+    exact, ranged = {}, []
+    for n in load_notes(vault):
+        if n.type != "event":
+            continue
+        k = n.meta.get("event_key")
+        if k:
+            exact[str(k)] = n
+        s, e = str(n.meta.get("event_date") or "")[:10], str(n.meta.get("event_end") or "")[:10]
+        if s and e and e > s:
+            ranged.append((s, e, slugify(n.title), n))
+    return exact, ranged
+
+
+def attach_event_notes(vault, ag):
+    """agenda(dict)의 today/upcoming 각 일정에 note 필드 부착(없으면 None)."""
+    if not vault or not vault_exists(Path(vault)):
+        return ag
+    exact, ranged = event_notes_index(Path(vault))
+    for lst in ("today", "upcoming", "current"):
+        for e in ag.get(lst) or []:
+            n = exact.get(e.get("key"))
+            if not n:
+                day = e["start"][:10]
+                for s, en, slug, note in ranged:
+                    if s <= day <= en and (slug == slugify(e["title"]) or slug in slugify(e["title"])):
+                        n = note
+                        break
+            e["note"] = _event_note_payload(n) if n else None
+    if ag.get("next"):
+        k = ag["next"].get("key")
+        ag["next"]["note"] = _event_note_payload(exact[k]) if k in exact else None
+    return ag
+
+
+def find_or_create_event_note(vault, key, title=None, day=None, end=None, location=None):
+    """event_key로 노트를 찾고 없으면 events/YYYY/에 만든다."""
+    if "|" not in str(key):
+        raise BrainError("일정 키는 'YYYY-MM-DD|제목' 형식이에요")
+    day = day or key.split("|", 1)[0]
+    title = title or key.split("|", 1)[1]
+    parse_date(day, "일정 날짜")
+    exact, _ = event_notes_index(vault)
+    if key in exact:
+        return exact[key], False
+    extra = {"event_key": key, "event_date": day}
+    if end:
+        parse_date(end, "종료 날짜")
+        extra["event_end"] = end
+    if location:
+        extra["location"] = location
+    path = create_note(vault, "event", title, created=day, extra=extra)
+    return Note(vault, path), True
+
+
+def _append_section(body, header, text):
+    """'## header' 절 끝에 text 줄 추가(절이 없으면 끝에 절 생성)."""
+    lines = body.rstrip("\n").split("\n")
+    try:
+        start = next(i for i, l in enumerate(lines) if l.strip() == header)
+    except StopIteration:
+        lines += ["", header]
+        start = len(lines) - 1
+    end = len(lines)
+    for j in range(start + 1, len(lines)):
+        if lines[j].startswith("## "):
+            end = j
+            break
+    block = lines[start:end]
+    while block and not block[-1].strip():
+        block.pop()
+    block.append(text)
+    return "\n".join(lines[:start] + block + ([""] if end < len(lines) else []) + lines[end:]) + "\n"
+
+
+def event_note_action(vault, body):
+    """대시보드·CLI 공용. body: {action: memo|todo|check, key, title?, date?, end?, location?, text?, line?, done?}"""
+    action = body.get("action")
+    key = str(body.get("key") or "")
+    if action in ("memo", "todo"):
+        text = str(body.get("text") or "").strip()
+        if not text:
+            raise BrainError("내용이 비었어요")
+        if len(text) > 4000:
+            raise BrainError("한 번에 4000자까지만")
+        n, created = find_or_create_event_note(vault, key, body.get("title"), body.get("date"), body.get("end"), body.get("location"))
+        if action == "memo":
+            stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+            new_body = _append_section(n.body, "## 메모", f"- {stamp}  {text}")
+        else:
+            new_body = _append_section(n.body, "## 준비", f"- [ ] {text}")
+        write_note(n.path, n.meta, new_body)
+        git_commit(vault, f"brain: event {action} {n.rel}")
+        n = Note(vault, n.path)
+        return {"ok": True, "created": created, "note": _event_note_payload(n)}
+    if action == "check":
+        rel = str(body.get("path") or "")
+        vault = Path(vault).resolve()  # 임시 폴더 심볼릭 링크(/var→/private/var)에서도 같은 기준으로 비교
+        p = safe_vault_path(vault, rel)
+        if not p.is_file():
+            raise FileNotFoundError(rel)
+        n = Note(vault, p)
+        lines = n.body.split("\n")
+        i = int(body.get("line", -1))
+        if not (0 <= i < len(lines)) or not CHECKBOX_RE.match(lines[i]):
+            raise BrainError("체크 항목 줄이 아니에요")
+        m = CHECKBOX_RE.match(lines[i])
+        mark = "x" if body.get("done", True) else " "
+        lines[i] = f"{m.group(1)}{mark}{m.group(3)}{m.group(4)}"
+        write_note(n.path, n.meta, "\n".join(lines))
+        git_commit(vault, f"brain: event check {n.rel}")
+        return {"ok": True, "note": _event_note_payload(Note(vault, n.path))}
+    raise BrainError("action은 memo · todo · check 중 하나")
+
+
+def cmd_event(args):
+    v = require_vault()
+    if args.action == "show":
+        exact, _ = event_notes_index(v)
+        n = exact.get(args.key)
+        if not n:
+            emit(args, {"found": False, "key": args.key}, f"아직 메모가 없는 일정이에요: {args.key}")
+            return EXIT_OK
+        emit(args, dict(_event_note_payload(n), found=True, body=n.body), n.path.read_text(encoding="utf-8").rstrip("\n"))
+        return EXIT_OK
+    text = args.text
+    if args.body_file:
+        text = sys.stdin.read() if args.body_file == "-" else Path(os.path.expanduser(args.body_file)).read_text(encoding="utf-8")
+    res = event_note_action(v, {"action": args.action, "key": args.key, "text": text, "end": args.end, "location": args.location})
+    note = res["note"]
+    emit(args, res, f"{'새 일정 노트 생성 후 ' if res['created'] else ''}{'메모 추가' if args.action == 'memo' else '준비 항목 추가'}: {note['path']}"
+                    + (f" (준비 {note['done']}/{note['total']})" if note["total"] else ""))
+    return EXIT_OK
+
+
 def cmd_agenda(args):
     ag = collect_agenda_safe(args.days)
+    try:
+        attach_event_notes(vault_path(), ag)
+    except BrainError:
+        pass
     emit(args, ag, agenda_mod.agenda_human(ag))
     return EXIT_OK
 
@@ -2628,6 +2848,14 @@ def build_parser():
 
     s = add("brief", "아침 브리핑(today와 같음). --kakao면 카톡으로 200자 발송", cmd_brief)
     s.add_argument("--kakao", action="store_true", help="카톡 나에게 보내기(헬퍼 필요)")
+
+    s = add("event", "일정 노트: memo <키> <내용> · todo <키> <항목> · show <키>  (키: 'YYYY-MM-DD|제목')", cmd_event)
+    s.add_argument("action", choices=("memo", "todo", "show"))
+    s.add_argument("key", help="일정 키 'YYYY-MM-DD|제목' (agenda --json의 key)")
+    s.add_argument("text", nargs="?", help="메모 내용 또는 준비 항목")
+    s.add_argument("--body-file", help="내용 파일('-'면 stdin)")
+    s.add_argument("--end", help="여러 날 일정이면 종료일 YYYY-MM-DD(같은 이름의 날짜들에 함께 붙음)")
+    s.add_argument("--location", help="장소 메모")
 
     s = add("calendar", "일정 소스 관리: list · add <ics|eventkit> <이름> · remove <이름> · test", cmd_calendar)
     s.add_argument("action", choices=("list", "add", "remove", "test"))

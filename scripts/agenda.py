@@ -244,6 +244,12 @@ def parse_ics(text: str, window_start: datetime, window_end: datetime, source: s
                 cur["recurrence_id"], _ = _parse_dt(value, params, tz)
             except ValueError:
                 pass
+        elif name == "DESCRIPTION":
+            cur["description"] = _unescape(value)
+        elif name == "URL":
+            cur["url"] = value.strip()
+        elif name == "ATTENDEE":
+            cur.setdefault("attendees", []).append(params.get("CN") or value.replace("mailto:", "").replace("MAILTO:", ""))
         elif name == "STATUS":
             cur["status"] = value.upper()
         elif name == "TRANSP":
@@ -287,6 +293,9 @@ def parse_ics(text: str, window_start: datetime, window_end: datetime, source: s
                 "calendar": cal_name or source,
                 "source": source,
                 "busy": ev.get("transp") != "TRANSPARENT",
+                "description": (ev.get("description") or "").strip()[:800],
+                "url": ev.get("url") or "",
+                "attendees": (ev.get("attendees") or [])[:12],
                 "_start": st, "_end": en,
             })
     return out
@@ -375,7 +384,7 @@ function run(argv) {
   for (var j = 0; j < evs.count; j++) {
     var e = evs.objectAtIndex(j);
     out.push({
-      id: ObjC.unwrap(e.eventIdentifier), title: ObjC.unwrap(e.title) || "",
+      id: ObjC.unwrap(e.eventIdentifier), title: ObjC.unwrap(e.title) || "", notes: ObjC.unwrap(e.notes) || "", url: e.URL ? ObjC.unwrap(e.URL.absoluteString) : "",
       start: ObjC.unwrap(fmt.stringFromDate(e.startDate)), end: ObjC.unwrap(fmt.stringFromDate(e.endDate)),
       all_day: !!e.allDay, location: ObjC.unwrap(e.location) || "", calendar: ObjC.unwrap(e.calendar.title) || "",
       busy: e.availability !== 1
@@ -415,7 +424,8 @@ def fetch_eventkit(src: dict, window_start: datetime, window_end: datetime, tz):
             "end": en.date().isoformat() if all_day else en.isoformat(timespec="minutes"),
             "all_day": all_day, "location": e.get("location") or "",
             "calendar": e.get("calendar") or src.get("name") or "맥 캘린더", "source": src.get("name") or "eventkit",
-            "busy": bool(e.get("busy", True)), "_start": st, "_end": en,
+            "busy": bool(e.get("busy", True)), "description": (e.get("notes") or "")[:800], "url": e.get("url") or "", "attendees": [],
+            "_start": st, "_end": en,
         })
     return out, data.get("calendars", [])
 
@@ -477,6 +487,9 @@ def collect_agenda(cfg: dict, now: datetime | None = None, days: int = 7):
             continue
         seen.add(k)
         uniq.append(e)
+    for e in uniq:
+        e["key"] = event_key(e["start"][:10], e["title"])
+        e["days_left"] = (e["_start"].date() - now.date()).days
     today_end = day0 + timedelta(days=1)
     today = [e for e in uniq if e["_start"] < today_end and e["_end"] > day0]
     upcoming = [e for e in uniq if e["_start"] >= today_end]
@@ -497,6 +510,11 @@ def collect_agenda(cfg: dict, now: datetime | None = None, days: int = 7):
         "sources": sources,
         "total": len(uniq),
     }
+
+
+def event_key(day: str, title: str):
+    """볼트 일정 노트와 캘린더 일정을 잇는 키. 'YYYY-MM-DD|제목'(공백 정리, 소문자 아님)."""
+    return f"{day[:10]}|{' '.join(str(title).split())}"
 
 
 def _conflicts(evs):
@@ -523,6 +541,14 @@ def agenda_sentence(agenda: dict):
         srcs = agenda.get("sources") or []
         if srcs and all(s["status"] in ("permission", "missing", "fail", "unconfigured") for s in srcs):
             return None  # 연결이 안 된 것은 문장으로 말하지 않고 소스 상태로 보여준다
+        up = agenda.get("upcoming") or []
+        tomorrow = [e for e in up if e.get("days_left") == 1]
+        if tomorrow:
+            names = ", ".join((("종일 " if e["all_day"] else hhmm(e["start"]) + " ") + e["title"]) for e in tomorrow[:2])
+            return f"오늘은 잡힌 일정이 없고, 내일은 {names}" + (f" 외 {len(tomorrow) - 2}개" if len(tomorrow) > 2 else "") + "이 있어요."
+        nxt = up[0] if up else None
+        if nxt:
+            return f"오늘은 잡힌 일정이 없어요. 다음 일정은 {nxt['days_left']}일 뒤 {nxt['title']}이에요."
         return "오늘은 잡힌 일정이 없어요."
     parts = [f"{hhmm(e['start'])} {e['title']}" for e in timed[:2]]  # 문장은 두 개까지, 나머지는 시간표가 보여준다
     s = f"오늘 일정 {len(today)}개"
@@ -556,7 +582,11 @@ def agenda_human(agenda: dict):
         for e in today:
             when = "종일     " if e["all_day"] else f"{hhmm(e['start'])}-{hhmm(e['end'])}"
             loc = f" @ {e['location']}" if e.get("location") else ""
-            lines.append(f"  {when}  {e['title']}{loc}  [{e['calendar']}]")
+            note = e.get("note")
+            mark = (f"  ✎ 준비 {note['done']}/{note['total']}" if note and note["total"] else ("  ✎" if note else ""))
+            lines.append(f"  {when}  {e['title']}{loc}  [{e['calendar']}]{mark}")
+            if e.get("description"):
+                lines.append("             " + e["description"].split("\n")[0][:80])
     else:
         lines.append("오늘 일정 없음")
     up = agenda.get("upcoming") or []

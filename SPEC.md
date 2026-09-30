@@ -141,3 +141,15 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 스킬 brain-today: 일정 줄 추가, 카톡은 `brief --kakao`로, 구글 연결 안내(비공개 주소는 대화에 붙이지 말고 파일에 저장)
 - 테스트 +11(파서·반복·수집·API·CLI), 총 114
 - 남은 것(1단계 완료 기준): 사장님 구글 비공개 ICS 등록 → 아침 7시 `brief --kakao` 크론(승인 뒤)
+
+## v0.7 일정 노트 (2026-09-30, 2차 2단계 앞당김)
+
+사장님 피드백 "일정 정보값이 너무 적다, 따로 기록도 해야". 캘린더 정보를 전부 끌어오고, 일정마다 볼트 노트를 붙여 메모·준비 체크리스트를 대시보드에서 바로 쓴다(첫 쓰기 기능).
+
+- agenda.py: DESCRIPTION·URL·ATTENDEE(CN) 파싱, 각 일정에 `key`(`YYYY-MM-DD|제목`)·`days_left`. 문장: 오늘 없으면 "내일은 …", 그것도 없으면 "다음 일정은 N일 뒤 …"
+- 노트 타입 `event`(NOTE_TYPES): `events/YYYY/YYYY-MM-DD-slug.md`, frontmatter `event_key`, `event_date`, `event_end`(여러 날), `location`; 본문 `## 준비`(체크박스) / `## 메모`(`- YYYY-MM-DD HH:MM  내용`). 기간 노트는 같은 이름의 날짜들에 함께 붙음(slug 포함 매칭)
+- `attach_event_notes(vault, agenda)`: today/upcoming/current/next에 `note {path, checklist[{line,done,text}], done, total, memo, location}` 부착. /api/agenda·/api/today 모두. today에 `agenda.upcoming`(≤6) 추가
+- 쓰기 API: `GET /api/session → {token, writable}`(서버 시작마다 새 토큰), `POST /api/event-note` 헤더 `X-Brain-Token` 필수 + Host 루프백만. body `{action: memo|todo|check, key, title?, date?, end?, location?, text? | path, line, done}`. 본문 64KB 한도, 4000자/회. 성공 시 AgendaCache 무효화, git_autocommit 존중
+- CLI `event memo|todo|show <키> [내용] [--body-file] [--end] [--location]`. 스킬 `brain-event`(원문 그대로 기록, 요약 금지)
+- 대시보드: 일정 항목(시간표 목록·이번 주·다가오는 일정)이 버튼 → 상세 패널(언제/어디(네이버 지도 링크)/캘린더/참석/링크, 설명, 준비 체크리스트 토글+추가, 메모 목록+작성). ✎ n/m 표시. 「지금 볼 것」에 「다가오는 일정」 D-N 목록. `?event=<key>` 딥링크로 패널 바로 열기. 타입 색 `--t-event`, 모양 팔각형
+- 테스트 +5(부착·메모·체크·토큰 403·CLI), 총 119
