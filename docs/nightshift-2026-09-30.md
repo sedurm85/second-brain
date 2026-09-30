@@ -59,3 +59,5 @@
 ### 사이클 5 (17:45~)
 - 워커 추가: wt/note-append(보드 노트 패널에서 메모·태그·할 일 기록), wt/hire(사무실 직원 채용·부서 이동·퇴사, allow_hire 게이트), wt/docs-arch(아키텍처 문서·기획 진행표)
 - 가동 중: weather-integration, reminders, note-append, hire, docs-arch
+- 17:52 wt/note-append(노트 패널 메모·태그·할 일, 테스트 264)·wt/docs-arch(architecture.md·v2-plan 진행표)·wt/reminders(맥 미리알림 읽기, both-added 충돌 양쪽 유지, 테스트 274) 머지. 사무실·리포트 미리보기 갱신
+- 가동 중: weather-integration, hire, md-checkbox
