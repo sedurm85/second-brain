@@ -8,7 +8,7 @@
 - 원칙: 볼트 쓰기는 사람 승인, 테스트가 실제 launchctl·볼트를 건드리지 않음, 시크릿 금지
 
 ## 백로그
-- [ ] CI(GitHub Actions, Python 3.9~3.13 매트릭스) + 3.9 호환(`datetime | None` 표기 등)
+- [x] CI(GitHub Actions, Python 3.9~3.13 매트릭스) + 3.9 호환 — 워커 완료·머지 17:26, 실제 3.9 회귀는 없었음(agenda/mailer에 future import 이미 있음)
 - [ ] 보드 「일지」 섹션(/api/journals, 일지·회고 목록·요약·패널) + 데모 데이터에 일지·준비 제안
 - [ ] load_notes 반복 호출 캐시(볼트 mtime 기준) + /api/today 지연 측정
 - [x] 코어 「준비」 규칙: 질문에 든 일정 제목으로 매칭, 진짜 질문은 Claude로 (관리자, 17:25)
@@ -37,3 +37,8 @@
 
 ### 사이클 2 (17:40~)
 - 워커 추가 투입: wt/office-mobile(사무실 모바일·접근성), wt/weather(날씨 모듈), wt/restore(복구 명령), wt/skills-journal(스킬 2종)
+- 17:26 wt/ci 검수·머지(180 OK), GitHub Actions 첫 실행 감시 중
+
+### 사이클 3 (17:30~)
+- 워커 추가: wt/notify-fallback(알림 채널 통합·macOS 알림 센터 폴백, `notify test`), wt/report-page(/report 인쇄용 주간 리포트)
+- 동시 가동 워커 8명. 관리자는 완료 알림마다 리베이스→테스트→머지→푸시, 3건 이상 쌓이면 버전·캐시 동기화·서버 재시작
