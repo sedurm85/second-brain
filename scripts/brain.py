@@ -4,12 +4,15 @@
 데이터는 stdout, 로그는 stderr. 종료 코드: 0 성공, 2 입력 오류, 3 볼트 없음.
 """
 import argparse
+import csv
 import json
 import math
 import os
 import re
 import subprocess
 import sys
+import threading
+import time
 import urllib.parse
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
@@ -1506,6 +1509,465 @@ def build_demo_vault(vault=None, today=None):
 
 
 # ---------------------------------------------------------------------------
+# 비서 모드 (v0.3) — 위젯(widgets.json) + 오늘 브리핑
+# ---------------------------------------------------------------------------
+
+WIDGET_KINDS = ("log", "json", "csv", "markdown", "command")
+WIDGET_STATUSES = ("ok", "warn", "fail", "stale", "missing", "unknown")
+SUMMARY_STATUSES = ("ok", "warn", "fail", "stale", "missing")  # /api/today pill 5개
+STATUS_PRIORITY = {"fail": 0, "stale": 1, "missing": 2, "warn": 3, "unknown": 4, "ok": 5}
+WIDGET_CACHE_SEC = 60
+COMMAND_STDOUT_MAX = 4096
+SUMMARY_MAX = 200
+KAKAO_MAX = 200
+WEEKDAYS_KO = ("월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일")
+INBOX_TODO_RE = re.compile(r"^\s*[-*]\s+\[ \]\s+(.+?)\s*$")
+
+EXAMPLE_WIDGETS = {
+    "allow_commands": False,
+    "widgets": [
+        {"id": "marketset", "title": "마켓세트 카톡", "kind": "log",
+         "source": "~/.local/k-skill-cron/marketset.log",
+         "status": {"ok_pattern": "len:", "fail_pattern": "Traceback|Error", "stale_minutes": 1500},
+         "lines": 5},
+        {"id": "cafe-growth", "title": "카페 회원 추이", "kind": "csv",
+         "source": "~/.local/naver-publish/growth.csv", "x": "date", "y": "members", "last": 30},
+        {"id": "flight", "title": "항공권 최저가", "kind": "json",
+         "source": "~/.local/k-skill-cron/flight_state.json",
+         "fields": ["best_price", "route", "checked_at"]},
+        {"id": "jobscout", "title": "채용 스카우트", "kind": "markdown",
+         "source": "~/.local/k-skill-cron/jobscout_result.md", "lines": 8},
+        {"id": "disk", "title": "디스크", "kind": "command", "source": "df -h / | tail -1",
+         "timeout_sec": 5},
+    ],
+}
+
+
+def widgets_config_path():
+    return home_dir() / ".config" / "second-brain" / "widgets.json"
+
+
+def load_widgets_config():
+    """widgets.json 로드. 없거나 깨졌으면 빈 목록(깨진 경우 error 포함)."""
+    p = widgets_config_path()
+    empty = {"allow_commands": False, "widgets": [], "path": str(p), "error": None}
+    if not p.is_file():
+        return empty
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        log(f"경고: widgets.json을 읽지 못했습니다({e}).")
+        return dict(empty, error=f"widgets.json 파싱 실패: {e}")
+    if not isinstance(data, dict):
+        return dict(empty, error="widgets.json 최상위는 객체여야 합니다.")
+    items = data.get("widgets")
+    if not isinstance(items, list):
+        items = []
+    return {"allow_commands": data.get("allow_commands") is True,
+            "widgets": [w for w in items if isinstance(w, dict)], "path": str(p), "error": None}
+
+
+def init_widgets_config():
+    """예시 widgets.json 생성. 이미 있으면 덮어쓰지 않고 (path, False)."""
+    p = widgets_config_path()
+    if p.exists():
+        return p, False
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(EXAMPLE_WIDGETS, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return p, True
+
+
+def resolve_widget_source(raw):
+    """위젯 source 경로 → 홈 아래 실경로. `..`·홈 밖(심볼릭 링크 포함)·상대경로는 BrainError."""
+    if not isinstance(raw, str) or not raw.strip():
+        raise BrainError("source가 비어 있습니다.")
+    if ".." in Path(raw).parts:
+        raise BrainError(f"source에 '..'는 쓸 수 없습니다: {raw}")
+    expanded = os.path.expanduser(raw)
+    if not os.path.isabs(expanded):
+        raise BrainError(f"source는 ~ 또는 절대경로여야 합니다: {raw}")
+    return ensure_in_home(expanded, "source")
+
+
+def _clip(s, n=SUMMARY_MAX):
+    s = " ".join(str(s).split())
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def _tail_lines(path, n, max_bytes=262144):
+    """파일 끝 n줄(빈 줄 제외). 큰 로그도 끝 max_bytes만 읽는다."""
+    size = path.stat().st_size
+    with path.open("rb") as f:
+        if size > max_bytes:
+            f.seek(size - max_bytes)
+        raw = f.read()
+    lines = [ln.rstrip("\r") for ln in raw.decode("utf-8", errors="replace").split("\n")]
+    if size > max_bytes and lines:
+        lines = lines[1:]  # 잘린 첫 줄 버림
+    return [ln for ln in lines if ln.strip()][-n:] if n > 0 else []
+
+
+def _pos_int(v, default, hi=10000):
+    try:
+        v = int(v)
+    except (TypeError, ValueError):
+        return default
+    return max(1, min(hi, v))
+
+
+def _regex(pat):
+    if not pat:
+        return None
+    try:
+        return re.compile(str(pat))
+    except re.error as e:
+        raise BrainError(f"정규식 오류({pat}): {e}")
+
+
+def _num(v):
+    """문자열 → 숫자(쉼표·공백 허용). 실패 시 None."""
+    s = str(v).strip().replace(",", "")
+    if not s:
+        return None
+    try:
+        f = float(s)
+    except ValueError:
+        return None
+    if math.isnan(f) or math.isinf(f):
+        return None
+    return int(f) if f.is_integer() else f
+
+
+def _fmt_num(v):
+    if isinstance(v, float):
+        return f"{v:,.2f}".rstrip("0").rstrip(".")
+    return f"{v:,}"
+
+
+def _dig(obj, dotted):
+    """점 경로(a.b.0) 조회. 없으면 KeyError."""
+    cur = obj
+    for part in str(dotted).split("."):
+        if isinstance(cur, dict) and part in cur:
+            cur = cur[part]
+        elif isinstance(cur, list) and re.fullmatch(r"-?\d+", part) and -len(cur) <= int(part) < len(cur):
+            cur = cur[int(part)]
+        else:
+            raise KeyError(dotted)
+    return cur
+
+
+def _widget_log(w, path):
+    st = w.get("status") if isinstance(w.get("status"), dict) else {}
+    lines = _tail_lines(path, _pos_int(w.get("lines"), 5))
+    fail_re, ok_re = _regex(st.get("fail_pattern")), _regex(st.get("ok_pattern"))
+    text = "\n".join(lines)
+    if fail_re and fail_re.search(text):
+        status = "fail"
+        hit = [ln for ln in lines if fail_re.search(ln)]
+        summary = hit[-1]
+    elif ok_re and ok_re.search(text):
+        status, summary = "ok", lines[-1]
+    else:
+        status, summary = "unknown", (lines[-1] if lines else "빈 로그")
+    return status, summary, {"lines": lines}
+
+
+def _widget_json(w, path):
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as e:
+        return "warn", f"JSON 파싱 실패: {e}", {"fields": {}}
+    fields = w.get("fields")
+    out, missing = {}, []
+    if isinstance(fields, list) and fields:
+        for f in fields:
+            try:
+                out[str(f)] = _dig(obj, f)
+            except KeyError:
+                out[str(f)] = None
+                missing.append(str(f))
+    elif isinstance(obj, dict):
+        out = {k: v for k, v in list(obj.items())[:10] if not isinstance(v, (dict, list))}
+    shown = [f"{k}: {v if not isinstance(v, (dict, list)) else json.dumps(v, ensure_ascii=False)}"
+             for k, v in out.items() if v is not None]
+    summary = " · ".join(shown) or "값 없음"
+    if missing:
+        return "warn", f"없는 필드: {', '.join(missing)} · {summary}", {"fields": out}
+    return "ok", summary, {"fields": out}
+
+
+def _csv_change(rows):
+    """최근 값과 30일 전(또는 창의 첫 행) 대비 변화."""
+    last_x, last_y = rows[-1]
+    base = rows[0][1]
+    try:
+        last_d = parse_date(str(last_x)[:10])
+        cut = (last_d - timedelta(days=30)).isoformat()
+        for x, y in rows:
+            if str(x)[:10] >= cut:
+                base = y
+                break
+    except BrainError:
+        pass
+    return last_y, last_y - base
+
+
+def _widget_csv(w, path):
+    xcol, ycol = w.get("x"), w.get("y")
+    with path.open(encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        cols = reader.fieldnames or []
+        if not xcol or not ycol or xcol not in cols or ycol not in cols:
+            return "warn", f"열을 찾지 못했습니다(x={xcol}, y={ycol}, 헤더={cols})", \
+                {"columns": [xcol, ycol], "rows": []}
+        rows = []
+        for r in reader:
+            y = _num(r.get(ycol) or "")
+            if y is None:
+                continue  # 숫자 변환 실패 행은 건너뜀
+            rows.append([r.get(xcol), y])
+    rows = rows[-_pos_int(w.get("last"), 30):]
+    data = {"columns": [xcol, ycol], "rows": rows}
+    if not rows:
+        return "warn", "숫자 데이터 없음", data
+    last, delta = _csv_change(rows)
+    sign = "+" if delta > 0 else ""
+    return "ok", f"최근 {_fmt_num(last)} / 30일 변화 {sign}{_fmt_num(delta)}", data
+
+
+def _widget_markdown(w, path):
+    lines = path.read_text(encoding="utf-8", errors="replace").split("\n")[:_pos_int(w.get("lines"), 10)]
+    text = "\n".join(lines).strip()
+    first = next((re.sub(r"^[#>\-*\s]+", "", ln).strip() for ln in lines if ln.strip()), "")
+    return ("ok", first, {"text": text}) if text else ("unknown", "빈 문서", {"text": ""})
+
+
+def _widget_command(w, allow):
+    if not allow:
+        return "unknown", "명령 실행 비활성(allow_commands)", {"stdout": "", "exit_code": None}
+    cmd = w.get("source")
+    if not isinstance(cmd, str) or not cmd.strip():
+        raise BrainError("command source가 비어 있습니다.")
+    timeout = _pos_int(w.get("timeout_sec"), 10, hi=60)
+    try:
+        r = subprocess.run(cmd, shell=True, capture_output=True, timeout=timeout, cwd=str(home_dir()))
+    except subprocess.TimeoutExpired:
+        return "fail", f"시간 초과({timeout}초)", {"stdout": "", "exit_code": None}
+    out = r.stdout[:COMMAND_STDOUT_MAX].decode("utf-8", errors="ignore")
+    last = next((ln for ln in reversed(out.split("\n")) if ln.strip()), "")
+    data = {"stdout": out, "exit_code": r.returncode}
+    if r.returncode != 0:
+        err = r.stderr[:500].decode("utf-8", errors="ignore").strip()
+        return "fail", f"exit {r.returncode}" + (f": {err or last}" if (err or last) else ""), data
+    return "ok", last or "(출력 없음)", data
+
+
+_FILE_HANDLERS = {"log": _widget_log, "json": _widget_json, "csv": _widget_csv,
+                  "markdown": _widget_markdown}
+_EMPTY_DATA = {"log": {"lines": []}, "json": {"fields": {}}, "csv": {"columns": [], "rows": []},
+               "markdown": {"text": ""}, "command": {"stdout": "", "exit_code": None}}
+
+
+def _widget_base(w, idx):
+    wid = str(w.get("id") or f"widget-{idx + 1}")
+    kind = str(w.get("kind") or "")
+    return {"id": wid, "title": str(w.get("title") or wid), "kind": kind, "status": "unknown",
+            "updated_at": None, "age_minutes": None, "summary": "",
+            "data": dict(_EMPTY_DATA.get(kind, {}))}
+
+
+def _widget_mtime(w):
+    """캐시 키용 mtime(파일 kind). 경로 오류·없음은 None."""
+    if w.get("kind") == "command":
+        return None
+    try:
+        p = resolve_widget_source(w.get("source"))
+        return p.stat().st_mtime if p.is_file() else None
+    except (BrainError, OSError):
+        return None
+
+
+def evaluate_widget(w, idx=0, allow_commands=False, now=None):
+    """위젯 1개 평가 → {id,title,kind,status,updated_at,age_minutes,summary,data[,error]}."""
+    now = now or datetime.now().astimezone()
+    res = _widget_base(w, idx)
+    kind = res["kind"]
+    try:
+        if kind not in WIDGET_KINDS:
+            raise BrainError(f"알 수 없는 kind: {kind or '(없음)'}")
+        if kind == "command":
+            status, summary, data = _widget_command(w, allow_commands)
+            if data.get("exit_code") is not None or status == "fail":
+                res["updated_at"], res["age_minutes"] = now.isoformat(timespec="seconds"), 0
+        else:
+            try:
+                path = resolve_widget_source(w.get("source"))
+            except BrainError as e:
+                res.update(status="missing", summary="경로 거부", error=str(e))
+                return res
+            if not path.is_file():
+                res.update(status="missing", summary=f"파일 없음: {w.get('source')}")
+                return res
+            mtime = datetime.fromtimestamp(path.stat().st_mtime).astimezone()
+            age = max(0, int((now - mtime).total_seconds() // 60))
+            res["updated_at"], res["age_minutes"] = mtime.isoformat(timespec="seconds"), age
+            status, summary, data = _FILE_HANDLERS[kind](w, path)
+            st = w.get("status") if isinstance(w.get("status"), dict) else {}
+            stale = _num(st.get("stale_minutes", w.get("stale_minutes", "")) or "")
+            if stale is not None and stale > 0 and age > stale:
+                status = "stale"  # stale이 패턴 판정보다 우선
+                summary = f"{age}분째 갱신 없음 · {summary}"
+        res.update(status=status, summary=_clip(summary), data=data)
+    except BrainError as e:
+        res.update(status="unknown", summary=_clip(str(e)), error=str(e))
+    except (OSError, UnicodeError) as e:
+        res.update(status="warn", summary=_clip(f"읽기 실패: {e}"), error=str(e))
+    return res
+
+
+class WidgetCache:
+    """위젯별 60초 캐시. 키=위젯 설정, 무효화=mtime 변경 또는 60초 경과. parses=실제 평가 횟수."""
+
+    def __init__(self, ttl=WIDGET_CACHE_SEC):
+        self.ttl = ttl
+        self.parses = 0
+        self._store = {}
+        self._lock = threading.Lock()
+
+    def get(self, w, idx, allow_commands, clock=None):
+        t = (clock or time.time)()
+        key = json.dumps([w, idx, allow_commands], sort_keys=True, ensure_ascii=False, default=str)
+        mtime = _widget_mtime(w)
+        with self._lock:
+            hit = self._store.get(key)
+            if hit and hit[0] == mtime and t - hit[1] < self.ttl:
+                return hit[2]
+        res = evaluate_widget(w, idx, allow_commands)
+        with self._lock:
+            self.parses += 1
+            self._store[key] = (mtime, t, res)
+        return res
+
+
+def collect_widgets(cache=None):
+    cfg = load_widgets_config()
+    out = []
+    for i, w in enumerate(cfg["widgets"]):
+        out.append(cache.get(w, i, cfg["allow_commands"]) if cache
+                   else evaluate_widget(w, i, cfg["allow_commands"]))
+    return out
+
+
+def greeting_for(hour):
+    if 5 <= hour < 11:
+        return "좋은 아침이에요"
+    if 11 <= hour < 17:
+        return "오후예요"
+    if 17 <= hour < 22:
+        return "저녁이에요"
+    return "늦은 시간이에요"
+
+
+def parse_inbox(vault):
+    p = vault / "inbox.md" if vault else None
+    if not p or not p.is_file():
+        return []
+    out = []
+    for ln in p.read_text(encoding="utf-8", errors="replace").split("\n"):
+        m = INBOX_TODO_RE.match(ln)
+        if m:
+            out.append(m.group(1))
+    return out
+
+
+def _revisit_soon(notes, today, days=7):
+    limit = (today + timedelta(days=days)).isoformat()
+    out = []
+    for n in notes:
+        if n.type != "decision" or _decision_status(n) != "open":
+            continue
+        rv = str(n.meta.get("revisit") or "")[:10]
+        if rv and DATE_RE.match(rv) and rv <= limit:
+            out.append({"path": n.rel, "title": n.title, "revisit": rv,
+                        "days_left": _days_left(rv, today), "project": n.project})
+    out.sort(key=lambda d: (d["revisit"], d["path"]))
+    return out
+
+
+def _dleft(d):
+    k = d["days_left"]
+    return "오늘" if k == 0 else (f"D-{k}" if k > 0 else f"{-k}일 지남")
+
+
+def kakao_brief(t):
+    """카톡용 요약(≤200자)."""
+    parts = [f"[{t['date']} {t['weekday'][0]}] {t['greeting']}"]
+    if t["revisit"]:
+        parts.append("결정 " + ", ".join(f"{d['title']}({_dleft(d)})" for d in t["revisit"][:3]))
+    bad = [w for w in t["top_widgets"] if w["status"] in ("fail", "stale")]
+    if bad:
+        parts.append("자동화 " + ", ".join(f"{w['title']} {w['status']}" for w in bad[:3]))
+    elif sum(t["widgets_summary"].values()):
+        parts.append(f"자동화 정상 {t['widgets_summary']['ok']}")
+    if t["inbox"]:
+        parts.append(f"할 일 {len(t['inbox'])}: " + ", ".join(t["inbox"][:3]))
+    w = t["this_week"]
+    parts.append(f"이번 주 노트 {w['new_notes']}·결정 {w['new_decisions']}")
+    return _clip(" / ".join(parts), KAKAO_MAX)
+
+
+def dash_today(vault, today=None, now=None, widgets=None):
+    """/api/today. vault=None이면 볼트 항목은 비움(위젯만)."""
+    now = now or datetime.now().astimezone()
+    today = today or now.date()
+    notes = load_notes(vault) if vault else []
+    week_ago = (today - timedelta(days=7)).isoformat()
+    week = [n for n in notes if n.created >= week_ago]
+    widgets = collect_widgets() if widgets is None else widgets
+    counts = {s: 0 for s in SUMMARY_STATUSES}
+    for w in widgets:
+        if w["status"] in counts:
+            counts[w["status"]] += 1
+    top = sorted(widgets, key=lambda w: STATUS_PRIORITY.get(w["status"], 9))[:5]
+    t = {
+        "date": today.isoformat(),
+        "greeting": greeting_for(now.hour),
+        "weekday": WEEKDAYS_KO[today.weekday()],
+        "revisit": _revisit_soon(notes, today),
+        "inbox": parse_inbox(vault),
+        "this_week": {"new_notes": sum(1 for n in week if n.type != "decision"),
+                      "new_decisions": sum(1 for n in week if n.type == "decision")},
+        "widgets_summary": counts,
+        "widgets_total": len(widgets),
+        "top_widgets": top,
+    }
+    t["kakao"] = kakao_brief(t)
+    return t
+
+
+def today_human(t):
+    """사람용 브리핑(6줄 이내) + 카톡용 블록."""
+    out = [f"{t['greeting']}! {t['date']} {t['weekday']}"]
+    if t["revisit"]:
+        out.append(f"되돌아볼 결정 {len(t['revisit'])}: " +
+                   ", ".join(f"{d['title']}({_dleft(d)})" for d in t["revisit"][:3]))
+    s = t["widgets_summary"]
+    if t["widgets_total"]:
+        bad = [w["title"] for w in t["top_widgets"] if w["status"] in ("fail", "stale")]
+        out.append(f"자동화: 정상 {s['ok']} · 실패 {s['fail']} · 지연 {s['stale']} · "
+                   f"없음 {s['missing']} · 주의 {s['warn']}" + (f" — {', '.join(bad)}" if bad else ""))
+    else:
+        out.append("자동화: 위젯 없음 — `brain.py config init-widgets`로 예시를 만들어 보세요")
+    if t["inbox"]:
+        out.append(f"inbox {len(t['inbox'])}: " + ", ".join(t["inbox"][:3]) +
+                   (" 외" if len(t["inbox"]) > 3 else ""))
+    w = t["this_week"]
+    out.append(f"이번 주 신규: 노트 {w['new_notes']} · 결정 {w['new_decisions']}")
+    return "\n".join(out[:6]) + "\n\n카톡용(200자)\n" + t["kakao"]
+
+
+# ---------------------------------------------------------------------------
 # HTTP 서버
 # ---------------------------------------------------------------------------
 
@@ -1582,6 +2044,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._json(200, dash_decisions(vault, today))
             if route == "/api/projects":
                 return self._json(200, dash_projects(vault))
+            if route == "/api/widgets":
+                return self._json(200, collect_widgets(self.server.widget_cache))
+            if route == "/api/today":
+                widgets = collect_widgets(self.server.widget_cache)
+                return self._json(200, dash_today(vault, self.server.today, widgets=widgets))
             return self._json(404, {"error": f"없는 경로입니다: {u.path}"})
         except BrainError as e:
             return self._json(400, {"error": str(e)})
@@ -1607,6 +2074,7 @@ def make_server(vault, port=7777, web_dir=None, today=None, quiet=False):
     srv.web_dir = Path(web_dir) if web_dir else WEB_DIR
     srv.today = today
     srv.quiet = quiet
+    srv.widget_cache = WidgetCache()
     return srv
 
 
@@ -1840,7 +2308,42 @@ def _coerce(value):
     return value
 
 
+def cmd_widgets(args):
+    ws = collect_widgets()
+    if args.json:
+        emit(args, ws, None)
+        return EXIT_OK
+    if not ws:
+        print(f"위젯 없음 — `brain.py config init-widgets`로 예시 {widgets_config_path()}를 만드세요.")
+        return EXIT_OK
+    lines = []
+    for w in ws:
+        age = "" if w["age_minutes"] is None else f" ({w['age_minutes']}분 전)"
+        lines.append(f"[{w['status'].upper()}] {w['title']} — {w['summary']}{age}")
+    print("\n".join(lines))
+    return EXIT_OK
+
+
+def cmd_today(args):
+    try:
+        v = vault_path()
+    except BrainError as e:
+        log(f"경고: {e}")
+        v = None
+    if v is not None and not vault_exists(v):
+        log(f"볼트가 없어 위젯만 보여줍니다: {v}")
+        v = None
+    t = dash_today(v)
+    emit(args, t, today_human(t))
+    return EXIT_OK
+
+
 def cmd_config(args):
+    if args.action == "init-widgets":
+        p, created = init_widgets_config()
+        emit(args, {"path": str(p), "created": created},
+             f"예시 위젯 설정 생성: {p}" if created else f"이미 있어요(덮어쓰지 않음): {p}")
+        return EXIT_OK
     cfg = load_config()
     if args.action == "get":
         require_vault()  # 계약: 볼트 없으면 config get도 종료 코드 3
@@ -1945,7 +2448,8 @@ def build_parser():
     s.add_argument("--dry-run", action="store_true", help="쓰지 않고 변경 대상만 출력")
 
     s = add("config", "설정 조회/변경", cmd_config)
-    s.add_argument("action", choices=("get", "set"), help="get 또는 set")
+    s.add_argument("action", choices=("get", "set", "init-widgets"),
+                   help="get · set · init-widgets(예시 widgets.json 생성, 기존 파일 보존)")
     s.add_argument("key", nargs="?", help="vault | git_autocommit | index_head")
     s.add_argument("value", nargs="?", help="set할 값")
 
@@ -1953,6 +2457,9 @@ def build_parser():
     s.add_argument("--port", type=int, default=7777, help="포트(기본 7777, 0이면 임의)")
     s.add_argument("--open", action="store_true", help="브라우저 자동 열기")
     s.add_argument("--demo", action="store_true", help="가공 샘플 데모 볼트로 서빙")
+
+    add("today", "오늘 브리핑: 되돌아볼 결정·자동화 상태·inbox·이번 주 신규(+카톡용 200자)", cmd_today)
+    add("widgets", "위젯(~/.config/second-brain/widgets.json) 상태 조회", cmd_widgets)
     return p
 
 

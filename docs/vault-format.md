@@ -147,3 +147,27 @@ tags:
 - 메모리 제목: `name`이 영문 슬러그면 `description` 첫 문장(` — `/` - ` 앞 → 첫 마침표/쉼표 앞 → 40자 절단)을 `title`로 써요. 짧고 구분자 없는 설명이면 기존처럼 `name`에서 만들고, 파일명은 항상 `name` 기준이라 바뀌지 않아요.
 
 원본 파일은 읽기만 하고, 볼트에 같은 `title`+`created` 노트가 있으면 건너뛰어요. `--dry-run`으로 먼저 확인할 수 있어요.
+
+## 위젯 설정 (`~/.config/second-brain/widgets.json`, v0.3)
+
+볼트 밖의 사용자 설정이에요. `brain.py config init-widgets`로 예시를 만들 수 있고(기존 파일은 덮어쓰지 않아요), `brain.py widgets`·`/api/widgets`로 상태를 봐요. 파일이 없으면 위젯 0개예요.
+
+| 필드 | 대상 kind | 설명 |
+|---|---|---|
+| `allow_commands` | (최상위) | `true`일 때만 `command` 위젯을 실행해요. 아니면 status `unknown`, summary "명령 실행 비활성(allow_commands)" |
+| `widgets[].id` | 전체 | 위젯 식별자(없으면 `widget-N`) |
+| `widgets[].title` | 전체 | 표시 이름(없으면 id) |
+| `widgets[].kind` | 전체 | `log` · `json` · `csv` · `markdown` · `command` |
+| `widgets[].source` | 전체 | 파일 경로(`~` 허용, 홈 밖·`..`·홈 밖을 가리키는 심볼릭 링크는 거부 → `missing`+`error`). `command`는 셸 명령 |
+| `widgets[].status.ok_pattern` | log | 마지막 N줄에서 매치되면 `ok` (정규식) |
+| `widgets[].status.fail_pattern` | log | 마지막 N줄에서 매치되면 `fail` (ok보다 우선) |
+| `widgets[].status.stale_minutes` | 파일 kind | mtime이 이 분을 넘으면 `stale` (패턴 판정보다 우선) |
+| `widgets[].lines` | log · markdown | log는 마지막 N줄(기본 5), markdown은 첫 N줄(기본 10) |
+| `widgets[].fields` | json | 추출할 키 목록, 점 경로 `a.b`·배열 인덱스 `a.0` 지원. 없는 키는 `null` + `warn` |
+| `widgets[].x`, `widgets[].y` | csv | x/y 열 이름(헤더 행 필수). y 숫자 변환 실패 행은 건너뜀(쉼표 `1,234` 허용) |
+| `widgets[].last` | csv | 마지막 N행(기본 30). summary는 "최근 값 / 30일 변화" |
+| `widgets[].timeout_sec` | command | 제한 시간(기본 10, 최대 60초). stdout은 4KB에서 잘리고, exit≠0·시간 초과는 `fail` |
+
+status는 `ok | warn | fail | stale | missing | unknown`이에요. 파일 없음은 `missing`, 파싱 실패·필드 누락은 `warn`, 패턴이 둘 다 안 맞으면 `unknown`. 서버(`serve`)는 위젯별로 60초 동안(파일 mtime이 그대로면) 결과를 캐시해요.
+
+`inbox.md`의 `- [ ] 할 일` 줄은 `brain.py today`·`/api/today`의 `inbox`에 표시돼요(체크된 `- [x]`는 제외).

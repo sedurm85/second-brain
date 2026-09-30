@@ -17,3 +17,17 @@ allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py *) Read
    - Obsidian에서 보기: Obsidian → "Open folder as vault" → 볼트 폴더 선택. [[링크]]와 그래프 뷰가 그대로 동작한다.
    - 데이터는 이 컴퓨터의 볼트 폴더에만 있고 외부 서버로 보내지 않는다.
    - 플러그인을 지워도 볼트는 남는다(볼트는 플러그인 밖에 있음).
+
+## 위젯 설정 (비서 모드)
+
+대시보드 「오늘」과 brain-today 브리핑에 내 자동화 상태를 붙이려면 위젯을 설정한다.
+
+1. `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py config init-widgets` — 예시 `~/.config/second-brain/widgets.json`을 만든다(이미 있으면 덮어쓰지 않음).
+2. 파일을 열어 내 로그·상태 파일 경로로 고치도록 안내한다. 필드 요약:
+   - 공통: `id`, `title`, `kind`(log · json · csv · markdown · command), `source`(`~` 허용, 홈 밖·`..` 금지)
+   - log: `lines`(마지막 N줄), `status.ok_pattern`·`status.fail_pattern`(정규식), `status.stale_minutes`(이 시간 넘게 갱신 없으면 stale)
+   - json: `fields`(점 경로 `a.b` 가능) · csv: `x`, `y`(열 이름), `last`(마지막 N행) · markdown: `lines`(첫 N줄)
+   - command: `source`가 셸 명령, `timeout_sec`. 최상위 `"allow_commands": true`일 때만 실행한다.
+3. `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py widgets` 로 각 위젯 상태(ok/warn/fail/stale/missing/unknown)를 확인한다.
+
+자세한 표는 플러그인 `docs/vault-format.md`의 "위젯 설정" 절에 있다.
