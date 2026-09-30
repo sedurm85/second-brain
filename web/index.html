@@ -258,7 +258,20 @@ h1, h2, h3 { text-wrap: balance; }
 .ev-form .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .ev-form input[type="text"], .ev-form textarea { flex: 1; width: 100%; padding: 8px 10px; border-radius: var(--r); background: color-mix(in srgb, var(--bg) 60%, transparent); border: 1px solid var(--rule-strong); color: var(--ink); resize: vertical; }
 .ev-form input:focus, .ev-form textarea:focus { border-color: var(--accent); outline: none; }
+.ev-form select { height: 34px; border-radius: var(--r); background: color-mix(in srgb, var(--bg) 60%, transparent); border: 1px solid var(--rule-strong); color: var(--ink); padding: 0 6px; flex: none; }
 .text-btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
+.ev-trip { margin: 14px 0; padding: 12px 14px; border: 1px solid var(--rule-strong); border-radius: var(--r); background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
+.trip-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.trip-tab { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 5px 10px; border-radius: var(--r); border: 1px solid var(--rule-strong); background: transparent; color: var(--ink-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+.trip-tab small { color: var(--muted); font-size: 11px; }
+.trip-tab.sel { border-color: var(--accent); color: var(--ink); background: var(--accent-soft); }
+.trip-day-list { list-style: none; margin: 0; padding: 0; }
+.trip-day-list li { display: flex; gap: 8px; align-items: center; font-size: 14px; padding: 4px 0; border-top: 1px solid var(--rule); }
+.trip-day-list li:first-child { border-top: 0; }
+.trip-day-list button.ev { display: flex; gap: 8px; align-items: center; width: 100%; background: transparent; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; padding: 2px 0; }
+.trip-day-list .t { color: var(--t-event); font-weight: 600; flex: none; width: 48px; }
+.ev-parent-trip { margin: 0 0 10px; font-size: 13px; color: var(--ink-2); }
+.ev-parent-trip button { background: transparent; border: 0; color: var(--accent); font: inherit; cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 2px; }
 .ev-status { font-size: 12.5px; color: var(--muted); }
 .ev-memo { font-size: 14px; }
 .ev-note-link { margin: 10px 0 0; font-size: 13px; }
@@ -524,6 +537,7 @@ h1, h2, h3 { text-wrap: balance; }
 .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--rule-strong); color: var(--ink-2); }
 .badge.soon { border-color: var(--st-warn); color: var(--ink); }
 .badge.over { border-color: var(--st-crit); color: var(--ink); }
+.badge.trip { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 
 /* ───────── 타임라인: 날짜 열 + 항목 ───────── */
 .timeline { padding: 6px 22px; }
@@ -874,7 +888,7 @@ h1, h2, h3 { text-wrap: balance; }
     hover: null, drag: null,
     perf: { frames: 0, total: 0, max: 0, ticks: 0 },
     search: { timer: 0, seq: 0, items: [], sel: -1 },
-    panel: { open: false, lastFocus: null, path: null },
+    panel: { open: false, lastFocus: null, path: null, tripDay: null },
     token: null, events: {}
   };
   function post(name, body) {
@@ -1611,13 +1625,18 @@ h1, h2, h3 { text-wrap: balance; }
     var e = S.events[id]; if (!e) return;
     var P = S.panel, panel = $("panel");
     if (!P.open) P.lastFocus = document.activeElement;
-    P.open = true; P.path = "event:" + id;
+    P.open = true; P.path = "event:" + id; P.tripDay = null;
     panel.classList.add("open"); panel.setAttribute("aria-hidden", "false"); $("scrim").classList.add("open");
     $("panelTitle").textContent = e.title;
-    $("panelType").innerHTML = typeBadge("event") + (typeof e.days_left === "number" ? ' <span class="badge' + (e.days_left <= 0 ? " over" : e.days_left <= 3 ? " soon" : "") + '">' + esc(dLeft(e.days_left)) + "</span>" : "");
+    $("panelType").innerHTML = typeBadge("event") + (typeof e.days_left === "number" ? ' <span class="badge' + (e.days_left <= 0 ? " over" : e.days_left <= 3 ? " soon" : "") + '">' + esc(dLeft(e.days_left)) + "</span>" : "") + (e.trip ? ' <span class="badge trip">여행 ' + esc(String(e.trip.days)) + '일</span>' : "");
     $("panelTags").innerHTML = "";
     renderEventBody(e);
     $("panelClose").focus();
+  }
+  /* key(예: "2026-10-03|제주도")로 이미 불러온 일정(오늘/다가오는 목록)을 찾는다(여행 하위 일정·부모 연결용). */
+  function findEventByKey(key) {
+    for (var id in S.events) { if (S.events[id] && S.events[id].key === key) return S.events[id]; }
+    return null;
   }
   function renderEventBody(e) {
     var n = e.note, when = e.all_day ? (e.start === e.end ? e.start : e.start + (e.end && e.end !== e.start ? " ~ " + e.end : "") + " 종일") : (e.start.slice(0, 10) + " " + hm(e.start) + "–" + hm(e.end));
@@ -1633,6 +1652,31 @@ h1, h2, h3 { text-wrap: balance; }
       "<tr><th>캘린더</th><td>" + esc(e.calendar || e.source || "") + "</td></tr>" +
       peopleRow +
       (e.url ? '<tr><th>링크</th><td><a href="' + esc(e.url) + '" target="_blank" rel="noopener">' + esc(e.url.replace(/^https?:\/\//, "").slice(0, 60)) + "</a></td></tr>" : "");
+    var parentTrip = e.parent_trip ? findEventByKey(e.parent_trip) : null;
+    var parentTripHtml = parentTrip ? '<p class="ev-parent-trip">↑ <button type="button" class="ev" data-eid="' + esc(parentTrip.id) + '">' + esc(parentTrip.title) + "</button> 여행의 일부</p>" : "";
+    var tripHtml = "";
+    if (e.trip) {
+      var P = S.panel;
+      if (!P.tripDay || e.trip.dates.indexOf(P.tripDay) < 0) {
+        var todayIso = (S.now || new Date().toISOString()).slice(0, 10);
+        P.tripDay = e.trip.dates.indexOf(todayIso) >= 0 ? todayIso : e.trip.dates[0];
+      }
+      var wByDate = {};
+      (e.trip.weather || []).forEach(function (w) { wByDate[w.date] = w; });
+      var tabs = e.trip.dates.map(function (d, i) {
+        var w = wByDate[d];
+        return '<button type="button" class="trip-tab' + (d === P.tripDay ? " sel" : "") + '" data-day="' + esc(d) + '">D' + (i + 1) + " " + esc(d.slice(5).replace("-", "/")) + (w ? "<small>" + esc(w.summary) + (w.umbrella ? " · 우산" : "") + "</small>" : "") + "</button>";
+      }).join("");
+      var dayChildren = e.trip.children.map(findEventByKey).filter(function (c) { return c && c.start.slice(0, 10) === P.tripDay; });
+      var daySteps = (n && n.days && n.days[P.tripDay]) || [];
+      var dayItems = dayChildren.map(function (c) {
+        return '<li><button type="button" class="ev" data-eid="' + esc(c.id) + '"><span class="t">' + (c.all_day ? "종일" : esc(hm(c.start))) + '</span><span class="n">' + esc(c.title) + (c.location ? " · " + esc(c.location) : "") + "</span></button></li>";
+      }).concat(daySteps.map(function (s) {
+        return '<li><span class="t">' + esc(s.time) + '</span><span class="n">' + esc(s.text) + "</span></li>";
+      })).join("");
+      tripHtml = '<section class="ev-trip" aria-label="여행 일자별"><div class="trip-tabs">' + tabs + "</div>" +
+        (dayItems ? '<ul class="trip-day-list">' + dayItems + "</ul>" : '<p class="t-empty">이 날은 아직 하위 일정·동선이 없어요.</p>') + "</section>";
+    }
     var desc = e.description ? '<h3 class="ev-h">설명</h3><div class="md ev-desc">' + esc(e.description).replace(/\n/g, "<br>") + "</div>" : "";
     var sg = S.suggestions && S.suggestions[e.key];
     var KIND = { prep: "준비", step: "동선", memo: "메모" };
@@ -1648,21 +1692,29 @@ h1, h2, h3 { text-wrap: balance; }
     var relHtml = e.related && e.related.length ? '<h3 class="ev-h">관련 기록</h3><ul class="ev-rel">' + e.related.map(function (r) {
       return '<li><button type="button" class="lnk" data-path="' + esc(r.path) + '">' + esc(r.title) + '</button><small>' + esc(r.snippet || "") + "</small></li>";
     }).join("") + "</ul>" : "";
+    var stepDaySel = e.trip ? '<select name="day">' + e.trip.dates.map(function (d, i) {
+      return '<option value="' + esc(d) + '"' + (d === S.panel.tripDay ? " selected" : "") + ">D" + (i + 1) + " " + esc(d.slice(5).replace("-", "/")) + "</option>";
+    }).join("") + "</select>" : "";
     var stepsHtml = relHtml + '<h3 class="ev-h">동선 ' + (n && n.steps && n.steps.length ? '<span class="count">' + n.steps.length + "단계</span>" : "") + "</h3>" +
       (n && n.steps && n.steps.length ? '<ul class="ev-steps">' + n.steps.map(function (s) { return "<li><span class=\"d\">" + (s.day !== e.start.slice(0, 10) ? esc(s.day.slice(5)) + " " : "") + '</span><span class="t">' + esc(s.time) + '</span><span class="n">' + esc(s.text) + "</span></li>"; }).join("") + "</ul>" : '<p class="t-empty">출발 시각과 이동을 적어 두면 그날 시간표에 겹쳐 보이고, 시각 10분 전에 카톡으로 알려요.</p>') +
-      '<form class="ev-form" data-act="step"><input type="text" name="text" maxlength="200" placeholder="14:00 집 출발 (자가용 50분)" autocomplete="off"><button type="submit" class="text-btn">추가</button></form>';
+      '<form class="ev-form" data-act="step">' + stepDaySel + '<input type="text" name="text" maxlength="200" placeholder="14:00 집 출발 (자가용 50분)" autocomplete="off"><button type="submit" class="text-btn">추가</button></form>';
     var memo = stepsHtml + '<h3 class="ev-h">메모</h3>' + (n && n.memo ? '<div class="md ev-memo">' + renderMd(n.memo) + "</div>" : '<p class="t-empty">아직 메모가 없어요.</p>') +
       '<form class="ev-form col" data-act="memo"><textarea name="text" rows="3" maxlength="4000" placeholder="이 일정에 남길 메모 (동선, 준비물, 통화 내용…)"></textarea><div class="row"><span class="ev-status" aria-live="polite"></span><button type="submit" class="text-btn primary">메모 남기기</button></div></form>' +
       (n ? '<p class="ev-note-link"><button type="button" class="wikilink" data-path="' + esc(n.path) + '">일정 노트 열기</button></p>' : "");
-    $("panelBody").innerHTML = '<table class="fm"><caption class="sr-only">일정 정보</caption>' + rows + "</table>" + desc + sugHtml + todo + memo;
+    $("panelBody").innerHTML = '<table class="fm"><caption class="sr-only">일정 정보</caption>' + rows + "</table>" + parentTripHtml + tripHtml + desc + sugHtml + todo + memo;
     $("panelBody").scrollTop = 0;
     var body = $("panelBody");
+    body.querySelectorAll(".trip-tab").forEach(function (btn) {
+      btn.addEventListener("click", function () { S.panel.tripDay = btn.getAttribute("data-day"); renderEventBody(e); });
+    });
     body.querySelectorAll(".ev-form").forEach(function (f) {
       f.addEventListener("submit", function (ev) {
         ev.preventDefault();
         var text = f.elements.text.value.trim(); if (!text) return;
         var st = body.querySelector(".ev-status"); if (st) st.textContent = "저장 중";
-        post("event-note", { action: f.getAttribute("data-act"), key: e.key, title: e.title, date: e.start.slice(0, 10), location: e.location || "", text: text })
+        var payload = { action: f.getAttribute("data-act"), key: e.key, title: e.title, date: e.start.slice(0, 10), location: e.location || "", text: text };
+        if (f.elements.day) payload.day = f.elements.day.value;
+        post("event-note", payload)
           .then(function (r) { e.note = r.note; S.events[e.id] = e; renderEventBody(e); refreshLive(true); })
           .catch(function (err) { var s2 = body.querySelector(".ev-status"); if (s2) s2.textContent = "저장 실패: " + (err.message || err); });
       });

@@ -3476,10 +3476,14 @@ def _event_note_payload(n):
     items = _checklist(n.body)
     memo = note_sections(n.body).get("메모", "")
     day = str(n.meta.get("event_date") or n.created)[:10]
+    steps = parse_steps(n.body, day)
+    days_map = defaultdict(list)
+    for st in steps:
+        days_map[st["day"]].append(st)
     return {"path": n.rel, "title": n.title, "checklist": items,
             "done": sum(1 for x in items if x["done"]), "total": len(items),
             "memo": memo[:1200], "location": n.meta.get("location") or "",
-            "steps": parse_steps(n.body, day)}
+            "steps": steps, "days": dict(days_map)}
 
 
 def event_notes_index(vault):
@@ -3503,6 +3507,27 @@ _PLACE_TITLE_RE = re.compile(r"^[가-힣]{2,10}(도|시|군|구|공항)$")
 def _looks_like_place_title(title):
     """종일 일정 제목이 "제주도"처럼 장소 이름 그 자체로 보이는지(오탐 줄이려 보수적으로)."""
     return bool(_PLACE_TITLE_RE.match(str(title or "").strip()))
+
+
+_TRIP_TITLE_RE = re.compile(r"여행|출장|휴가|trip|travel", re.I)
+
+
+def is_trip(e):
+    """일정을 "여행"으로 볼지: 이틀 이상 이어지는 종일 일정이거나,
+    "제주도"처럼 지명 그 자체(place title)이거나 제목에 여행/출장/휴가 표현이 있는 종일 일정.
+    (하루짜리 지명·여행 표현 일정도 여행 모드로 다룬다 — 짧은 당일 여행도 짐 목록이 필요하다.)"""
+    if not e.get("all_day"):
+        return False
+    title = e.get("title") or ""
+    try:
+        start_d = date.fromisoformat(str(e.get("start") or "")[:10])
+        end_d = date.fromisoformat(str(e.get("end") or "")[:10])
+        span = (end_d - start_d).days
+    except ValueError:
+        span = 0
+    if span >= 2:
+        return True
+    return bool(_TRIP_TITLE_RE.search(title) or _looks_like_place_title(title))
 
 
 _HONORIFIC_RE = re.compile(r"(님|씨|선생님|팀장|부장|대표)$")
@@ -3591,6 +3616,37 @@ def attach_event_notes(vault, ag):
                 e["weather"] = weather_mod.weather_for(place, e["start"][:10], weather_cache_dir)
             except Exception:  # noqa: BLE001 - 날씨는 읽기 전용 보조 정보, 실패해도 일정 표시는 막지 않는다
                 e["weather"] = None
+    # 여행 모드: 이틀 이상 종일 일정(또는 지명/여행 표현 제목)을 "여행"으로 묶고, 그 기간 안에
+    # 시작하는 다른 일정(항공편·숙소 등, 여행 자신은 제외)을 하위 일정으로 연결한다. ≤60개 일정 기준 O(n²).
+    trip_candidates = (ag.get("today") or []) + (ag.get("upcoming") or [])
+    for e in trip_candidates:
+        if not is_trip(e):
+            continue
+        try:
+            start_d = date.fromisoformat(str(e.get("start") or "")[:10])
+            end_d = date.fromisoformat(str(e.get("end") or "")[:10])
+        except ValueError:
+            continue
+        n_days = max(1, (end_d - start_d).days)
+        dates = [(start_d + timedelta(days=i)).isoformat() for i in range(n_days)]
+        children = []
+        for o in trip_candidates:
+            if o is e or is_trip(o):
+                continue
+            o_day = str(o.get("start") or "")[:10]
+            if o_day and dates[0] <= o_day <= dates[-1]:
+                children.append(o["key"])
+                o["parent_trip"] = e["key"]
+        weather_list = []
+        place = e.get("location") or e["title"]
+        for d in dates[:5]:
+            try:
+                w = weather_mod.weather_for(place, d, weather_cache_dir)
+            except Exception:  # noqa: BLE001 - 날씨는 읽기 전용 보조 정보, 실패해도 여행 표시는 막지 않는다
+                w = None
+            if w:
+                weather_list.append({"date": d, "summary": w.get("summary") or "", "umbrella": bool(w.get("umbrella"))})
+        e["trip"] = {"days": n_days, "dates": dates, "children": children, "weather": weather_list}
     # 동선: 오늘과 다가오는 날의 단계들(같은 노트가 여러 일정에 붙어도 한 번만)
     today_iso = str(ag.get("now") or datetime.now().isoformat())[:10]
     seen, steps = set(), []
@@ -5570,10 +5626,25 @@ def prepare_prompt(e, note, related):
     have = [c["text"] for c in ((note or {}).get("checklist") or [])]
     steps = [f"{s['time']} {s['text']}" for s in ((note or {}).get("steps") or [])]
     when = e["start"][:10] + (" 종일" if e.get("all_day") else " " + e["start"][11:16] + "–" + str(e.get("end") or "")[11:16])
+    trip = e.get("trip")
     ctx = {"title": e["title"], "when": when, "location": e.get("location") or "", "description": (e.get("description") or "")[:600],
            "attendees": (e.get("attendees") or [])[:5], "already_prep": have, "already_steps": steps,
            "weather": e.get("weather"),
            "related_notes": [{"title": r["title"], "snippet": (r.get("snippet") or "")[:200]} for r in (related or [])[:3]]}
+    if trip:
+        ctx["trip_days"] = trip.get("days")
+        ctx["trip_dates"] = trip.get("dates")
+        ctx["trip_weather"] = trip.get("weather") or []
+        return ("너는 꼼꼼한 개인 비서다. 아래 여행 일정 하나를 보고 JSON 객체 하나로만 답한다(설명·마크다운 금지). 형식:\n"
+                '{"prep": ["예약: ..." 또는 "짐: ..." 또는 "서류: ..." 접두어로 시작하는 준비 항목 6~10개, '
+                '각 30자 이내, already_prep와 겹치지 않게, trip_days(여행 일수)와 trip_weather(날짜별 날씨)를 반영], '
+                '"steps": ["HH:MM 내용" 0~4개, 출발일(when) 당일의 이동·출발 동선만. 시각을 합리적으로 추정할 수 없으면 빈 배열], '
+                '"memo": "한 줄 조언 60자 이내(없으면 빈 문자열)"}\n'
+                "규칙: 일정·설명·관련 노트에 없는 고유 사실(예약번호·전화번호 등)을 만들지 마라. "
+                "짐(짐:) 항목은 trip_days 일수와 trip_weather의 날짜별 날씨(우산·추위·더위)를 참고해 실제로 챙길 것만 넣는다. "
+                "예약(예약:) 항목은 숙소·렌터카·항공 등 이미 있는 것(already_*)과 겹치지 않게, 서류(서류:) 항목은 여권·신분증처럼 흔한 것만. "
+                "공항은 출발 2시간 전 도착 기준으로 동선을 잡는다. 이미 있는 항목(already_*)은 다시 내지 마라.\n\n[여행]\n"
+                + json.dumps(ctx, ensure_ascii=False))
     return ("너는 꼼꼼한 개인 비서다. 아래 일정 하나를 보고 JSON 객체 하나로만 답한다(설명·마크다운 금지). 형식:\n"
             '{"prep": ["준비 항목" 3~6개, 각 20자 이내 명사구, already_prep와 겹치지 않게], '
             '"steps": ["HH:MM 내용" 0~4개, 그 날의 이동·출발 동선. 시각을 합리적으로 추정할 수 없으면 빈 배열], '
@@ -5584,9 +5655,10 @@ def prepare_prompt(e, note, related):
             + json.dumps(ctx, ensure_ascii=False))
 
 
-def _norm_suggestion(raw, e):
+def _norm_suggestion(raw, e, trip=False):
     items = []
-    for t in (raw.get("prep") or [])[:6]:
+    prep_cap = 10 if trip else 6
+    for t in (raw.get("prep") or [])[:prep_cap]:
         t = " ".join(str(t).split())
         if t:
             items.append({"kind": "prep", "text": t[:80]})
@@ -5597,7 +5669,8 @@ def _norm_suggestion(raw, e):
     memo = " ".join(str(raw.get("memo") or "").split())
     if memo:
         items.append({"kind": "memo", "text": memo[:160]})
-    return items[:SUGGEST_MAX_ITEMS]
+    cap = max(SUGGEST_MAX_ITEMS, prep_cap) if trip else SUGGEST_MAX_ITEMS
+    return items[:cap]
 
 
 def suggest_targets(ag, sugg, days, force=False):
@@ -5642,7 +5715,7 @@ def cmd_prepare(args):
             raw = _run_claude_json(prepare_prompt(e, e.get("note"), e.get("related")))
             if isinstance(raw, list):
                 raw = raw[0] if raw and isinstance(raw[0], dict) else {}
-            items = _norm_suggestion(raw if isinstance(raw, dict) else {}, e)
+            items = _norm_suggestion(raw if isinstance(raw, dict) else {}, e, trip=bool(e.get("trip")))
         except BrainError as err:
             log(f"경고: {e['title']} 제안 실패: {err}")
             failed.append(e["key"])

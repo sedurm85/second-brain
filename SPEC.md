@@ -455,3 +455,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 명령 팔레트: 검색창에 `>`를 입력하면(또는 `⌘/Ctrl⇧P`) 노트 검색 대신 명령 목록(오늘로·할 일로·…·코어/사무실/리포트 열기·테마 전환·새로 고침·"할 일 추가: <텍스트>")을 부분일치로 필터링해 보여주고, 기존 화살표 이동·Enter로 그대로 실행. "할 일 추가"는 기존 `taskPost`를 재사용, 별도 "메모" 명령은 적합한 캡처용 API가 없어 넣지 않음
 - 접근성: 도움말 시트는 `role="dialog"` + `<dl>` 목록, 토스트(`#scToast`)는 `aria-live="polite"`(alert 미사용), Esc로 검색 결과·팔레트·도움말 모두 닫힘(패널 Esc 동작은 그대로 유지). 토픽바에 "?" 버튼 추가, 390px 폭에서도 레이아웃 유지 확인
 - 검증: `python3 -m unittest tests.test_serve`(21건 통과, 백엔드 무변경), `node --check`로 스크립트 문법 확인, Playwright로 `/` 포커스·`>할 일` 팔레트·`g`→`d` 스크롤·`?` 다이얼로그 열림/Esc 닫힘을 데모 서버(7796)에서 실측 확인
+## v0.29 여행 모드
+
+- `is_trip(e)`: 이틀 이상 이어지는 종일 일정, 또는 제목이 "제주도"처럼 지명 그 자체(place title)이거나 여행/출장/휴가 표현이면 여행으로 인식. `attach_event_notes`가 today/upcoming에서 여행마다 `e["trip"] = {days, dates, children, weather}`를 붙이고(`dates`는 exclusive end 보정, `weather`는 날짜별 최대 5건 오프라인 안전 조회), 그 기간 안에 시작하는 다른 일정(항공편 등)의 키를 `children`에 담고 그 일정에는 `e["parent_trip"]`을 붙인다(≤60개 일정 기준 O(n²))
+- `prepare_prompt`가 여행이면 예약:/짐:/서류: 접두어 체크리스트(6~10개, `trip.days`·날짜별 날씨 반영)와 출발일 동선만 요청하는 변형 프롬프트로 바뀌고, `_norm_suggestion(raw, e, trip=True)`는 준비 항목 상한을 6→10으로 올린다. `_event_note_payload`는 기존 `steps`에 더해 `days: {날짜: [단계…]}` 그룹을 non-breaking으로 추가
+- 보드(`renderEventBody`): 여행 일정엔 유형 배지 옆에 「여행 n일」 배지와, 헤더 아래 날짜별 탭(D1 10/03 · D2 10/04 …, 탭마다 날씨 요약)이 붙어 그날의 하위 일정·동선을 보여준다(하위 일정은 `data-eid`로 클릭 이동). 동선 추가 폼은 선택된 탭 날짜를 기본값으로 하는 날짜 선택자를 얻고 POST에 `day`를 함께 보낸다. 하위 일정(예: 항공편) 자신의 패널에는 "↑ {여행 제목} 여행의 일부" 줄과 부모로 이동하는 버튼이 뜬다
+- 테스트 `tests/test_trip.py` 6건: 지명형 여행 인식 vs 평범한 종일 일정, 하위/부모 연결, 여행 일수·날씨 길이 상한, 여행용 prepare_prompt(짐·일수 포함), `_norm_suggestion` 여행 상한 10, `_event_note_payload["days"]` 그룹핑. 전체 스위트 404 통과(기존 398 + 신규 6)
