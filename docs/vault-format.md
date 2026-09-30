@@ -209,6 +209,7 @@ location: 김포공항
 |---|---|---|
 | `allow_commands` | (최상위) | `true`일 때만 `command` 위젯을 실행해요. 아니면 status `unknown`, summary "명령 실행 비활성(allow_commands)" |
 | `allow_run` | (최상위) | `true`일 때 보드 행·사무실 책상의 「지금 실행」 버튼이 켜져요. 위젯 `source`와 같은 로그를 쓰는 crontab 줄 또는 launchd `StandardOutPath`를 찾아 그 명령을 한 번 실행해요 |
+| `allow_hire` | (최상위) | `true`일 때 사무실 화면의 「직원 채용」 버튼과 책상 상세의 「부서 이동」·「퇴사」가 켜져요. widgets.json을 직접 열지 않고 `add`(kind는 log·json·csv·markdown만, source는 홈 경로 규칙 그대로)·`move`·`rename`·`remove`로 위젯을 관리해요. `id`가 `brain-`로 시작하는 비서 에이전트 위젯은 퇴사로 못 지워요(`agents remove` 전용) |
 | `widgets[].team` | 모두 | 사무실 화면의 방(팀) 이름. 없으면 「기타」 |
 | `widgets[].id` | 전체 | 위젯 식별자(없으면 `widget-N`) |
 | `widgets[].title` | 전체 | 표시 이름(없으면 id) |

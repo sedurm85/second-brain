@@ -97,7 +97,35 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 .staff-brief .sb-meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
 .staff-brief .text-btn { background: none; border: 1px solid var(--rule, rgba(120,140,160,.4)); border-radius: 6px; padding: 4px 10px; color: var(--ink); font: inherit; font-size: 12.5px; cursor: pointer; }
 .staff-brief .text-btn.sm { padding: 1px 6px; font-size: 11.5px; }
+.text-btn { background: none; border: 1px solid var(--rule, rgba(120,140,160,.4)); border-radius: 6px; padding: 4px 10px; color: var(--ink); font: inherit; font-size: 12.5px; cursor: pointer; }
+.text-btn.sm { padding: 1px 6px; font-size: 11.5px; }
+.text-btn.danger { border-color: color-mix(in srgb, var(--crit) 55%, transparent); color: var(--crit); }
 .say.mind::after { background: rgba(255, 255, 255, .78); }
+/* 직원 채용(topbar 버튼 + 모달) */
+.hire-btn { background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent); border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.hire-btn:hover { background: var(--accent); color: var(--bg); }
+.hire-btn[hidden] { display: none; }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(4, 8, 14, .55); z-index: 8; }
+.modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(420px, calc(100vw - 32px)); max-height: min(620px, calc(100vh - 32px)); overflow: auto; background: var(--panel); border: 1px solid var(--rule-strong); border-radius: 14px; box-shadow: 0 24px 60px rgba(0, 0, 0, .55); padding: 18px 20px calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 9; }
+.modal h3 { margin: 0 0 12px; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+.modal h3 .close { margin-left: auto; background: none; border: 0; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
+.modal form { display: flex; flex-direction: column; gap: 10px; }
+.modal label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--ink-2); }
+.modal input, .modal select { background: var(--panel-2); border: 1px solid var(--rule-strong); border-radius: 8px; padding: 8px 10px; color: var(--ink); font: inherit; font-size: 13.5px; width: 100%; }
+.modal .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.modal .err { color: var(--crit); font-size: 12.5px; min-height: 1em; }
+.modal .hint { color: var(--muted); font-size: 11.5px; }
+.modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.modal .actions button { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--rule-strong); background: var(--panel-2); color: var(--ink); font-size: 13.5px; cursor: pointer; }
+.modal .actions button[type="submit"] { background: var(--accent); color: var(--bg); border-color: transparent; font-weight: 600; }
+.modal .actions button[type="submit"]:disabled { opacity: .6; cursor: default; }
+/* 상세 패널의 부서 이동·퇴사 */
+.dHire { margin: 10px 0; display: flex; flex-direction: column; gap: 8px; }
+.dHire:empty { display: none; }
+.hire-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hire-row select { background: var(--panel-2); border: 1px solid var(--rule-strong); border-radius: 6px; padding: 4px 8px; color: var(--ink); font: inherit; font-size: 12.5px; }
+.confirm-box { font-size: 12.5px; color: var(--warn); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hire-err { color: var(--crit); font-size: 12px; }
 .desk .st .sc { display: block; color: var(--muted); opacity: .8; }
 .desk.talk .say { white-space: normal; max-width: 180px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 @media (max-width: 720px) { .desk.talk .say { max-width: 140px; -webkit-line-clamp: 2; font-size: 10.5px; } .desk { padding-top: 30px; } }
@@ -144,6 +172,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
   .kpi-total { font-size: 11.5px; }
   .kpi-total .full { display: none; }
   .kpi-total .compact { display: inline; }
+  .hire-btn { font-size: 12px; padding: 5px 8px; }
   .desks { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 4px; }
   .desk { min-width: 0; padding-top: 26px; }
   .desk .nm { font-size: 11px; }
@@ -161,6 +190,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
   <header class="bar">
     <h1><span class="lamp" id="mainLamp"></span>사무실</h1>
     <nav class="links" aria-label="화면 이동"><a href="/">보드</a><a href="/core">코어</a></nav>
+    <button type="button" class="hire-btn" id="hireBtn" hidden>+ 직원 채용</button>
     <span class="kpi-total" id="kpiTotal"></span>
     <div class="stat" id="stat"></div>
     <span class="clock" id="clock">--:--</span>
@@ -176,7 +206,51 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
   <div class="meta" id="dMeta"></div>
   <div class="hist" id="dHist"></div>
   <div class="staff-brief" id="dBrief"></div>
+  <div class="dHire" id="dHire"></div>
   <pre id="dBody"></pre>
+</aside>
+<div class="modal-backdrop" id="hireBackdrop" hidden></div>
+<aside class="modal" id="hireModal" role="dialog" aria-modal="true" aria-labelledby="hireModalTitle" hidden>
+  <h3><span id="hireModalTitle">직원 채용</span><button type="button" class="close" id="hireClose" aria-label="닫기">×</button></h3>
+  <form id="hireForm">
+    <label for="hTitle">직원 이름(제목)
+      <input id="hTitle" name="title" maxlength="40" required autocomplete="off">
+    </label>
+    <label for="hSource">담당 파일 경로(source)
+      <input id="hSource" name="source" placeholder="~/.local/k-skill-cron/example.log" required autocomplete="off">
+    </label>
+    <div class="row2">
+      <label for="hKind">종류(kind)
+        <select id="hKind" name="kind">
+          <option value="log">로그(log)</option>
+          <option value="json">json</option>
+          <option value="csv">csv</option>
+          <option value="markdown">markdown</option>
+        </select>
+      </label>
+      <label for="hTeam">부서(팀)
+        <input id="hTeam" name="team" list="hTeamList" maxlength="20" placeholder="예: 생활팀" autocomplete="off">
+        <datalist id="hTeamList"></datalist>
+      </label>
+    </div>
+    <div class="row2">
+      <label for="hOk">정상 패턴(선택)
+        <input id="hOk" name="ok_pattern" placeholder="len:" autocomplete="off">
+      </label>
+      <label for="hFail">실패 패턴(선택)
+        <input id="hFail" name="fail_pattern" placeholder="Traceback|Error" autocomplete="off">
+      </label>
+    </div>
+    <label for="hStale">지연 기준(분, 선택)
+      <input id="hStale" name="stale_minutes" type="number" min="1" placeholder="예: 1500">
+    </label>
+    <div class="hint">경로는 홈 디렉토리 아래(~/…)만 가능해요. 명령 실행 직원은 여기서 못 만들어요.</div>
+    <div class="err" id="hireErr" role="alert"></div>
+    <div class="actions">
+      <button type="button" id="hireCancel">취소</button>
+      <button type="submit">채용하기</button>
+    </div>
+  </form>
 </aside>
 <script>
 (function () {
@@ -343,6 +417,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
     var ws = d.widgets || [], nRun = Object.keys(running).length, nFail = ws.filter(function (w) { return w.status === "fail"; }).length, nOk = ws.filter(function (w) { return w.status === "ok"; }).length, nPause = ws.filter(function (w) { return w.state === "paused"; }).length;
     $("stat").innerHTML = '<span><span class="lamp run"></span>가동 <b>' + nRun + "</b></span><span><span class=\"lamp good\"></span>정상 <b>" + nOk + "</b></span><span><span class=\"lamp crit\"></span>주의 <b>" + nFail + "</b></span><span><span class=\"lamp\"></span>멈춤 <b>" + nPause + "</b></span>";
     $("mainLamp").className = "lamp " + (nRun ? "run" : nFail ? "crit" : "good");
+    $("hireBtn").hidden = !d.hireable;
     renderKpiTotal((d.kpis || {}).total);
     // 팀장의 한마디
     $("leadWho").textContent = d.assistant_name || "브레인";
@@ -395,7 +470,86 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
       '<svg viewBox="0 0 ' + W + " " + H + '" width="100%" height="' + H + '" aria-label="날짜별 실행 수">' + bars + "</svg>" +
       '<div class="hist-axis"><span>' + first + "</span><span>" + last + "</span></div>";
   }
-  $("dClose").addEventListener("click", function () { $("detail").classList.remove("open"); $("dHist").innerHTML = ""; });
+  $("dClose").addEventListener("click", function () { $("detail").classList.remove("open"); $("dHist").innerHTML = ""; $("dHire").innerHTML = ""; });
+
+  /* ───────── 부서 이동 · 퇴사 (상세 패널) ───────── */
+  function renderHireControls(w) {
+    var el = $("dHire");
+    if (!S.data || !S.data.hireable) { el.innerHTML = ""; return; }
+    var teams = (S.data.teams || []).map(function (t) { return t.name; });
+    if (w.team && teams.indexOf(w.team) === -1) teams.push(w.team);
+    var opts = teams.map(function (t) { return '<option value="' + esc(t) + '"' + (t === w.team ? " selected" : "") + '>' + esc(t) + "</option>"; }).join("");
+    el.innerHTML =
+      '<div class="hire-row"><label class="sr-only" for="dMoveSel">부서 이동</label>' +
+      '<select id="dMoveSel">' + opts + '</select>' +
+      '<button type="button" class="text-btn sm" id="dMoveBtn" data-wid="' + esc(w.id) + '">부서 이동</button></div>' +
+      '<div class="hire-row"><button type="button" class="text-btn sm danger" id="dRemoveBtn" data-wid="' + esc(w.id) + '">퇴사</button></div>' +
+      '<div id="dRemoveConfirm"></div><div class="hire-err" id="dHireErr"></div>';
+  }
+  function widgetAction(body) {
+    return fetch("/api/widget", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); });
+  }
+  document.addEventListener("click", function (ev) {
+    var mb = ev.target.closest("#dMoveBtn");
+    if (mb) {
+      var team = ($("dMoveSel") || {}).value;
+      if (!team) return;
+      widgetAction({ action: "move", id: mb.getAttribute("data-wid"), team: team })
+        .then(function () { $("detail").classList.remove("open"); $("dHire").innerHTML = ""; load(); })
+        .catch(function (err) { var e = $("dHireErr"); if (e) e.textContent = err.message || String(err); });
+      return;
+    }
+    var rb2 = ev.target.closest("#dRemoveBtn");
+    if (rb2) {
+      var wid = rb2.getAttribute("data-wid");
+      $("dRemoveConfirm").innerHTML = '<div class="confirm-box">정말 퇴사 처리할까요? 로그 파일은 남아요' +
+        ' <button type="button" class="text-btn sm danger" data-remove-confirm="' + esc(wid) + '">확인</button>' +
+        ' <button type="button" class="text-btn sm" data-remove-cancel="1">취소</button></div>';
+      return;
+    }
+    var cc = ev.target.closest("[data-remove-cancel]");
+    if (cc) { $("dRemoveConfirm").innerHTML = ""; return; }
+    var rc = ev.target.closest("[data-remove-confirm]");
+    if (rc) {
+      widgetAction({ action: "remove", id: rc.getAttribute("data-remove-confirm") })
+        .then(function () { $("detail").classList.remove("open"); $("dHire").innerHTML = ""; load(); })
+        .catch(function (err) { var e = $("dHireErr"); if (e) e.textContent = err.message || String(err); });
+    }
+  });
+
+  /* ───────── 직원 채용(모달) ───────── */
+  function openHireModal() {
+    $("hireErr").textContent = "";
+    $("hireForm").reset();
+    var dl = $("hTeamList"); dl.innerHTML = "";
+    ((S.data && S.data.teams) || []).forEach(function (t) { var o = document.createElement("option"); o.value = t.name; dl.appendChild(o); });
+    $("hireModal").hidden = false; $("hireBackdrop").hidden = false;
+    $("hTitle").focus();
+  }
+  function closeHireModal() { $("hireModal").hidden = true; $("hireBackdrop").hidden = true; }
+  $("hireBtn").addEventListener("click", openHireModal);
+  $("hireClose").addEventListener("click", closeHireModal);
+  $("hireCancel").addEventListener("click", closeHireModal);
+  $("hireBackdrop").addEventListener("click", closeHireModal);
+  $("hireForm").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var title = $("hTitle").value.trim(), team = $("hTeam").value.trim();
+    var body = {
+      action: "add", title: title, source: $("hSource").value.trim(), kind: $("hKind").value, team: team,
+      ok_pattern: $("hOk").value.trim(), fail_pattern: $("hFail").value.trim(), stale_minutes: $("hStale").value.trim()
+    };
+    var btn = $("hireForm").querySelector("button[type=submit]");
+    btn.disabled = true; btn.textContent = "채용 중…"; $("hireErr").textContent = "";
+    widgetAction(body).then(function () {
+      closeHireModal();
+      return load().then(function () {
+        $("leadSay").textContent = title + " 님이 " + (team || "운영팀") + "에 입사했어요. 첫 근무 기록이 생기면 상태가 잡혀요.";
+      });
+    }).catch(function (err) {
+      $("hireErr").textContent = err.message || String(err);
+    }).then(function () { btn.disabled = false; btn.textContent = "채용하기"; });
+  });
   /* runbtn(▶)은 role=button span이라 클릭·Enter/Space 모두에서 같은 동작을 태워야 함 */
   function runWidget(rb) {
     var wid = rb.getAttribute("data-run"); rb.textContent = "…";
@@ -415,13 +569,17 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
       openDetail(w.title, (ST_KO[w.status] || w.status) + " · " + ago(w.age_minutes) + (w.updated_at ? " · " + String(w.updated_at).replace("T", " ").slice(0, 16) : ""), body);
       if (w.kind === "log") fetch("/api/widget-history?id=" + encodeURIComponent(w.id)).then(function (r) { return r.json(); }).then(renderHistory).catch(function () {});
       renderBrief(w.id, null);
+      renderHireControls(w);
     } else if (b.getAttribute("data-job")) {
       var j = (S.data.jobs || []).filter(function (x) { return x.id === b.getAttribute("data-job"); })[0]; if (!j) return;
       openDetail("Claude 작업 " + j.id, (j.state || "") + (j.tempo ? " · " + j.tempo : "") + (j.updated_min != null ? " · " + ago(j.updated_min) : ""), (j.detail || "") + (j.recent && j.recent.length ? "\n\n최근:\n" + j.recent.join("\n") : ""));
     }
   });
   document.addEventListener("keydown", function (ev) {
-    if (ev.key === "Escape") { $("detail").classList.remove("open"); return; }
+    if (ev.key === "Escape") {
+      if (!$("hireModal").hidden) { closeHireModal(); return; }
+      $("detail").classList.remove("open"); $("dHire").innerHTML = ""; return;
+    }
     if (ev.key === "Enter" || ev.key === " " || ev.key === "Spacebar") {
       var rb = ev.target.closest(".runbtn[data-run]");
       if (rb) { ev.preventDefault(); runWidget(rb); }

@@ -1840,7 +1840,7 @@ def widgets_config_path():
 def load_widgets_config():
     """widgets.json 로드. 없거나 깨졌으면 빈 목록(깨진 경우 error 포함)."""
     p = widgets_config_path()
-    empty = {"allow_commands": False, "allow_run": False, "widgets": [], "path": str(p), "error": None}
+    empty = {"allow_commands": False, "allow_run": False, "allow_hire": False, "widgets": [], "path": str(p), "error": None}
     if not p.is_file():
         return empty
     try:
@@ -1854,6 +1854,7 @@ def load_widgets_config():
     if not isinstance(items, list):
         items = []
     return {"allow_commands": data.get("allow_commands") is True, "allow_run": data.get("allow_run") is True,
+            "allow_hire": data.get("allow_hire") is True,
             "widgets": [w for w in items if isinstance(w, dict)], "path": str(p), "error": None}
 
 
@@ -2834,9 +2835,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._static("report.html")
             if route == "/api/office":
                 d = dash_office(collect_widgets(self.server.widget_cache))
-                allow = bool(load_widgets_config().get("allow_run"))
+                wcfg = load_widgets_config()
+                allow = bool(wcfg.get("allow_run"))
                 cmds = widget_commands(d["widgets"])
                 d["runnable"] = {k: v["kind"] for k, v in cmds.items()} if allow else {}
+                d["hireable"] = bool(wcfg.get("allow_hire"))
                 return self._json(200, d)
             if route == "/api/mail":
                 return self._json(200, collect_mail_safe(force=bool(qs.get("force"))))
@@ -3586,6 +3589,125 @@ def set_widget_state(wid, state):
     return {"ok": True, "id": wid, "state": state}
 
 
+WIDGET_HIRE_KINDS = ("log", "json", "csv", "markdown")  # command는 채용 대상 아님(임의 명령 등록 금지)
+
+
+def _load_widgets_raw():
+    """widgets.json 원본(allow_* 포함 전체 dict)을 그대로 로드. add/move/remove/rename의 쓰기용.
+
+    load_widgets_config()은 읽기 전용 정규화 뷰(누락 키 기본값)를 주기 때문에,
+    다시 쓸 때는 원본 파일을 그대로 열어 다른 필드를 보존한다."""
+    p = widgets_config_path()
+    if not p.is_file():
+        raise BrainError("widgets.json이 없어요")
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise BrainError(f"widgets.json을 읽지 못했어요: {e}")
+    if not isinstance(data, dict):
+        raise BrainError("widgets.json 최상위는 객체여야 합니다.")
+    if not isinstance(data.get("widgets"), list):
+        data["widgets"] = []
+    return p, data
+
+
+def _save_widgets_raw(p, data):
+    """set_widget_state와 같은 안전 쓰기 패턴(전체 dict → JSON, 개행 추가)."""
+    p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _unique_widget_id(base, taken):
+    if base not in taken:
+        return base
+    k = 2
+    while f"{base}-{k}" in taken:
+        k += 1
+    return f"{base}-{k}"
+
+
+def _require_hire(cfg):
+    if not cfg.get("allow_hire"):
+        raise BrainError("채용·퇴사 버튼은 widgets.json에 \"allow_hire\": true 를 적어야 켜져요")
+
+
+def add_widget(body):
+    """직원 채용: widgets.json에 새 위젯 추가. source는 홈 경로 규칙(ensure_in_home)을 그대로 적용,
+    kind는 log·json·csv·markdown만(command는 임의 명령 등록이라 채용으로 못 만든다)."""
+    title = str(body.get("title") or "").strip()
+    if not title or len(title) > 40:
+        raise BrainError("직원 이름(제목)은 1~40자여야 해요")
+    kind = str(body.get("kind") or "log").strip().lower()
+    if kind not in WIDGET_HIRE_KINDS:
+        raise BrainError(f"kind는 {' · '.join(WIDGET_HIRE_KINDS)} 중 하나여야 해요(명령 실행 위젯은 채용으로 못 만들어요)")
+    source = str(body.get("source") or "").strip()
+    resolve_widget_source(source)  # 홈 밖·상대경로·`..`는 여기서 BrainError로 거부
+    ok_pattern = str(body.get("ok_pattern") or "").strip() or None
+    fail_pattern = str(body.get("fail_pattern") or "").strip() or None
+    _regex(ok_pattern)
+    _regex(fail_pattern)
+    team = str(body.get("team") or "").strip()
+    if team and len(team) > 20:
+        raise BrainError("부서(팀) 이름은 1~20자여야 해요")
+    stale = _num(body.get("stale_minutes")) if str(body.get("stale_minutes") or "").strip() else None
+    lines = _pos_int(body.get("lines"), 5)
+    p, data = _load_widgets_raw()
+    taken = {str(w.get("id")) for w in data["widgets"] if isinstance(w, dict)}
+    wid = _unique_widget_id(slugify(title), taken)
+    status = {}
+    if ok_pattern:
+        status["ok_pattern"] = ok_pattern
+    if fail_pattern:
+        status["fail_pattern"] = fail_pattern
+    if stale is not None and stale > 0:
+        status["stale_minutes"] = stale
+    entry = {"id": wid, "title": title, "kind": kind, "source": source, "team": team, "status": status, "lines": lines}
+    data["widgets"].append(entry)
+    _save_widgets_raw(p, data)
+    return {"ok": True, "id": wid, "widget": entry}
+
+
+def move_widget(wid, team):
+    """부서 이동: 위젯의 team만 바꿔 저장."""
+    team = str(team or "").strip()
+    if not team or len(team) > 20:
+        raise BrainError("부서(팀) 이름은 1~20자여야 해요")
+    p, data = _load_widgets_raw()
+    hit = next((w for w in data["widgets"] if isinstance(w, dict) and str(w.get("id")) == wid), None)
+    if not hit:
+        raise BrainError(f"위젯이 없어요: {wid}")
+    hit["team"] = team
+    _save_widgets_raw(p, data)
+    return {"ok": True, "id": wid, "team": team}
+
+
+def rename_widget(wid, title):
+    """이름 변경: title만 바꾼다(id·슬러그는 유지 — 다른 곳에서 id로 참조하기 때문)."""
+    title = str(title or "").strip()
+    if not title or len(title) > 40:
+        raise BrainError("직원 이름(제목)은 1~40자여야 해요")
+    p, data = _load_widgets_raw()
+    hit = next((w for w in data["widgets"] if isinstance(w, dict) and str(w.get("id")) == wid), None)
+    if not hit:
+        raise BrainError(f"위젯이 없어요: {wid}")
+    hit["title"] = title
+    _save_widgets_raw(p, data)
+    return {"ok": True, "id": wid, "title": title}
+
+
+def remove_widget(wid):
+    """퇴사: widgets.json에서 항목 삭제. 로그 파일 자체는 지우지 않는다.
+    비서 에이전트(id가 brain-로 시작)는 별도 관리 대상이라 여기서 막는다."""
+    if wid.startswith("brain-"):
+        raise BrainError("비서 에이전트 직원은 `agents remove`로")
+    p, data = _load_widgets_raw()
+    before = len(data["widgets"])
+    data["widgets"] = [w for w in data["widgets"] if not (isinstance(w, dict) and str(w.get("id")) == wid)]
+    if len(data["widgets"]) == before:
+        raise BrainError(f"위젯이 없어요: {wid}")
+    _save_widgets_raw(p, data)
+    return {"ok": True, "id": wid}
+
+
 def widget_action(body, widgets):
     action, wid = body.get("action"), str(body.get("id") or "")
     cfg = load_widgets_config()
@@ -3600,7 +3722,19 @@ def widget_action(body, widgets):
         if not w:
             raise BrainError(f"위젯이 없어요: {wid}")
         return dict(staff_brief(w, force=bool(body.get("force"))), action="brief")
-    raise BrainError("action은 run · pause · resume · brief 중 하나")
+    if action == "add":
+        _require_hire(cfg)
+        return dict(add_widget(body), action="add")
+    if action == "move":
+        _require_hire(cfg)
+        return dict(move_widget(wid, body.get("team")), action="move")
+    if action == "rename":
+        _require_hire(cfg)
+        return dict(rename_widget(wid, body.get("title")), action="rename")
+    if action == "remove":
+        _require_hire(cfg)
+        return dict(remove_widget(wid), action="remove")
+    raise BrainError("action은 run · pause · resume · brief · add · move · rename · remove 중 하나")
 
 
 DATE_IN_LINE_RE = re.compile(r"(20\d{2})-(\d{2})-(\d{2})")

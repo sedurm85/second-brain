@@ -386,3 +386,8 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `dash_tasks`가 켜져 있으면 미리알림을 `kind: "reminder"` 항목(읽기 전용)으로 오늘/이번 주/언젠가 묶음에 합침(마감 지났거나 오늘 → 오늘, 7일 안 → 이번 주, 없음 → 언젠가). `task_action`의 `check`는 kind가 reminder면 거부(완료는 미리알림 앱에서). `kakao_brief`는 켜져 있고 개수가 있으면 "미리알림 N" 한 줄 추가
 - 보드 「할 일」 4열에서 `kind === "reminder"` 항목은 체크박스 없이 「미리알림」 배지로만 표시(읽기 전용)
 - 테스트 +10, 총 228
+## v0.28 사무실 직원 채용·이동·퇴사 (2026-09-30)
+
+- `widget_action`에 `add`·`move`·`rename`·`remove` 액션 추가, 전부 새 최상위 플래그 `allow_hire`(widgets.json)로 게이트. `add`는 title 1~40자·id는 `slugify` 재사용(중복이면 `-2`부터)·kind는 `log`·`json`·`csv`·`markdown`만(command는 금지)·source는 기존 `resolve_widget_source`/`ensure_in_home` 규칙 그대로 통과해야 함·ok/fail 패턴은 `_regex`로 컴파일 검증. `remove`는 `brain-`로 시작하는 비서 에이전트 위젯을 거부(`agents remove` 전용 안내). `/api/office` 응답에 `hireable` 키 추가(`runnable` 옆), `/api/widget` POST 핸들러는 기존 캐시 무효화 로직을 그대로 재사용
+- `web/office.html`: 상단바에 `hireable`일 때만 보이는 「+ 직원 채용」 버튼 → 제목·경로·kind·팀(datalist)·정상/실패 패턴·지연분을 받는 모달(오버레이+focus, Escape로 닫힘, `window.confirm`/`alert` 미사용). 제출 성공 시 사무실 새로고침 후 「팀장 한마디」에 "OO 님이 OO팀에 입사했어요" 표시. 책상 상세 패널에 「부서 이동」(팀 select+확인)과 「퇴사」(첫 클릭에 "정말 퇴사 처리할까요? 로그 파일은 남아요" 인라인 확인 → 2번째 클릭으로 실행) 추가
+- `tests/test_hire.py` 15건: allow_hire 게이트(add/move/rename/remove 전부), add 검증(제목 길이·중복 id·홈 밖 경로 거부·command kind 거부·잘못된 정규식 거부), move/rename/remove, `brain-` 접두 퇴사 거부, `/api/office`의 `hireable`, HTTP POST add → `/api/widgets`에 반영. Playwright로 1280/390 두 뷰포트에서 `allow_hire=false`일 때 버튼 숨김, `true`일 때 채용→반영→부서이동/퇴사 확인 흐름을 실제 브라우저로 확인. 전체 스위트 268 통과
