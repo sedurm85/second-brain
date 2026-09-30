@@ -1783,7 +1783,8 @@ def _widget_base(w, idx):
     kind = str(w.get("kind") or "")
     state = str(w.get("state") or "active").lower()
     return {"id": wid, "title": str(w.get("title") or wid), "kind": kind, "status": "unknown",
-            "state": state if state in WIDGET_STATES else "active",
+            "state": state if state in WIDGET_STATES else "active", "team": str(w.get("team") or ""),
+            "source": str(w.get("source") or "") if kind != "command" else "",
             "updated_at": None, "age_minutes": None, "summary": "",
             "data": dict(_EMPTY_DATA.get(kind, {}))}
 
@@ -2149,6 +2150,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._static("index.html")
             if route in ("/core", "/core.html"):
                 return self._static("core.html")
+            if route in ("/office", "/office.html"):
+                return self._static("office.html")
+            if route == "/api/office":
+                return self._json(200, dash_office(collect_widgets(self.server.widget_cache)))
             if route.startswith("/web/"):
                 return self._static(urllib.parse.unquote(route[len("/web/"):]))
             if route == "/api/summary":
@@ -2605,6 +2610,182 @@ def event_note_action(vault, body):
         git_commit(vault, f"brain: event check {n.rel}")
         return {"ok": True, "note": _event_note_payload(Note(vault, n.path))}
     raise BrainError("action은 memo · todo · check 중 하나")
+
+
+# ───────────────────────── 사무실(/office): 직원=자동화, 팀=방, Claude 배경 작업 ─────────────────────────
+DEFAULT_TEAMS = (
+    ("콘텐츠팀", ("gen-daily", "cafe-daily", "danggeun-bridge", "weekly-review", "cafe-growth", "topic-recommend", "cafe-")),
+    ("생활팀", ("marketset", "flight", "dongtan", "market")),
+    ("커리어팀", ("jobscout", "career", "job")),
+)
+OFFICE_EVENTS_MAX = 24
+
+
+def team_for(widget):
+    """widgets.json의 team이 있으면 그것, 없으면 id 접두어로 기본 팀. 어디에도 안 맞으면 운영팀."""
+    if widget.get("team"):
+        return widget["team"]
+    wid = str(widget.get("id") or "")
+    for name, keys in DEFAULT_TEAMS:
+        if any(wid.startswith(k) or k in wid for k in keys):
+            return name
+    return "운영팀"
+
+
+def _crontab_lines():
+    try:
+        r = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=5)
+        return r.stdout.splitlines() if r.returncode == 0 else []
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+
+
+def _ps_lines():
+    try:
+        r = subprocess.run(["ps", "-axo", "pid=,etime=,command="], capture_output=True, text=True, timeout=5)
+        return r.stdout.splitlines() if r.returncode == 0 else []
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+
+
+def running_widgets(widgets, ps_lines=None, cron_lines=None):
+    """지금 도는 자동화 감지. 크론 줄의 '>> 로그'와 위젯 source를 짝지어 스크립트 경로를 얻고, ps 명령줄에 그 경로(또는 로그 stem)가 있으면 가동 중."""
+    ps_lines = _ps_lines() if ps_lines is None else ps_lines
+    cron_lines = _crontab_lines() if cron_lines is None else cron_lines
+    log_to_script = {}
+    for line in cron_lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        m = re.search(r">>?\s*(\S+\.log)", line)
+        parts = line.split()
+        if len(parts) < 6:
+            continue
+        cmd = parts[5:]
+        script = next((c for c in cmd if c.endswith((".py", ".sh"))), None)
+        if m and script:
+            log_to_script[os.path.expanduser(m.group(1))] = script
+        elif script:
+            log_to_script[Path(script).stem] = script
+    out = {}
+    for w in widgets:
+        src = os.path.expanduser(str(w.get("source") or ""))
+        stem = Path(src).stem if src else ""
+        keys = set()
+        if src in log_to_script:
+            keys.add(log_to_script[src])
+        if stem and stem in log_to_script:
+            keys.add(log_to_script[stem])
+        wid = str(w.get("id") or "")
+        # 스크립트 파일명 패턴(…/stem*.py|.sh)만 인정. 단어 부분 일치는 다른 앱 명령줄(예: Claude 앱의 '--…flight…')을 오탐한다
+        pats = [re.compile(re.escape(k), re.I) if "/" in k else re.compile(r"[\s/]" + re.escape(k) + r"[\w-]*\.(py|sh|js|rb)\b", re.I) for k in keys if k]
+        for extra in (stem, wid.replace("-", "_")):
+            if extra and len(extra) >= 4 and extra not in ("daily", "gen", "review", "bridge", "growth", "state", "result"):
+                pats.append(re.compile(r"[\s/]" + re.escape(extra) + r"[\w-]*\.(py|sh|js|rb)\b", re.I))
+        for line in ps_lines:
+            low = line.lower()
+            if "brain.py" in low or " grep " in low or "claude helper" in low:
+                continue
+            if any(pt.search(line) for pt in pats):
+                cols = line.split(None, 2)
+                out[wid] = {"pid": int(cols[0]) if cols and cols[0].isdigit() else None, "etime": cols[1] if len(cols) > 1 else ""}
+                break
+    return out
+
+
+def jobs_dir():
+    d = os.environ.get("SECOND_BRAIN_JOBS_DIR")
+    if d:
+        return Path(os.path.expanduser(d))
+    cfg = os.environ.get("CLAUDE_CONFIG_DIR")
+    base = Path(os.path.expanduser(cfg)) if cfg else home_dir() / ".claude"
+    return base / "jobs"
+
+
+def claude_jobs(now=None, max_age_hours=24):
+    """Claude Code 배경 작업(state.json)을 읽어 직원 목록으로. 최근 24시간 안에 갱신된 것만."""
+    now = now or datetime.now()
+    d = jobs_dir()
+    out = []
+    if not d.is_dir():
+        return out
+    for sj in sorted(d.glob("*/state.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            age_min = (now.timestamp() - sj.stat().st_mtime) / 60
+            if age_min > max_age_hours * 60:
+                continue
+            data = json.loads(sj.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        # 일하는 중·막힘은 하루, 끝난 작업은 3시간까지만 자리에 남긴다
+        if str(data.get("state") or "") not in ("working", "blocked", "needs_input") and age_min > 180:
+            continue
+        recent = []
+        tl = sj.parent / "timeline.jsonl"
+        if tl.is_file():
+            try:
+                lines = tl.read_text(encoding="utf-8").splitlines()[-5:]
+                for ln in lines:
+                    try:
+                        e = json.loads(ln)
+                        txt = e.get("detail") or e.get("summary") or e.get("text") or e.get("state") or ""
+                        if txt:
+                            recent.append(str(txt)[:120])
+                    except ValueError:
+                        continue
+            except OSError:
+                pass
+        title = ""
+        for c in data.get("children") or []:
+            if isinstance(c, dict) and c.get("title"):
+                title = str(c["title"])[:24]
+                break
+        out.append({"id": sj.parent.name, "state": str(data.get("state") or ""), "detail": str(data.get("detail") or "")[:200],
+                    "tempo": str(data.get("tempo") or ""), "updated_min": round(age_min, 1), "title": title, "recent": recent})
+    return out[:8]
+
+
+def office_events(widgets, jobs, now=None):
+    now = now or datetime.now().astimezone()
+    ev = []
+    for w in widgets:
+        if not w.get("updated_at"):
+            continue
+        try:
+            t = datetime.fromisoformat(w["updated_at"])
+        except ValueError:
+            continue
+        what = w.get("summary") or ""
+        ev.append({"ts": t.isoformat(), "time": t.strftime("%H:%M") if t.date() == now.date() else t.strftime("%m-%d %H:%M"),
+                   "who": re.sub(r"\s*\(.*\)\s*$", "", str(w.get("title") or w["id"])), "what": what[:80], "bad": w.get("status") in ("fail", "stale")})
+    for j in jobs:
+        if j.get("detail"):
+            t = now - timedelta(minutes=j.get("updated_min") or 0)
+            ev.append({"ts": t.isoformat(), "time": t.strftime("%H:%M"), "who": "Claude " + j["id"][:6], "what": j["detail"][:80], "bad": False})
+    ev.sort(key=lambda e: e["ts"], reverse=True)
+    return ev[:OFFICE_EVENTS_MAX]
+
+
+def dash_office(widgets, ps_lines=None, cron_lines=None, now=None):
+    """/api/office 응답: teams, widgets(요약), running, jobs, events, assistant_name."""
+    cfg = load_config()
+    teams = {}
+    order = []
+    for w in widgets:
+        name = team_for(w)
+        if name not in teams:
+            teams[name] = []
+            order.append(name)
+        teams[name].append(w["id"])
+    jobs = claude_jobs()
+    return {
+        "teams": [{"name": n, "members": teams[n]} for n in order],
+        "widgets": widgets,
+        "running": running_widgets(widgets, ps_lines, cron_lines),
+        "jobs": jobs,
+        "events": office_events(widgets, jobs, now),
+        "assistant_name": str(cfg.get("assistant_name") or "브레인"),
+    }
 
 
 ASK_TIMEOUT_SEC = 120

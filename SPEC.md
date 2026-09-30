@@ -166,3 +166,11 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `/api/session`에 `assistant_name`(config, 기본 「브레인」). `brain.py config set assistant_name 자비스`
 - 보드 상단 바에 「코어」 링크, brain-view 스킬에 코어 안내. 테스트 +3, 총 122
 - 확인(Orca): 한국어 음성 9종·음성 인식 API 존재. 마이크 권한은 사용 시 브라우저가 물음
+
+## v0.9 「사무실」 화면 (2026-09-30)
+
+사장님 참조(godseng.mom 릴스 「자동으로 일하는 나만의 직원」): 팀별 방에 직원 캐릭터, 초록 불은 가동 중. 우리 데이터에 그대로 대응: 자동화 하나 = 직원 하나, 팀 = 방, Claude 배경 작업 = 「Claude 작업실」 직원.
+
+- `web/office.html`(무의존): 직원 스프라이트는 16x20 격자 SVG 사각형으로 즉석 생성(머리·셔츠·피부색은 id 해시), 상태별 자세: 가동=타이핑 2프레임(0.5s)·모니터 깜빡, 정상=대기, 실패=머리 감싸기+붉은 램프+붉은 말풍선, 오래됨=눈 감고 zzz, 멈춤=빈 의자. 방 머리에 창문(시간대별 하늘색), 램프(가동 파랑 깜빡/주의 붉음/정상 초록). 팀장의 한마디(지금 제가 하는 일·가동 인원·막힌 담당), 활동 로그 2열, 직원 클릭 → 상세(로그 발췌)
+- `/api/office`: `teams`(widgets.json `team` 또는 id 접두어 기본 배정: 콘텐츠팀/생활팀/커리어팀/운영팀), `widgets`(+team·source), `running`(crontab `>> 로그`↔위젯 source로 스크립트 경로를 얻고 `ps` 명령줄과 파일명 패턴 `[\s/]stem*.py|.sh` 매칭, Claude Helper 등 제외), `jobs`(`$CLAUDE_CONFIG_DIR/jobs/*/state.json`, 일하는 중·막힘 24h / 끝난 것 3h, timeline 최근 5줄), `events`(위젯 갱신 + 작업 detail 시간순 24개), `assistant_name`. 환경변수 `SECOND_BRAIN_JOBS_DIR`로 대체 가능
+- 보드·코어 상단에 「사무실」 링크. brain-view 스킬: 화면 셋 안내. 테스트 +4, 총 126

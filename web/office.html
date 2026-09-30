@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>세컨드브레인 사무실</title>
+<meta name="description" content="내 자동화와 Claude 작업을 직원 캐릭터로 보여주는 픽셀 사무실. 팀별 방, 가동·정상·주의·멈춤, 지금 하는 일 말풍선">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0a0e14; --panel: #111821; --panel-2: #172230; --ink: #e8f1f8; --ink-2: #a9bccb; --muted: #6f8394;
+  --rule: rgba(160, 200, 230, .12); --rule-strong: rgba(160, 200, 230, .22);
+  --accent: #4fd1ff; --accent-soft: rgba(79, 209, 255, .14);
+  --good: #3ddc84; --warn: #ffb84d; --crit: #ff5d6c; --paused: #6f8394;
+  --floor: #16202c; --floor-2: #1a2634; --wall: #202e3f; --desk: #3a4a5c; --desk-2: #2c3a49; --screen: #7fe7ff;
+  --font: "IBM Plex Sans KR", "Apple SD Gothic Neo", system-ui, -apple-system, sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 14px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+a { color: var(--ink); text-decoration: none; }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: radial-gradient(900px 520px at 80% -10%, var(--accent-soft), transparent 70%), radial-gradient(700px 480px at -10% 100%, rgba(63, 224, 168, .06), transparent 70%); }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 20px 80px; }
+/* 상단 바 */
+.bar { display: flex; align-items: center; gap: 16px; height: 56px; border-bottom: 1px solid var(--rule); position: sticky; top: 0; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(12px); z-index: 5; }
+.bar h1 { font-size: 16px; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 10px; }
+.bar .links { display: flex; gap: 4px; }
+.bar .links a { padding: 6px 10px; border-radius: 6px; color: var(--ink-2); font-size: 14px; }
+.bar .links a:hover { color: var(--ink); background: var(--panel-2); }
+.bar .stat { margin-left: auto; display: flex; gap: 14px; font-size: 13px; color: var(--ink-2); flex-wrap: wrap; }
+.bar .stat b { color: var(--ink); font-weight: 600; }
+.bar .stat .lamp { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; background: var(--paused); }
+.lamp.good { background: var(--good); box-shadow: 0 0 8px var(--good); }
+.lamp.run { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: blink 1.2s ease-in-out infinite; }
+.lamp.crit { background: var(--crit); box-shadow: 0 0 8px var(--crit); animation: blink 1.6s ease-in-out infinite; }
+.lamp.warn { background: var(--warn); }
+@keyframes blink { 50% { opacity: .35; } }
+.clock { font-weight: 600; font-variant-numeric: tabular-nums; }
+/* 헤드라인(팀장의 한마디) */
+.lead { display: flex; gap: 16px; align-items: center; margin: 22px 0 18px; }
+.lead .bubble { position: relative; background: var(--panel); border: 1px solid var(--rule-strong); border-radius: 12px; padding: 12px 16px; font-size: 15px; max-width: 70ch; word-break: keep-all; }
+.lead .bubble::before { content: ""; position: absolute; left: -8px; top: 22px; width: 14px; height: 14px; background: var(--panel); border-left: 1px solid var(--rule-strong); border-bottom: 1px solid var(--rule-strong); transform: rotate(45deg); }
+.lead .who { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+/* 방(팀) 그리드 */
+.rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
+.room { background: linear-gradient(180deg, var(--wall) 0, var(--wall) 44px, var(--floor) 44px); border: 1px solid var(--rule-strong); border-radius: 14px; overflow: hidden; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 18px 50px rgba(2, 8, 20, .5); position: relative; }
+.room.claude { background: linear-gradient(180deg, #1c2a3e 0, #1c2a3e 44px, #141f2c 44px); border-color: color-mix(in srgb, var(--accent) 40%, var(--rule-strong)); }
+.room-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px 10px; font-size: 14px; }
+.room-head h2 { margin: 0; font-size: 14.5px; font-weight: 700; }
+.room-head .n { color: var(--muted); font-size: 12.5px; }
+.room-head .state { margin-left: auto; font-size: 12px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+.window { position: absolute; right: 16px; top: 8px; width: 46px; height: 28px; border-radius: 4px; border: 2px solid #2b3a4e; background: linear-gradient(180deg, var(--sky-1, #2f5b9a), var(--sky-2, #7fb2e6)); opacity: .9; }
+.window::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: #2b3a4e; }
+.desks { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px 4px; padding: 10px 12px 14px; background-image: repeating-linear-gradient(0deg, transparent 0 22px, rgba(255, 255, 255, .025) 22px 23px), repeating-linear-gradient(90deg, transparent 0 22px, rgba(255, 255, 255, .025) 22px 23px); }
+.desk { position: relative; display: grid; justify-items: center; padding: 22px 4px 8px; border-radius: 8px; background: none; border: 0; text-align: center; min-width: 0; width: 100%; transition: background .15s; }
+.desk:hover, .desk:focus-visible { background: rgba(255, 255, 255, .04); }
+.desk svg { width: 72px; height: 72px; image-rendering: pixelated; shape-rendering: crispEdges; display: block; }
+.desk .nm { font-size: 11.5px; color: var(--ink-2); margin-top: 4px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.desk .st { font-size: 11px; color: var(--muted); }
+.desk.fail .nm { color: var(--crit); }
+.desk.run .nm { color: var(--accent); }
+.desk.paused { opacity: .55; }
+/* 말풍선 */
+.say { position: absolute; left: 50%; top: -2px; transform: translateX(-50%); max-width: 150px; background: #f5f8fb; color: #16212c; border-radius: 8px; padding: 4px 8px; font-size: 11px; line-height: 1.35; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 4px 14px rgba(0, 0, 0, .4); pointer-events: none; }
+.say::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 8px; height: 8px; background: #f5f8fb; transform: translateX(-50%) rotate(45deg); }
+.say.bad { background: #ffe1e4; color: #7a1b23; }
+.say.zzz { background: #e2e8f0; color: #526273; font-style: italic; }
+.say.think { background: #dff6ff; color: #0b4a63; }
+.desk.talk .say { white-space: normal; max-width: 180px; }
+/* 활동 로그 */
+.feed { margin-top: 20px; background: var(--panel); border: 1px solid var(--rule-strong); border-radius: 14px; padding: 12px 18px 6px; }
+.feed h2 { margin: 0 0 6px; font-size: 14.5px; font-weight: 700; }
+.feed ul { list-style: none; margin: 0; padding: 0; columns: 2 320px; column-gap: 28px; }
+.feed li { font-size: 13px; padding: 5px 0; border-top: 1px solid var(--rule); display: flex; gap: 10px; break-inside: avoid; }
+.feed li:first-child { border-top: 0; }
+.feed .t { color: var(--muted); flex: none; font-variant-numeric: tabular-nums; width: 46px; }
+.feed .k { color: var(--ink); font-weight: 600; flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed .s { color: var(--ink-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed .s.bad { color: var(--crit); }
+/* 상세 */
+.detail { position: fixed; right: 16px; bottom: 16px; width: min(420px, calc(100vw - 32px)); max-height: 60vh; overflow: auto; background: var(--panel); border: 1px solid var(--rule-strong); border-radius: 12px; box-shadow: 0 24px 60px rgba(0, 0, 0, .55); padding: 14px 16px; display: none; z-index: 6; }
+.detail.open { display: block; }
+.detail h3 { margin: 0 0 6px; font-size: 15px; display: flex; gap: 8px; align-items: center; }
+.detail .close { margin-left: auto; background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; }
+.detail pre { font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; background: color-mix(in srgb, var(--bg) 70%, transparent); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; margin: 8px 0 0; color: var(--ink-2); max-height: 30vh; overflow: auto; }
+.detail .meta { font-size: 12.5px; color: var(--muted); }
+.empty { color: var(--muted); font-size: 13px; padding: 14px 16px 18px; }
+@media (max-width: 720px) { .bar { height: auto; flex-wrap: wrap; padding: 8px 0; } .bar .stat { margin-left: 0; } .rooms { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <h1><span class="lamp" id="mainLamp"></span>사무실</h1>
+    <nav class="links" aria-label="화면 이동"><a href="/">보드</a><a href="/core">코어</a></nav>
+    <div class="stat" id="stat"></div>
+    <span class="clock" id="clock">--:--</span>
+  </header>
+  <section class="lead" aria-label="팀장의 한마디">
+    <div class="bubble"><div class="who" id="leadWho">브레인</div><div id="leadSay">사무실을 여는 중이에요…</div></div>
+  </section>
+  <main class="rooms" id="rooms" aria-live="polite"></main>
+  <section class="feed"><h2>활동 로그</h2><ul id="feed"><li class="empty">불러오는 중</li></ul></section>
+</div>
+<aside class="detail" id="detail" role="dialog" aria-modal="false" aria-labelledby="dTitle">
+  <h3><span id="dTitle"></span><button type="button" class="close" id="dClose" aria-label="닫기">×</button></h3>
+  <div class="meta" id="dMeta"></div>
+  <pre id="dBody"></pre>
+</aside>
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  var ST_KO = { ok: "정상", warn: "주의", fail: "실패", stale: "오래됨", missing: "없음", paused: "멈춤", unknown: "알 수 없음", run: "가동 중" };
+  var S = { data: null, widgets: {}, frame: 0 };
+
+  /* ───────── 픽셀 직원: 16x20 격자, 색은 id 해시로 ───────── */
+  function hash(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  var HAIR = ["#2b2118", "#4a2c17", "#8a5a2b", "#c98a3d", "#1e2a44", "#5b3a5e", "#9c2c2c", "#e0c26a"];
+  var SHIRT = ["#4fd1ff", "#3fe0a8", "#ff9ecf", "#ffd166", "#b39dff", "#ff8a5b", "#7ee787", "#e8f1f8"];
+  var SKIN = ["#f1c9a5", "#e0ac7e", "#c98b5e", "#f5d7bd"];
+  function sprite(id, state, frame, kind) {
+    var h = hash(id), hair = HAIR[h % HAIR.length], shirt = kind === "claude" ? "#4fd1ff" : SHIRT[(h >> 3) % SHIRT.length], skin = SKIN[(h >> 6) % SKIN.length];
+    var px = []; // [x, y, w, h, color]
+    var deskC = "var(--desk)", desk2 = "var(--desk-2)";
+    // 책상·모니터
+    px.push([1, 14, 14, 2, deskC], [2, 16, 2, 3, desk2], [12, 16, 2, 3, desk2]);
+    var screenOn = state !== "paused" && state !== "missing";
+    var screen = state === "fail" ? "#ff5d6c" : state === "run" || state === "working" ? "#7fe7ff" : state === "stale" || state === "idle" ? "#3b5566" : "#3fe0a8";
+    px.push([10, 9, 5, 4, "#26323f"], [11, 10, 3, 2, screenOn ? screen : "#1a222c"], [12, 13, 1, 1, "#26323f"]);
+    if (screenOn && (state === "run" || state === "working") && frame % 2) px.push([11, 10, 1, 1, "#ffffff"]);
+    if (state === "paused") { // 빈 의자
+      px.push([4, 9, 5, 5, "#2b3a49"], [3, 14, 1, 4, "#2b3a49"]);
+      return svg(px);
+    }
+    // 몸
+    var bob = (state === "run" || state === "working") ? (frame % 2) : 0;
+    var headY = 3 + (state === "fail" ? 1 : 0) - bob * 0; // 실패는 고개 숙임
+    px.push([4, headY, 5, 5, skin], [4, headY - 1, 5, 2, hair], [3, headY, 1, 3, hair]);
+    if (state === "stale" || state === "idle") px.push([5, headY + 2, 3, 1, "#7a5540"]); // 눈 감음
+    else px.push([5, headY + 2, 1, 1, "#1b1b1b"], [7, headY + 2, 1, 1, "#1b1b1b"]);
+    px.push([3, headY + 5, 7, 5, shirt]);
+    // 팔: 타이핑 프레임
+    if (state === "run" || state === "working") { px.push([9, headY + 6 + (frame % 2), 3, 1, skin], [9, headY + 8 - (frame % 2), 3, 1, skin]); }
+    else if (state === "fail") { px.push([2, headY + 5, 1, 3, skin], [10, headY + 5, 1, 3, skin], [4, headY + 3, 5, 1, skin]); } // 머리 감싸기
+    else { px.push([9, headY + 7, 3, 1, skin]); }
+    px.push([4, headY + 10, 2, 3, "#22303f"], [7, headY + 10, 2, 3, "#22303f"]);
+    // 책상 램프(상태등)
+    var lamp = state === "fail" ? "#ff5d6c" : state === "run" || state === "working" ? "#4fd1ff" : state === "ok" ? "#3ddc84" : state === "warn" ? "#ffb84d" : "#5a6b7c";
+    px.push([1, 12, 1, 2, "#26323f"], [0, 11, 3, 1, lamp]);
+    if (kind === "claude") px.push([6, headY - 2, 1, 1, "#4fd1ff"], [5, headY - 3, 3, 1, "#4fd1ff"]); // 브레인 배지(안테나)
+    return svg(px);
+  }
+  function svg(px) { return '<svg viewBox="0 0 16 20" aria-hidden="true">' + px.map(function (p) { return '<rect x="' + p[0] + '" y="' + p[1] + '" width="' + p[2] + '" height="' + p[3] + '" fill="' + p[4] + '"/>'; }).join("") + "</svg>"; }
+
+  /* ───────── 그리기 ───────── */
+  function shortTitle(t) { return String(t || "").replace(/\s*\(.*\)\s*$/, ""); }
+  function sched(t) { var m = /\(([^)]*)\)\s*$/.exec(t || ""); return m ? m[1] : ""; }
+  function ago(m) { if (m == null) return "기록 없음"; m = Math.round(m); if (m < 1) return "방금"; if (m < 60) return m + "분 전"; if (m < 1440) return Math.floor(m / 60) + "시간 전"; return Math.floor(m / 1440) + "일 전"; }
+  function lastLine(w) { var d = w.data || {}; if (d.lines && d.lines.length) return d.lines[d.lines.length - 1]; if (d.text) return String(d.text).split("\n")[0]; return w.summary || ""; }
+  function deskHtml(w, running) {
+    var st = running ? "run" : (ST_KO[w.status] ? w.status : "unknown");
+    var say = "";
+    if (running) say = '<div class="say think">' + esc(running.etime ? running.etime + " 일하는 중" : "일하는 중…") + "</div>";
+    else if (w.status === "fail") say = '<div class="say bad">' + esc((w.summary || "실패").slice(0, 40)) + "</div>";
+    else if (w.status === "stale") say = '<div class="say zzz">zzz… ' + esc(ago(w.age_minutes)) + "</div>";
+    else if (w.status === "ok" && w.age_minutes != null && w.age_minutes < 90) say = '<div class="say">' + esc(lastLine(w).slice(0, 34)) + "</div>";
+    return '<button type="button" class="desk ' + st + '" data-wid="' + esc(w.id) + '" aria-label="' + esc(shortTitle(w.title) + ", " + (ST_KO[st] || st)) + '">' + say +
+      sprite(w.id, st, S.frame) + '<div class="nm">' + esc(shortTitle(w.title)) + '</div><div class="st">' + esc(sched(w.title) || ST_KO[st] || "") + "</div></button>";
+  }
+  function jobDesk(j) {
+    var st = j.state === "working" ? "working" : j.state === "idle" || j.state === "waiting" ? "idle" : "ok";
+    var say = j.detail ? '<div class="say ' + (st === "working" ? "think" : "") + '">' + esc(String(j.detail).slice(0, 60)) + "</div>" : "";
+    return '<button type="button" class="desk talk ' + (st === "working" ? "run" : st) + '" data-job="' + esc(j.id) + '" aria-label="' + esc("Claude 작업 " + j.id + ", " + (j.state || "")) + '">' + say +
+      sprite("claude-" + j.id, st, S.frame, "claude") + '<div class="nm">' + esc(j.title || ("작업 " + j.id.slice(0, 6))) + '</div><div class="st">' + esc(j.state === "working" ? "일하는 중" : j.state === "idle" ? "대기" : (j.state || "")) + (j.updated_min != null ? " · " + ago(j.updated_min) : "") + "</div></button>";
+  }
+  function render(d) {
+    S.data = d; S.widgets = {};
+    (d.widgets || []).forEach(function (w) { S.widgets[w.id] = w; });
+    var running = d.running || {};
+    var rooms = (d.teams || []).map(function (team) {
+      var members = team.members.map(function (id) { return S.widgets[id]; }).filter(Boolean);
+      if (!members.length) return "";
+      var anyRun = members.some(function (w) { return running[w.id]; }), anyFail = members.some(function (w) { return w.status === "fail"; });
+      var lamp = anyRun ? "run" : anyFail ? "crit" : members.every(function (w) { return w.status === "ok" || w.status === "paused"; }) ? "good" : "warn";
+      var label = anyRun ? "가동 중" : anyFail ? "주의" : "정상";
+      return '<section class="room" aria-label="' + esc(team.name) + '"><div class="window"></div><div class="room-head"><h2>' + esc(team.name) + '</h2><span class="n">' + members.length + "명</span>" +
+        '<span class="state"><span class="lamp ' + lamp + '"></span>' + label + "</span></div><div class=\"desks\">" + members.map(function (w) { return deskHtml(w, running[w.id]); }).join("") + "</div></section>";
+    }).join("");
+    var jobs = d.jobs || [];
+    rooms = '<section class="room claude" aria-label="Claude 작업실"><div class="window"></div><div class="room-head"><h2>Claude 작업실</h2><span class="n">' + jobs.length + "명</span>" +
+      '<span class="state"><span class="lamp ' + (jobs.some(function (j) { return j.state === "working"; }) ? "run" : jobs.length ? "good" : "") + '"></span>' + (jobs.some(function (j) { return j.state === "working"; }) ? "일하는 중" : jobs.length ? "대기" : "비어 있음") + "</span></div>" +
+      (jobs.length ? '<div class="desks">' + jobs.map(jobDesk).join("") + "</div>" : '<p class="empty">지금 도는 Claude 배경 작업이 없어요. 대화 세션에서 작업을 맡기면 여기 직원이 앉아요.</p>') + "</section>" + rooms;
+    $("rooms").innerHTML = rooms;
+    // 상단 통계·램프
+    var ws = d.widgets || [], nRun = Object.keys(running).length, nFail = ws.filter(function (w) { return w.status === "fail"; }).length, nOk = ws.filter(function (w) { return w.status === "ok"; }).length, nPause = ws.filter(function (w) { return w.state === "paused"; }).length;
+    $("stat").innerHTML = '<span><span class="lamp run"></span>가동 <b>' + nRun + "</b></span><span><span class=\"lamp good\"></span>정상 <b>" + nOk + "</b></span><span><span class=\"lamp crit\"></span>주의 <b>" + nFail + "</b></span><span><span class=\"lamp\"></span>멈춤 <b>" + nPause + "</b></span>";
+    $("mainLamp").className = "lamp " + (nRun ? "run" : nFail ? "crit" : "good");
+    // 팀장의 한마디
+    $("leadWho").textContent = d.assistant_name || "브레인";
+    var lead = [];
+    var working = jobs.filter(function (j) { return j.state === "working"; });
+    if (working.length) lead.push("지금 저는 " + (working[0].detail ? "「" + String(working[0].detail).slice(0, 60) + "」" : "작업") + (working.length > 1 ? " 외 " + (working.length - 1) + "건" : "") + "을 하고 있어요.");
+    if (nRun) lead.push("직원 " + nRun + "명이 일하는 중이에요.");
+    if (nFail) lead.push(ws.filter(function (w) { return w.status === "fail"; }).map(function (w) { return shortTitle(w.title); }).join(", ") + " 담당이 막혀 있어요.");
+    if (!lead.length) lead.push("모두 제자리에 있고 문제는 없어요. 다음 근무는 " + (nextShift(ws) || "예정된 대로") + "예요.");
+    $("leadSay").textContent = lead.join(" ");
+    // 활동 로그
+    var ev = (d.events || []).slice(0, 14);
+    $("feed").innerHTML = ev.length ? ev.map(function (e) { return '<li><span class="t">' + esc(e.time) + '</span><span class="k">' + esc(e.who) + '</span><span class="s' + (e.bad ? " bad" : "") + '">' + esc(e.what) + "</span></li>"; }).join("") : '<li class="empty">아직 기록이 없어요.</li>';
+    // 낮·밤 창문
+    var h = new Date().getHours(), night = h < 6 || h >= 19, dusk = !night && (h < 8 || h >= 17);
+    document.documentElement.style.setProperty("--sky-1", night ? "#0b1530" : dusk ? "#7a4a6e" : "#2f5b9a");
+    document.documentElement.style.setProperty("--sky-2", night ? "#1a2a55" : dusk ? "#f0a35f" : "#7fb2e6");
+  }
+  function nextShift(ws) { var t = ws.map(function (w) { return sched(w.title); }).filter(Boolean)[0]; return t || ""; }
+
+  /* ───────── 상세 ───────── */
+  function openDetail(title, meta, body) { $("dTitle").textContent = title; $("dMeta").textContent = meta; $("dBody").textContent = body || "(내용 없음)"; $("detail").classList.add("open"); }
+  $("dClose").addEventListener("click", function () { $("detail").classList.remove("open"); });
+  document.addEventListener("click", function (ev) {
+    var b = ev.target.closest(".desk"); if (!b) return;
+    if (b.getAttribute("data-wid")) {
+      var w = S.widgets[b.getAttribute("data-wid")]; if (!w) return;
+      var d = w.data || {}, body = d.lines ? d.lines.join("\n") : d.text || (d.fields ? Object.keys(d.fields).map(function (k) { return k + ": " + d.fields[k]; }).join("\n") : "") || w.summary;
+      openDetail(w.title, (ST_KO[w.status] || w.status) + " · " + ago(w.age_minutes) + (w.updated_at ? " · " + String(w.updated_at).replace("T", " ").slice(0, 16) : ""), body);
+    } else if (b.getAttribute("data-job")) {
+      var j = (S.data.jobs || []).filter(function (x) { return x.id === b.getAttribute("data-job"); })[0]; if (!j) return;
+      openDetail("Claude 작업 " + j.id, (j.state || "") + (j.tempo ? " · " + j.tempo : "") + (j.updated_min != null ? " · " + ago(j.updated_min) : ""), (j.detail || "") + (j.recent && j.recent.length ? "\n\n최근:\n" + j.recent.join("\n") : ""));
+    }
+  });
+  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape") $("detail").classList.remove("open"); });
+
+  /* ───────── 시계·갱신·프레임 ───────── */
+  function tick() { var d = new Date(); $("clock").textContent = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
+  tick(); setInterval(tick, 10000);
+  function load() { return fetch("/api/office").then(function (r) { return r.json(); }).then(render).catch(function (err) { $("leadSay").textContent = "사무실 데이터를 불러오지 못했어요: " + (err.message || err); }); }
+  load(); setInterval(function () { if (!document.hidden) load(); }, 15000);
+  // 타이핑 프레임: 일하는 직원만 0.5초마다 스프라이트 교체
+  setInterval(function () {
+    S.frame++;
+    document.querySelectorAll(".desk.run svg, .desk.working svg").forEach(function (el) {
+      var b = el.parentNode, id = b.getAttribute("data-wid") || ("claude-" + b.getAttribute("data-job"));
+      var kind = b.getAttribute("data-job") ? "claude" : "";
+      var tmp = document.createElement("div"); tmp.innerHTML = sprite(id, kind ? "working" : "run", S.frame, kind);
+      el.replaceWith(tmp.firstChild);
+    });
+  }, 500);
+})();
+</script>
+</body>
+</html>
