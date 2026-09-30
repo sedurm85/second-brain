@@ -1,6 +1,6 @@
 # 세컨드브레인 (second-brain)
 
-한국어 · [English](README.en.md)
+한국어 · [English](README.en.md) · [![Tests](https://github.com/sedurm85/second-brain/actions/workflows/tests.yml/badge.svg)](https://github.com/sedurm85/second-brain/actions/workflows/tests.yml)
 
 ![세컨드브레인](web/assets/banner.png)
 

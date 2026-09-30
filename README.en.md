@@ -1,6 +1,6 @@
 # second-brain
 
-[한국어](README.md) · English
+[한국어](README.md) · English · [![Tests](https://github.com/sedurm85/second-brain/actions/workflows/tests.yml/badge.svg)](https://github.com/sedurm85/second-brain/actions/workflows/tests.yml)
 
 ![second-brain](web/assets/banner.png)
 
