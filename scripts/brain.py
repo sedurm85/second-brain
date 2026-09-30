@@ -5682,6 +5682,20 @@ def evening_brief(t, tomorrow_events):
     return _clip(" / ".join(parts), KAKAO_MAX)
 
 
+def cmd_ask(args):
+    """터미널에서 비서에게 자유 질문: 코어 화면의 /api/ask와 같은 맥락(오늘 상태·볼트 검색·최근 대화)으로 헤드리스 Claude에 묻는다."""
+    try:
+        v = vault_path()
+        if not vault_exists(v):
+            v = None
+    except BrainError:
+        v = None
+    t = dash_today(v)
+    r = ask_assistant(" ".join(args.text), t, v)
+    emit(args, r, r["answer"] + (("\n\n참고한 기록: " + ", ".join(r["memory_used"][:3])) if r.get("memory_used") else ""))
+    return EXIT_OK
+
+
 def cmd_brief(args):
     """아침 브리핑: today와 같은 내용. --evening이면 저녁 마감 문장. --kakao면 200자 카톡 발송(헬퍼 있을 때)."""
     try:
@@ -7026,6 +7040,9 @@ def build_parser():
     s.add_argument("--kakao", "--notify", dest="kakao", action="store_true", help="알림 보내기(카톡 헬퍼 → 없으면 macOS 알림 센터)")
     s.add_argument("--steps-before", type=int, default=10, help="동선 단계 몇 분 전(기본 10)")
     s.add_argument("--events-before", type=int, default=30, help="시간 일정 몇 분 전(기본 30)")
+
+    s = add("ask", "비서에게 자유 질문(오늘 상태·볼트 검색·최근 대화를 붙여 헤드리스 Claude에게)", cmd_ask)
+    s.add_argument("text", nargs="+", help="질문")
 
     s = add("brief", "아침 브리핑(today와 같음). --kakao면 알림으로 200자 발송", cmd_brief)
     s.add_argument("--kakao", "--notify", dest="kakao", action="store_true", help="알림 보내기(카톡 헬퍼 → 없으면 macOS 알림 센터)")
