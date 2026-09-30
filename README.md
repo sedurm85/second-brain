@@ -154,7 +154,7 @@ Obsidian → **Open folder as vault** → `~/brain` 선택. 그래프 뷰·백�
 - reznikov_engineering 릴스(살아 있는 구체와 말하는 에이전트) → 코어 화면
 - godseng.mom 릴스 "자동으로 일하는 나만의 직원" → 사무실 화면
 
-설계 기록은 [SPEC.md](SPEC.md), 2차 기획은 [docs/v2-plan.md](docs/v2-plan.md), 볼트 형식은 [docs/vault-format.md](docs/vault-format.md).
+설계 기록은 [SPEC.md](SPEC.md), 2차 기획은 [docs/v2-plan.md](docs/v2-plan.md), 볼트 형식은 [docs/vault-format.md](docs/vault-format.md), 기여자용 코드 지도는 [docs/architecture.md](docs/architecture.md).
 
 ## 라이선스
 

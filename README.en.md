@@ -158,7 +158,7 @@ Search is keyword based (weighted title and tags plus recency, Korean 2-grams). 
 - reznikov_engineering's reels (a living orb and a speaking agent) → the core screen
 - godseng.mom's reel "my own employees who work automatically" → the office screen
 
-Design notes are in [SPEC.md](SPEC.md) (Korean), the phase-2 plan in [docs/v2-plan.md](docs/v2-plan.md), the vault format in [docs/vault-format.md](docs/vault-format.md).
+Design notes are in [SPEC.md](SPEC.md) (Korean), the phase-2 plan in [docs/v2-plan.md](docs/v2-plan.md), the vault format in [docs/vault-format.md](docs/vault-format.md), and a contributor code map in [docs/architecture.md](docs/architecture.md) (Korean).
 
 ## License
 

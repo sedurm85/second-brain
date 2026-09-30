@@ -55,7 +55,7 @@ Claude에 보내는 내용은 대화에서 요청한 것만. 일정·메일 원�
 4. 이동 시간: 수동 입력 vs 지도 API.
 5. 2단계 검증용 실제 여행(방콕·대만·다낭 중 다음 것).
 
-## 진행 현황 (2026-09-30 16:05)
+## 진행 현황 (2026-09-30 16:05, 갱신 기록은 아래 「갱신」에 이어서 씀)
 
 | 단계 | 상태 |
 |---|---|
@@ -66,3 +66,39 @@ Claude에 보내는 내용은 대화에서 요청한 것만. 일정·메일 원�
 | 그 밖 | 코어(v0.8, 선제 알림 v0.16), 사무실(v0.9, 근무 그래프 v0.17), agents(v0.14), 데모(v0.16) |
 
 남은 후보: 캘린더 쓰기(구글 OAuth 또는 맥 캘린더 앱 계정 추가 시 EventKit 쓰기), 메일 답장 초안(SMTP), 사람 노트 자동 갱신(참석자), 음성 웨이크워드.
+
+## 갱신 (2026-09-30, SPEC.md v0.19~v0.27 반영 — docs/architecture.md 작성 중 확인)
+
+같은 날 야간 자율 근무(관리자+워커 worktree 체계, `docs/nightshift-2026-09-30.md`)로 아래 항목이 추가 완료됐다.
+「4 쓰기」·「그 밖」이 커버하지 못하던 v0.19 이후 기능을 별도 표로 보강한다. 표 형식·기존 행은 그대로 두고 덧붙임.
+
+| 기능 | 버전 | 상태 | 비고 |
+|---|---|---|---|
+| enrich(볼트 정제) | v0.19 | 완료 | `brain.py enrich` — Claude가 노트 6개씩 묶어 제목·요약·태그·관련 링크 제안 후 자동 적용(git 커밋) |
+| 사무실 직원 속마음 | v0.20 | 완료 | 상태 한 줄 MZ 톤화, 말풍선 시간대/요일 풀 |
+| prepare(일정 준비 제안) | v0.21 | 완료 | `brain.py prepare` — Claude 제안은 `suggestions.json`에 pending으로만, 보드에서 사람이 채택해야 기록 |
+| journal(하루 일지) | v0.22 | 완료 | `brain.py journal`, evening 에이전트에 `--journal` 결합 |
+| retro(주간 회고) | v0.23 | 완료 | `brain.py retro`, 월 09:00 launchd |
+| semantic links(의미 기반 링크 제안) | v0.23 | 완료 | `review --semantic` — 제안만, 적용은 `link A B`로 사람이 |
+| 기억해(코어 대화 저장) | v0.24 | 완료 | `/api/ask` 응답에 "기억해" → `POST /api/remember` → 노트 생성 |
+| staff brief(사무실 「이번 주 한 줄」) | v0.24 | 완료 | `POST /api/widget {action: brief}`, 하루 1회 캐시(`staff_briefs.json`) |
+| 일지 섹션(보드) | v0.27 | 완료 | `GET /api/journals`, 보드 「일지」 내비 + 하루 일지/주간 회고 2열 |
+| 리포트(/report) | v0.27 | 완료 | `GET /api/report`, `web/report.html` 인쇄용 주간 리포트 한 장 |
+| 알림 통합 | v0.27 | 완료 | `notify()` 하나로 brief/remind/journal/retro 통합, 카톡 헬퍼 없으면 macOS 알림 센터 폴백, `notify test` |
+| 날씨 모듈 | v0.27 | 완료(모듈만) | `scripts/weather.py` 독립 모듈(Open-Meteo, 키 불필요). **brain.py 미연동** — 일정·브리핑 통합은 진행 중(워커, `wt/weather-integration`) |
+| 복구(restore) | v0.27 | 완료 | `brain.py restore` — zip-slip 방어, 덮어쓰기 전 안전 백업 자동 생성 |
+| CI | v0.27 | 완료 | GitHub Actions, ubuntu/macOS × Python 3.9~3.13 매트릭스 |
+| 노트 캐시 | v0.27 | 완료 | `load_notes` 지문 캐시, 300노트 볼트 기준 145.6ms → 29.7ms/호출 |
+| 사무실 모바일·접근성 | v0.27 | 완료 | `web/office.html` 반응형(390/420/720px), 키보드 포커스·`aria-live`·`prefers-reduced-motion` 대응 |
+| 스킬 2종 | v0.27 | 완료 | `brain-journal`, `brain-doctor` (`skills/` 하위, README 두 파일에 반영) |
+| doctor(점검) | v0.26 | 완료 | `brain.py doctor` — 볼트/Python/Claude CLI/캘린더/카톡/위젯/에이전트/캐시 점검, ✗ 있으면 종료 코드 2 |
+
+### 진행 중(워커) — 이 스냅샷 이후 다른 worktree에서 계속 진행
+
+`docs/nightshift-2026-09-30.md` 사이클 4(17:35~) 기준 가동 중이던 워커들. 이 문서를 쓴 시점의 `main` 스냅샷에는
+아직 반영돼 있지 않을 수 있다.
+
+- 팀 KPI: 사무실 방 헤더에 팀별 7일 성공률·실패 수 띠 (`wt/office-kpi`)
+- 날씨 통합: `scripts/weather.py`를 일정 카드·아침 브리핑·prepare 제안에 실제로 연결 + 지명 정규화 (`wt/weather-integration`)
+- 미리알림(Reminders) 연동: 할 일 양방향 동기화 (`wt/reminders`)
+- 이번 주 계획: 회고의 「다음 주」 체크박스를 회고 질문처럼 보드에 노출 (`wt/board-plan`)
