@@ -2824,8 +2824,13 @@ def attach_event_notes(vault, ag):
             hits = dash_search(Path(vault), q, 3)
         except Exception:  # noqa: BLE001 - 검색 실패는 준비 카드만 비운다
             hits = []
+        # 2-gram 검색은 느슨해서 우연한 겹침이 많다 → 질문 낱말(2자 이상)이 제목·발췌에 그대로 들어 있는 것만 관련으로 인정
+        words = [w for w in re.split(r"[\s,·/()]+", q) if len(w) >= 2]
+        def _relevant(h):
+            hay = (h.get("title") or "") + " " + " ".join(h.get("snippets") or [])
+            return any(w in hay for w in words)
         e["related"] = [{"path": h["path"], "title": h["title"], "type": h["type"], "snippet": (h.get("snippets") or [""])[0][:120]}
-                        for h in hits if h.get("score", 0) > 0 and not h["path"].startswith("events/")][:3]
+                        for h in hits if h.get("score", 0) > 0 and not h["path"].startswith("events/") and _relevant(h)][:3]
         e["prep"] = bool(e["related"]) or bool(e.get("note")) or bool(e.get("attendees")) or bool(re.search(r"회의|미팅|면접|상담|발표|인터뷰|meeting", e.get("title") or "", re.I))
     # 동선: 오늘과 다가오는 날의 단계들(같은 노트가 여러 일정에 붙어도 한 번만)
     today_iso = str(ag.get("now") or datetime.now().isoformat())[:10]
