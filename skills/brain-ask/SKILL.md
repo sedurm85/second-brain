@@ -10,6 +10,7 @@ allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py *) Read
 
 1. 질문에서 핵심어 2~5개를 뽑는다(조사·의문사 제외). 기간·프로젝트·타입 단서가 있으면 필터로 쓴다.
    `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py search "<핵심어>" --limit 8 --json [--type decision] [--project P] [--since YYYY-MM-DD]`
+   결과가 넓으면 검색어 안에 연산자를 직접 섞어 좁혀도 된다: `type:decision|note|idea|source|meeting|event|journal|project|person`(반복하면 OR), `tag:xxx`(반복하면 AND), `project:xxx`, `since:7d`/`since:2026-01-01`, `until:...`, `has:summary`, `has:revisit`, `status:open|decided|superseded`, `is:orphan`(링크 없는 노트), `-단어`(제외), `"정확한 문구"`(제목·본문에 그대로 있어야 함).
 2. 결과가 0건이면 동의어·영문 표기로 한 번만 재검색한다.
 3. 상위 3~5개를 `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py show <경로>` 로 읽는다.
 4. 종합 답변 규칙:

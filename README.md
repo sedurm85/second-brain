@@ -106,6 +106,7 @@ Claude: 비용이 OpenSearch의 1/3 수준이고, 주요 쿼리가 라벨 검색
         전문 검색이 필요해지면 재검토하기로 했고 [[007-log-store-loki]],
         실제 비용 비교표는 기록 없음.
 ```
+검색어에 `type:decision`, `tag:인프라`, `project:이름`, `since:7d`/`until:2026-01-01`, `has:summary`, `status:open`, `is:orphan`, `-단어`, `"정확한 문구"` 같은 연산자를 섞어 쓰면 결과를 바로 좁힐 수 있습니다.
 
 **5. 주간 리뷰 (brain-review)**
 ```

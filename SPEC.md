@@ -460,6 +460,12 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `brain.py import --apple-notes [--folder 이름 …] [--since YYYY-MM-DD] [--dry-run]`: `import_apple_notes()`(`import_path` 옆에 추가)가 노트를 `type: note`, `tags: [apple-notes, 폴더슬러그]`, `imported_from: "apple-notes:<id>"`, `source_modified: <수정일>`로 저장. 같은 id가 이미 있으면 메모 앱의 수정 시각이 저장된 값보다 최신일 때만 본문을 갱신("갱신"), 아니면 "건너뜀"; 새 id면 "생성". Claude 호출 없음(정제는 `enrich`로 별도 안내)
 - `write_note`가 그대로 캐시 무효화·`build_index`를 처리하고, `--dry-run`이면 아무것도 쓰지 않는다. 권한 오류(-1743)는 사람 문구+종료 코드 2로 보고
 - `tests/test_apple_notes.py` 19건(HTML 변환 11건 + 생성/재실행 스킵/수정 갱신/폴더·since 필터/권한 오류/dry-run 8건). 전체 스위트 436 통과(기존 417 + 신규 19)
+## v0.29 검색 연산자·패싯
+
+- `parse_query(q) -> (terms, filters)` 신규: `type:`(반복 OR) · `tag:`(반복 AND, 대소문자 무시) · `project:` · `since:`/`until:`(절대 YYYY-MM-DD 또는 `7d`/`2w`/`3m` 상대) · `has:summary|revisit` · `status:open|decided|superseded` · `is:orphan`(`link_graph` 재사용) · `-단어`(제외) · `"정확한 문구"`(제목·본문 부분일치)를 뽑고, 값이 이상하면 예외 없이 조용히 버린다(실시간 검색 중 타이핑 도중 에러가 나지 않도록). `dash_search`가 filters로 후보를 먼저 좁힌 뒤 남은 terms만 기존 BM25(`search`, 이제 `notes=` 인자로 후보 주입 가능)로 채점, terms가 없으면 생성일 역순
+- `dash_search`는 여전히 list이지만(`SearchHits(list)`) `.facets`(`types`/`tags` 상위 8 카운트, limit 적용 전 매치 기준)와 `.applied`(파싱된 filters)를 얹는다 — 기존 호출부·hit 딕셔너리 키(`path`/`title`/`type`/`snippets`/`summary`/`score`)는 그대로. `/api/search`는 `{hits, facets, applied}`로 응답 모양이 바뀜(대시보드·기존 테스트 갱신). `cmd_search`는 `--type`/`--tag`/`--project`/`--since` 플래그를 같은 연산자 문법으로 변환해 query에 덧붙이고, 결과 뒤에 "타입: decision 3 · note 2 | 태그: ai 4, 보안 2" 패싯 줄을 출력(`--json`에는 `facets`/`applied` 키로)
+- 보드 검색 결과 드롭다운 맨 위에 패싯 줄 추가: 활성 필터는 제거 가능한 칩(✕, `data-rmchip`), 타입별 카운트 칩(`data-chip`, 클릭 시 `type:x`를 쿼리에 덧붙여 재검색) — 화살표 이동은 `[data-path],[data-cmd]"`만 대상이라 칩은 자동으로 건너뜀. 입력창 아래엔 포커스 시(입력 전) 연산자 힌트 한 줄(`#searchHint`)이 뜨고 타이핑하면 사라짐. `>` 명령 팔레트는 그대로
+- 신규 `tests/test_search_ops.py` 38건(parse_query 단위·연산자 조합·facets·filters-only 정렬·하위호환·cmd_search 패싯 줄·`/api/search` 응답 모양). 기존 `test_serve.py`의 `test_search_matches_cli_shape`만 새 응답 모양(`d["hits"]`)에 맞춰 갱신. 전체 스위트 455 통과(기존 417 + 신규 38)
 - 검증: `python3 -m unittest tests.test_serve`(21건 통과, 백엔드 무변경), `node --check`로 스크립트 문법 확인, Playwright로 `/` 포커스·`>할 일` 팔레트·`g`→`d` 스크롤·`?` 다이얼로그 열림/Esc 닫힘을 데모 서버(7796)에서 실측 확인
 ## v0.29 여행 모드
 

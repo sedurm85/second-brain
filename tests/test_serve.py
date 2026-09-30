@@ -144,12 +144,15 @@ class GraphTest(ServeTestCase):
 
 class SearchTest(ServeTestCase):
     def test_search_matches_cli_shape(self):
-        code, res = self.api("/api/search", q="검색 메모", limit=5)
+        code, d = self.api("/api/search", q="검색 메모", limit=5)
         self.assertEqual(code, 200)
+        res = d["hits"]
         self.assertEqual(res[0]["title"], "검색 메모")
         for k in ("path", "title", "type", "score", "snippets"):
             self.assertIn(k, res[0])
         self.assertIsInstance(res[0]["snippets"], list)
+        self.assertIn("facets", d)
+        self.assertIn("applied", d)
         cli = brain.search(self.vault, "검색 메모", limit=5, today=TODAY)
         self.assertEqual([r["path"] for r in res], [r["path"] for r in cli])
 

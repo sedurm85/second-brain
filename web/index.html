@@ -158,6 +158,19 @@ h1, h2, h3 { text-wrap: balance; }
 .search-results .r-summary { font-size: 12.5px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-results mark { background: none; color: var(--ink); font-weight: 600; text-decoration: underline; text-decoration-color: var(--ink); }
 .search-results .r-empty { color: var(--muted); cursor: default; }
+.search-results .r-facets { cursor: default; padding: 6px 4px 8px; margin-bottom: 4px; border-bottom: 1px solid var(--rule); }
+.search-results .r-facets:hover { background: none; }
+.s-chiprow { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 4px; }
+.s-chiprow + .s-chiprow { margin-top: 4px; }
+.s-chip { height: 24px; border: 1px solid var(--rule); }
+.s-chip.s-active { border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent); }
+.s-chip svg { width: 8px; height: 8px; }
+.search-hint {
+  position: absolute; top: 42px; left: 0; right: 0; z-index: 25; margin: 0; padding: 8px 10px;
+  font-size: 11.5px; line-height: 1.5; color: var(--muted); background: var(--surface);
+  border: 1px solid var(--rule-strong); border-radius: var(--r); box-shadow: var(--shadow);
+}
+.search-hint[hidden] { display: none; }
 .icon-btn { height: 36px; width: 36px; flex: none; border-radius: var(--r); border: 1px solid var(--rule); background: var(--surface); display: grid; place-items: center; }
 .icon-btn:hover { border-color: var(--rule-strong); }
 .icon-btn svg { width: 18px; height: 18px; }
@@ -739,6 +752,7 @@ h1, h2, h3 { text-wrap: balance; }
           <input id="q" type="search" placeholder="기억 검색" autocomplete="off"
             role="combobox" aria-expanded="false" aria-controls="results" aria-autocomplete="list" aria-label="노트 검색">
           <ul class="search-results" id="results" role="listbox" aria-label="검색 결과" hidden></ul>
+          <p class="search-hint" id="searchHint" hidden>type: · tag: · project: · since:7d · has:summary · status: · is:orphan · -단어 · "정확히"</p>
         </div>
         <button class="icon-btn" id="themeBtn" type="button" aria-label="테마 전환">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"/></svg>
@@ -1826,24 +1840,75 @@ h1, h2, h3 { text-wrap: balance; }
   }
 
   /* ───────── 검색 (250ms 디바운스) ───────── */
+  var EMPTY_FACETS = { types: {}, tags: {} };
   function initSearch() {
-    var input = $("q"), box = $("results"), SR = S.search;
+    var input = $("q"), box = $("results"), hint = $("searchHint"), SR = S.search;
     function hide() { box.hidden = true; input.setAttribute("aria-expanded", "false"); SR.sel = -1; }
-    function mark(text, q) {
+    function showHint() { if (hint && !input.value.trim()) hint.hidden = false; }
+    function hideHint() { if (hint) hint.hidden = true; }
+    /* 연산자 토큰(type:, -단어, "구문" 등)은 밑줄 강조에서 뺀다 */
+    function plainWords(q) {
+      return q.replace(/"[^"]*"/g, " ").split(/\s+/).filter(function (t) {
+        return t && !/^(type|tag|project|since|until|has|status|is):/i.test(t) && t.charAt(0) !== "-";
+      });
+    }
+    function mark(text, words) {
       var e = esc(text);
-      q.split(/\s+/).filter(Boolean).forEach(function (t) {
+      (words || []).forEach(function (t) {
         var re = new RegExp("(" + esc(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "gi");
         e = e.replace(re, "<mark>$1</mark>");
       });
       return e;
     }
-    function render(items, q) {
+    /* applied(파싱된 필터) → "type:decision" 같은 원문 토큰 목록 (제거용 chip에 사용) */
+    function appliedTokens(applied) {
+      applied = applied || {};
+      var out = [];
+      (applied.type || []).forEach(function (v) { out.push("type:" + v); });
+      (applied.tag || []).forEach(function (v) { out.push("tag:" + v); });
+      if (applied.project) out.push("project:" + applied.project);
+      if (applied.since) out.push("since:" + applied.since);
+      if (applied.until) out.push("until:" + applied.until);
+      (applied.has || []).forEach(function (v) { out.push("has:" + v); });
+      (applied.status || []).forEach(function (v) { out.push("status:" + v); });
+      if (applied.orphan) out.push("is:orphan");
+      (applied.neg || []).forEach(function (v) { out.push("-" + v); });
+      (applied.phrase || []).forEach(function (v) { out.push('"' + v + '"'); });
+      return out;
+    }
+    function removeToken(q, token) {
+      var re = new RegExp("(^|\\s)" + token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?=\\s|$)", "i");
+      return q.replace(re, "").replace(/\s+/g, " ").trim();
+    }
+    function renderAppliedChips(applied) {
+      return appliedTokens(applied).map(function (tok) {
+        return '<button type="button" class="chip s-chip s-active" data-rmchip="' + esc(tok) + '">' + esc(tok) +
+          ' <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>';
+      }).join("");
+    }
+    function renderFacetChips(facets, applied) {
+      var activeTypes = (applied && applied.type) || [];
+      return Object.keys((facets || EMPTY_FACETS).types).map(function (t) {
+        var on = activeTypes.indexOf(t) !== -1;
+        return '<button type="button" class="chip s-chip" data-chip="type:' + esc(t) + '" aria-pressed="' + on + '">' +
+          shapeSvg(t) + esc(TYPE_KO[t] || t) + ' <span class="c">' + facets.types[t] + "</span></button>";
+      }).join("");
+    }
+    function render(data, q) {
+      var items = (data && data.hits) || [];
       SR.items = items; SR.sel = -1;
-      box.innerHTML = items.length ? items.map(function (r, i) {
-        return '<li role="option" id="opt' + i + '" aria-selected="false" data-path="' + esc(r.path) + '"><div class="r-title">' + shapeSvg(r.type) + mark(r.title, q) + "</div>" +
+      var words = plainWords(q);
+      var appliedHtml = renderAppliedChips(data && data.applied);
+      var facetHtml = renderFacetChips(data && data.facets, data && data.applied);
+      var facetsRow = (appliedHtml || facetHtml) ? '<li class="r-facets" role="presentation">' +
+        (appliedHtml ? '<div class="s-chiprow">' + appliedHtml + "</div>" : "") +
+        (facetHtml ? '<div class="s-chiprow">' + facetHtml + "</div>" : "") + "</li>" : "";
+      var listHtml = items.length ? items.map(function (r, i) {
+        return '<li role="option" id="opt' + i + '" aria-selected="false" data-path="' + esc(r.path) + '"><div class="r-title">' + shapeSvg(r.type) + mark(r.title, words) + "</div>" +
           (r.summary ? '<div class="r-summary muted">' + esc(r.summary) + "</div>" : "") +
-          (r.snippets && r.snippets[0] ? '<div class="r-snip">' + mark(r.snippets[0], q) + "</div>" : "") + "</li>";
+          (r.snippets && r.snippets[0] ? '<div class="r-snip">' + mark(r.snippets[0], words) + "</div>" : "") + "</li>";
       }).join("") : '<li class="r-empty" role="option" aria-disabled="true">「' + esc(q) + "」에 대한 기록이 없어요</li>";
+      box.innerHTML = facetsRow + listHtml;
       box.hidden = false; input.setAttribute("aria-expanded", "true");
     }
     function select(i) {
@@ -1852,6 +1917,28 @@ h1, h2, h3 { text-wrap: balance; }
       opts.forEach(function (o, j) { o.setAttribute("aria-selected", String(j === SR.sel)); });
       input.setAttribute("aria-activedescendant", "opt" + SR.sel);
       opts[SR.sel].scrollIntoView({ block: "nearest" });
+    }
+    function doSearch(q) {
+      var seq = ++SR.seq;
+      api("search", { q: q, limit: 20 }).then(function (r) {
+        if (seq !== SR.seq) return;
+        var data = Array.isArray(r) ? { hits: r, facets: EMPTY_FACETS, applied: {} } : (r || { hits: [], facets: EMPTY_FACETS, applied: {} });
+        render(data, q);
+      }).catch(function (err) {
+        console.error("[세컨드브레인] 검색 실패", err);
+        if (seq === SR.seq) { box.innerHTML = '<li class="r-empty">검색 서버에 연결하지 못했어요</li>'; box.hidden = false; }
+      });
+    }
+    function addFilterChip(token) {
+      var q = input.value.trim();
+      if (q.split(/\s+/).indexOf(token) === -1) q = (q + " " + token).trim();
+      input.value = q; input.focus();
+      doSearch(q);
+    }
+    function removeFilterChip(token) {
+      var q = removeToken(input.value, token);
+      input.value = q; input.focus();
+      if (q) doSearch(q); else { hide(); showHint(); }
     }
     /* 명령 팔레트: 검색창 첫 글자가 ">"이면 노트 검색 대신 명령 목록을 보여줌 */
     function renderCmds(q2) {
@@ -1875,19 +1962,14 @@ h1, h2, h3 { text-wrap: balance; }
       hide(); input.value = ""; input.blur();
       if (c) c.run();
     }
+    input.addEventListener("focus", function () { if (box.hidden) showHint(); });
     input.addEventListener("input", function () {
       clearTimeout(SR.timer);
       var q = input.value.trim();
-      if (!q) { hide(); return; }
+      if (!q) { hide(); showHint(); return; }
+      hideHint();
       if (q.charAt(0) === ">") { renderCmds(q.slice(1)); return; }
-      SR.timer = setTimeout(function () {
-        var seq = ++SR.seq;
-        api("search", { q: q, limit: 20 }).then(function (r) { if (seq === SR.seq) render(r || [], q); })
-          .catch(function (err) {
-            console.error("[세컨드브레인] 검색 실패", err);
-            if (seq === SR.seq) { box.innerHTML = '<li class="r-empty">검색 서버에 연결하지 못했어요</li>'; box.hidden = false; }
-          });
-      }, 250);
+      SR.timer = setTimeout(function () { doSearch(q); }, 250);
     });
     input.addEventListener("keydown", function (ev) {
       if (box.hidden) return;
@@ -1900,15 +1982,19 @@ h1, h2, h3 { text-wrap: balance; }
           if (o.hasAttribute("data-cmd")) runCmd(+o.getAttribute("data-cmd"));
           else { openNote(o.getAttribute("data-path")); hide(); }
         }
-      } else if (ev.key === "Escape") { ev.stopPropagation(); hide(); input.blur(); }
+      } else if (ev.key === "Escape") { ev.stopPropagation(); hide(); hideHint(); input.blur(); }
     });
     box.addEventListener("mousedown", function (ev) {
+      var chip = ev.target.closest("[data-chip]");
+      if (chip) { ev.preventDefault(); addFilterChip(chip.getAttribute("data-chip")); return; }
+      var rm = ev.target.closest("[data-rmchip]");
+      if (rm) { ev.preventDefault(); removeFilterChip(rm.getAttribute("data-rmchip")); return; }
       var o = ev.target.closest("[data-path],[data-cmd]"); if (!o) return;
       ev.preventDefault();
       if (o.hasAttribute("data-cmd")) runCmd(+o.getAttribute("data-cmd"));
       else { openNote(o.getAttribute("data-path")); hide(); }
     });
-    input.addEventListener("blur", function () { setTimeout(hide, 120); });
+    input.addEventListener("blur", function () { setTimeout(function () { hide(); hideHint(); }, 120); });
   }
 
   /* ───────── 오늘 · 자동화 위젯 (v0.3) ───────── */

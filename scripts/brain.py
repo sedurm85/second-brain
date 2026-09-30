@@ -708,24 +708,146 @@ def _snippet(body, qtoks, lines=2):
     return [c[2][:160] for c in sorted(pool, key=lambda c: c[1])]
 
 
-def search(vault, query, ntype=None, project=None, tag=None, since=None, limit=10, today=None):
+# ---------------------------------------------------------------------------
+# 검색 연산자 (v0.29) — type:/tag:/project:/since:/until:/has:/status:/is:orphan/
+# -부정어/"정확한 문구". dash_search·cmd_search가 공유한다.
+# ---------------------------------------------------------------------------
+
+_QUERY_TOKEN_RE = re.compile(r'"([^"]*)"|(\S+)')
+_QUERY_OP_RE = re.compile(r"^(type|tag|project|since|until|has|status|is):(.+)$", re.IGNORECASE)
+_ABS_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_REL_DATE_RE = re.compile(r"^(\d+)([dwm])$", re.IGNORECASE)
+_HAS_VALUES = ("summary", "revisit")
+
+
+def parse_query(q):
+    """검색어 문자열 → (terms, filters). 잘못된 연산자 값은 조용히 무시한다(입력마다 검색이
+    실행되는 실시간 UI에서 오류를 던지지 않기 위함). 반환하는 filters는 값이 있는 키만 담는다."""
+    terms = []
+    filters = {}
+    for m in _QUERY_TOKEN_RE.finditer(str(q or "")):
+        phrase, token = m.group(1), m.group(2)
+        if phrase is not None:
+            if phrase.strip():
+                filters.setdefault("phrase", []).append(phrase)
+                terms.append(phrase)
+            continue
+        om = _QUERY_OP_RE.match(token)
+        if om:
+            key, val = om.group(1).lower(), om.group(2)
+            if key == "type" and val:
+                filters.setdefault("type", []).append(val.lower())
+            elif key == "tag" and val:
+                filters.setdefault("tag", []).append(val.lower())
+            elif key == "project" and val:
+                filters["project"] = val
+            elif key in ("since", "until") and (_ABS_DATE_RE.match(val) or _REL_DATE_RE.match(val)):
+                filters[key] = val
+            elif key == "has" and val.lower() in _HAS_VALUES:
+                filters.setdefault("has", []).append(val.lower())
+            elif key == "status" and val.lower() in DECISION_STATUSES:
+                filters.setdefault("status", []).append(val.lower())
+            elif key == "is" and val.lower() == "orphan":
+                filters["orphan"] = True
+            continue
+        if token.startswith("-") and len(token) > 1:
+            filters.setdefault("neg", []).append(token[1:])
+            continue
+        terms.append(token)
+    return terms, filters
+
+
+def _resolve_query_date(val, today):
+    """since:/until: 값(절대 YYYY-MM-DD 또는 7d/2w/3m 상대)을 절대 날짜 문자열로."""
+    if _ABS_DATE_RE.match(val):
+        return val
+    m = _REL_DATE_RE.match(val)
+    if not m:
+        return None
+    n, unit = int(m.group(1)), m.group(2).lower()
+    days = n if unit == "d" else n * 7 if unit == "w" else n * 30
+    return (today - timedelta(days=days)).isoformat()
+
+
+def _apply_query_filters(notes, filters, today):
+    """parse_query가 뽑은 filters로 후보 노트를 좁힌다(랭킹 전 단계)."""
+    types_req = filters.get("type")
+    tags_req = filters.get("tag")
+    project_req = filters.get("project")
+    since_v = filters.get("since")
+    until_v = filters.get("until")
+    since_resolved = _resolve_query_date(since_v, today) if since_v else None
+    until_resolved = _resolve_query_date(until_v, today) if until_v else None
+    has_req = filters.get("has")
+    status_req = filters.get("status")
+    orphan_req = filters.get("orphan")
+    neg_words = [w.lower() for w in filters.get("neg", [])]
+    phrases = [p.lower() for p in filters.get("phrase", [])]
+    adj = link_graph(notes)[1] if orphan_req else None
+    out = []
+    for n in notes:
+        if types_req and n.type not in types_req:
+            continue
+        if tags_req:
+            note_tags = [t.lower() for t in n.tags]
+            if not all(t in note_tags for t in tags_req):
+                continue
+        if project_req and slugify(n.project) != slugify(project_req):
+            continue
+        if since_resolved and n.created < since_resolved:
+            continue
+        if until_resolved and n.created > until_resolved:
+            continue
+        if has_req:
+            if "summary" in has_req and not str(n.meta.get("summary") or "").strip():
+                continue
+            if "revisit" in has_req and not str(n.meta.get("revisit") or "").strip():
+                continue
+        if status_req and str(n.meta.get("status") or "open") not in status_req:
+            continue
+        if orphan_req and adj.get(n.stem):
+            continue
+        if neg_words or phrases:
+            hay = (n.title + "\n" + n.body).lower()
+            if neg_words and any(w in hay for w in neg_words):
+                continue
+            if phrases and not all(p in hay for p in phrases):
+                continue
+        out.append(n)
+    return out
+
+
+class SearchHits(list):
+    """dash_search 결과: 기존 list 동작(길이·인덱싱·순회) 그대로 유지하면서
+    facets(타입·태그 집계)와 applied(파싱된 필터)를 부가 속성으로 붙인다."""
+
+    def __init__(self, hits, facets=None, applied=None):
+        super().__init__(hits)
+        self.facets = facets or {"types": {}, "tags": {}}
+        self.applied = applied or {}
+
+
+def search(vault, query, ntype=None, project=None, tag=None, since=None, limit=10, today=None, notes=None):
+    """notes를 넘기면(예: dash_search의 연산자 필터링 결과) ntype/project/tag/since 인자 대신
+    그 후보 목록을 그대로 채점한다 — 기존 호출부(notes=None)는 동작이 그대로다."""
     today = today or date.today()
     qtoks = tokenize(query)
     if not qtoks:
         raise BrainError("검색어에서 토큰을 찾지 못했습니다.")
     if since:
         parse_date(since, "--since")
-    notes = []
-    for n in load_notes(vault):
-        if ntype and n.type != ntype:
-            continue
-        if project and slugify(n.project) != slugify(project):
-            continue
-        if tag and tag.lower() not in [t.lower() for t in n.tags]:
-            continue
-        if since and n.created < since:
-            continue
-        notes.append(n)
+    if notes is None:
+        notes = []
+        for n in load_notes(vault):
+            if ntype and n.type != ntype:
+                continue
+            if project and slugify(n.project) != slugify(project):
+                continue
+            if tag and tag.lower() not in [t.lower() for t in n.tags]:
+                continue
+            if since and n.created < since:
+                continue
+            notes.append(n)
     docs = []
     for n in notes:
         tf = Counter()
@@ -1465,17 +1587,49 @@ def dash_graph(vault):
 
 
 def dash_search(vault, q, limit=20, today=None):
-    res = search(vault, q, limit=limit, today=today)
+    """type:/tag:/project:/since:/until:/has:/status:/is:orphan/-부정어/"정확한 문구" 연산자를
+    parse_query로 뽑아 후보를 좁힌 뒤, 남은 일반 단어(terms)로만 BM25 랭킹한다.
+    필터만 있고 terms가 없으면 랭킹 없이 생성일 역순으로 반환한다.
+    반환값은 list 그대로(기존 호출부 호환)이며 .facets/.applied가 추가로 붙는다."""
+    today = today or date.today()
+    terms, filters = parse_query(q)
+    if not terms and not filters:
+        raise BrainError("검색어에서 토큰을 찾지 못했습니다.")
+    all_notes = load_notes(vault)
+    candidates = _apply_query_filters(all_notes, filters, today)
+    query_str = " ".join(terms).strip()
+    if query_str:
+        res = search(vault, query_str, limit=max(len(candidates), 1), today=today, notes=candidates)
+    else:
+        ordered = sorted(candidates, key=lambda n: (n.created, n.rel), reverse=True)
+        res = []
+        for n in ordered:
+            d = n.to_dict()
+            d["score"] = round(recency_factor(n.created, today), 4)
+            d["snippet"] = _snippet(n.body, [])
+            res.append(d)
+
+    type_counts = Counter(r["type"] for r in res)
+    tag_counts = Counter()
+    candidates_by_path = {n.rel: n for n in candidates}
+    for r in res:
+        n = candidates_by_path.get(r["path"])
+        for t in (n.tags if n else []):
+            tag_counts[t] += 1
+    facets = {"types": dict(sorted(type_counts.items(), key=lambda kv: (-kv[1], kv[0]))),
+              "tags": dict(sorted(tag_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:8])}
+
+    res = res[:limit]
     notes_by_path = None
     for r in res:
         r["snippets"] = r.get("snippet", [])  # 대시보드 계약 키. CLI 호환 위해 snippet도 유지
         if "summary" not in r:
             if notes_by_path is None:
-                notes_by_path = {n.rel: n for n in load_notes(vault)}
+                notes_by_path = {n.rel: n for n in all_notes}
             n = notes_by_path.get(r["path"])
             summary = str((n.meta.get("summary") if n else "") or "")
             r["summary"] = summary[:160]
-    return res
+    return SearchHits(res, facets=facets, applied=filters)
 
 
 def safe_vault_path(vault, rel):
@@ -3110,7 +3264,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._json(200, dash_graph(vault))
             if route == "/api/search":
                 q = (qs.get("q") or [""])[0]
-                return self._json(200, dash_search(vault, q, _int_param(qs, "limit", 20, hi=200), today))
+                hits = dash_search(vault, q, _int_param(qs, "limit", 20, hi=200), today)
+                return self._json(200, {"hits": list(hits), "facets": hits.facets, "applied": hits.applied})
             if route == "/api/note":
                 return self._json(200, dash_note(vault, (qs.get("path") or [""])[0]))
             if route == "/api/person":
@@ -3284,12 +3439,26 @@ def cmd_new(args):
     return EXIT_OK
 
 
+def _format_facets_line(facets):
+    types_part = "타입: " + " · ".join(f"{t} {c}" for t, c in facets.get("types", {}).items())
+    tags = facets.get("tags") or {}
+    if not tags:
+        return types_part
+    return types_part + " | 태그: " + ", ".join(f"{t} {c}" for t, c in tags.items())
+
+
 def cmd_search(args):
+    """검색어(query) 안에 type:/tag:/since:7d/has:summary/-부정어/"정확한 문구" 등 연산자를
+    그대로 써도 되고(dash_search가 파싱), --type/--tag/--project/--since 플래그는 같은 연산자로
+    변환해 뒤에 덧붙인다(기존 CLI 인터페이스 호환)."""
     v = require_vault()
-    res = search(v, args.query, ntype=args.type, project=args.project, tag=args.tag,
-                 since=args.since, limit=args.limit)
+    q = args.query
+    for op, val in (("type", args.type), ("project", args.project), ("tag", args.tag), ("since", args.since)):
+        if val:
+            q = f"{q} {op}:{val}"
+    res = dash_search(v, q, limit=args.limit)
     if args.json:
-        emit(args, {"query": args.query, "results": res}, None)
+        emit(args, {"query": args.query, "results": list(res), "facets": res.facets, "applied": res.applied}, None)
         return EXIT_OK
     if not res:
         print(f"'{args.query}' 검색 결과 없음 (기록 없음)")
@@ -3298,6 +3467,7 @@ def cmd_search(args):
     for i, r in enumerate(res, 1):
         lines.append(f"{i}. [{r['type']}] {r['title']}  ({r['score']})  {r['path']}")
         lines += [f"     {s}" for s in r["snippet"]]
+    lines.append(_format_facets_line(res.facets))
     print("\n".join(lines))
     return EXIT_OK
 

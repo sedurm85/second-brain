@@ -109,6 +109,7 @@ Claude: Cost was about a third of OpenSearch and the main queries were label loo
         You agreed to revisit if full-text search becomes necessary [[007-log-store-loki]].
         No actual cost comparison table is on record.
 ```
+Mix operators into the query to narrow results right away: `type:decision`, `tag:infra`, `project:name`, `since:7d`/`until:2026-01-01`, `has:summary`, `status:open`, `is:orphan`, `-word`, `"exact phrase"`.
 
 **5. Weekly review (brain-review)**
 ```
