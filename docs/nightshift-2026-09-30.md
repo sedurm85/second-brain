@@ -61,3 +61,8 @@
 - 가동 중: weather-integration, reminders, note-append, hire, docs-arch
 - 17:52 wt/note-append(노트 패널 메모·태그·할 일, 테스트 264)·wt/docs-arch(architecture.md·v2-plan 진행표)·wt/reminders(맥 미리알림 읽기, both-added 충돌 양쪽 유지, 테스트 274) 머지. 사무실·리포트 미리보기 갱신
 - 가동 중: weather-integration, hire, md-checkbox
+- 17:58 wt/hire 머지(직원 채용·이동·퇴사, allow_hire 게이트, Playwright 흐름 실측, 테스트 289), wt/md-checkbox 머지(노트 본문 체크박스 토글). 미리알림 실기기 test는 20초 초과 — 권한 창을 헤드리스에서 못 띄움, 사용자가 터미널에서 `reminders test` 1회 필요
+
+### 사이클 6 (17:50~)
+- 워커 추가: wt/core-voice(회사 현황·누가 일해·미리알림·선제 알림), wt/edge-tests(파서 경계 테스트·버그 사냥), wt/demo-rich(데모 캐시 격리·전 기능 데이터)
+- 가동 중: weather-integration(장기), core-voice, edge-tests, demo-rich
