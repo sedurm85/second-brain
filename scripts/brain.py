@@ -2586,7 +2586,17 @@ def kakao_brief(t):
         parts.append(ag_bit)
     else:
         tomorrow = [e for e in (ag.get("upcoming") or []) if e.get("days_left") == 1]
-        parts.append("오늘 일정 없음" + (", 내일 " + ", ".join((("종일 " if e["all_day"] else e["start"][11:16] + " ") + e["title"]) for e in tomorrow[:2]) if tomorrow else ""))
+        bits = []
+        for i, e in enumerate(tomorrow[:2]):
+            bit = ("종일 " if e["all_day"] else e["start"][11:16] + " ") + e["title"]
+            if i == 0:
+                matched = [p for p in (e.get("people") or []) if p.get("matched")]
+                if matched:
+                    extra = f" 외 {len(matched) - 1}" if len(matched) > 1 else ""
+                    mentions = sum(p.get("mentions") or 0 for p in matched)
+                    bit += f" ({matched[0]['name']}{extra}, 기록 {mentions}건)"
+            bits.append(bit)
+        parts.append("오늘 일정 없음" + (", 내일 " + ", ".join(bits) if tomorrow else ""))
     # 날씨: 내일(없으면 오늘) 일정 중 날씨가 붙은 첫 건이 우산/추위/더위처럼 눈에 띌 때만 한 줄 추가(200자 예산 절약)
     tomorrow_all = [e for e in (ag.get("upcoming") or []) if e.get("days_left") == 1]
     weather_source = [e for e in tomorrow_all if e.get("weather")] or [e for e in (ag.get("today") or []) if e.get("weather")]
@@ -2850,6 +2860,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._json(200, res)
             if route == "/api/note-append":
                 return self._json(200, note_append_action(vault, body))
+            if route == "/api/person":
+                res = person_action(vault, body)
+                self.server.agenda_cache.invalidate()
+                return self._json(200, res)
             if route == "/api/remember":
                 return self._json(200, remember_chat(vault, body))
             if route == "/api/suggestion":
@@ -2956,6 +2970,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._json(200, dash_search(vault, q, _int_param(qs, "limit", 20, hi=200), today))
             if route == "/api/note":
                 return self._json(200, dash_note(vault, (qs.get("path") or [""])[0]))
+            if route == "/api/person":
+                return self._json(200, person_note_payload(vault, (qs.get("path") or [""])[0], self.server.agenda_cache.get()))
             if route == "/api/timeline":
                 return self._json(200, dash_timeline(vault, _int_param(qs, "days", 30, hi=3650), today))
             if route == "/api/journals":
@@ -3481,11 +3497,44 @@ def _looks_like_place_title(title):
     return bool(_PLACE_TITLE_RE.match(str(title or "").strip()))
 
 
+_HONORIFIC_RE = re.compile(r"(님|씨|선생님|팀장|부장|대표)$")
+
+
+def normalize_person_name(name):
+    """참석자 이름 매칭용 정규화: 공백 제거, 소문자, 끝의 존칭 제거."""
+    s = re.sub(r"\s+", "", str(name or "")).lower()
+    return _HONORIFIC_RE.sub("", s)
+
+
+def people_index(notes):
+    """person 타입 노트를 정규화 이름(우선) + 이메일 로컬파트로 찾을 수 있게 인덱싱.
+
+    이메일 로컬파트를 먼저 채우고 이름 키를 나중에 덮어써서, 우연히 겹쳐도 이름 매칭이 이긴다.
+    """
+    idx = {}
+    for n in notes:
+        if n.type != "person":
+            continue
+        email = str(n.meta.get("email") or "").strip().lower()
+        if "@" in email:
+            idx.setdefault(email.split("@", 1)[0], n)
+    for n in notes:
+        if n.type != "person":
+            continue
+        key = normalize_person_name(n.title)
+        if key:
+            idx[key] = n
+    return idx
+
+
 def attach_event_notes(vault, ag):
     """agenda(dict)의 today/upcoming 각 일정에 note 필드 부착(없으면 None)."""
     if not vault or not vault_exists(Path(vault)):
         return ag
     exact, ranged = event_notes_index(Path(vault))
+    all_notes = load_notes(Path(vault))
+    pidx = people_index(all_notes)
+    _, adj = link_graph(all_notes)
     for lst in ("today", "upcoming", "current"):
         for e in ag.get(lst) or []:
             n = exact.get(e.get("key"))
@@ -3496,6 +3545,16 @@ def attach_event_notes(vault, ag):
                         n = note
                         break
             e["note"] = _event_note_payload(n) if n else None
+            attendees = [str(a or "").strip() for a in (e.get("attendees") or []) if str(a or "").strip()]
+            if attendees and (e.get("days_left") or 0) <= 7:
+                people = []
+                for a in attendees:
+                    person = pidx.get(normalize_person_name(a))
+                    if not person and "@" in a:
+                        person = pidx.get(a.split("@", 1)[0].strip().lower())
+                    people.append({"name": a, "path": person.rel if person else None, "matched": bool(person),
+                                  "mentions": len(adj.get(person.stem, ())) if person else 0})
+                e["people"] = people
     if ag.get("next"):
         k = ag["next"].get("key")
         ag["next"]["note"] = _event_note_payload(exact[k]) if k in exact else None
@@ -4493,6 +4552,71 @@ def note_append_action(vault, body):
         write_note(n.path, meta, n.body)
     git_commit(vault, f"brain: note {action} {n.rel}")
     return {"ok": True, "note": dash_note(vault, n.rel)}
+
+
+def person_action(vault, body):
+    """보드 일정 패널 「사람 노트 만들기」 공용: 참석자 이름으로 사람 노트를 찾거나 만든다.
+
+    body: {action: "create", name, event_key?}. 이미 같은(정규화) 이름의 사람 노트가 있으면 그걸
+    그대로 쓰고(created=False), event_key가 있으면 그 일정 노트의 프론트매터 people 목록에
+    위키링크를 남긴다(일정 노트가 없으면 새로 만든다).
+    """
+    action = body.get("action")
+    if action != "create":
+        raise BrainError("action은 create만 지원해요")
+    name = " ".join(str(body.get("name") or "").split())
+    if not name:
+        raise BrainError("이름이 비었어요")
+    ek = str(body.get("event_key") or "").strip()
+    if ek and "|" not in ek:
+        raise BrainError("event_key 형식이 잘못됐어요(YYYY-MM-DD|제목)")
+    vault = Path(vault)
+    existing = people_index(load_notes(vault)).get(normalize_person_name(name))
+    if existing:
+        n, created = existing, False
+    else:
+        ctx = ""
+        if ek and "|" in ek:
+            day, title = ek.split("|", 1)
+            ctx = f"- {day} {title}에서 만남\n"
+        path = create_note(vault, "person", name, body=f"# {name}\n\n## 맥락\n{ctx}")
+        build_index(vault)
+        n, created = Note(vault, path), True
+    if ek:
+        en, _ = find_or_create_event_note(vault, ek)
+        people_list = as_list(en.meta.get("people"))
+        link = wikilink(n.stem)
+        if link not in people_list:
+            meta = dict(en.meta)
+            meta["people"] = people_list + [link]
+            write_note(en.path, meta, en.body)
+    git_commit(vault, f"brain: person create {n.rel}")
+    return {"ok": True, "path": n.rel, "created": created}
+
+
+def person_note_payload(vault, rel, agenda=None):
+    """GET /api/person: 사람 노트(dash_note) + 이 사람이 참석자로 매칭된 일정(오늘·다가오는).
+
+    agenda_cache.get()이 돌려준(아직 people이 안 붙은) 원본 agenda dict를 받아 이 호출에서만
+    attach_event_notes로 채운다(캐시 자체는 건드리지 않음).
+    """
+    n = dash_note(vault, rel)
+    ag = dict(agenda or {})
+    attach_event_notes(vault, ag)
+    key = normalize_person_name(n.get("title"))
+    events, seen = [], set()
+    for lst in ("today", "upcoming"):
+        for e in ag.get(lst) or []:
+            for p in e.get("people") or []:
+                if p.get("path") == rel or normalize_person_name(p.get("name")) == key:
+                    ek = e.get("key")
+                    if ek and ek not in seen:
+                        seen.add(ek)
+                        events.append({"key": ek, "title": e.get("title"), "start": e.get("start"),
+                                      "days_left": e.get("days_left")})
+                    break
+    n["events"] = events
+    return n
 
 
 def remember_chat(vault, body):

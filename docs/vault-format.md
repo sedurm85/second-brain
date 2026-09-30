@@ -46,6 +46,7 @@ YAML의 단순 부분집합만 써요: `key: value`, `key: [a, b]`, 여러 줄 `
 | `location` | event 선택 | 문자열 | 장소(보드에서 지도 링크) |
 | `journal_date` | journal | `YYYY-MM-DD` | 일지가 다루는 날 |
 | `journal_kind` | journal 선택 | `weekly` | 주간 회고 표시(파일명 `-weekly`) |
+| `email` | person 선택 | 이메일 | 일정 참석자(ATTENDEE)를 이 사람 노트와 매칭할 때 로컬파트(@ 앞)로 대조 |
 
 본문은 자유 마크다운이고, 다른 노트는 `[[파일명]]`으로 연결해요. 프론트매터 `links`/`supersedes`/`people`와 본문 위키링크가 모두 링크로 집계돼요(고아 노트 판정 기준). 기록은 지우지 않고 `superseded`로 표시해요.
 

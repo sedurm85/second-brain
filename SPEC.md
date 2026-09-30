@@ -435,3 +435,10 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 새 CLI `brain.py widget <action>` (`add · move · rename · remove · pause · resume · run · brief · show · list`): 사용자 자신의 터미널이라 widgets.json의 `allow_hire`/`allow_run` 설정 없이도 바로 채용·이동·퇴사·실행할 수 있다. `show`/`list`는 평가된 상태(`collect_widgets`)와 원본 설정을 함께 보여줌
 - 새 스킬 `skills/brain-office/SKILL.md`: "채용 스카우트 로그를 직원으로 등록해줘" 같은 대화로 로그 경로 확인(`test -f`)·ok/fail 패턴 제안(`Read`로 최근 줄 확인)·등록·조회까지 안내, 퇴사 전 한 줄 확인, 끝난 자동화는 삭제 대신 `pause` 권장
 - `tests/test_widget_cli.py` 10건: CLI 우회 vs API 게이트 유지, add/move/rename/remove/pause/resume/run --dry, brain-* 퇴사 거부, 홈 밖 경로 거부, `--json` 파싱. 전체 스위트 371 통과(기존 361 + 신규 10)
+## v0.29 참석자 → 사람 노트
+
+- `people_index(notes)`: person 타입 노트를 정규화 이름(공백 제거·소문자·끝의 님/씨/선생님/팀장/부장/대표 제거) 키로, 프론트매터 `email:`이 있으면 그 로컬파트도 보조 키로 인덱싱. `attach_event_notes`가 이 인덱스와 `link_graph` 인접 집합을 한 번만 만들어, 참석자가 있고 7일 이내인 일정마다 `e["people"] = [{name, path, matched, mentions}]`(이메일 로컬파트도 매칭, mentions는 그 사람 노트에 링크된 노트 수)를 붙인다
+- `person_action(vault, body)`(`POST /api/person`, 다른 쓰기 라우트와 같은 토큰 게이트): `{action:"create", name, event_key?}`로 참석자 이름의 사람 노트를 찾거나(정규화 이름으로 중복 방지) 새로 만들고, `event_key`가 있으면 그 일정 노트(없으면 새로 생성)의 프론트매터 `people` 목록에 위키링크를 추가. `person_note_payload(vault, path, agenda)`(`GET /api/person?path=`)는 `dash_note`에 이 사람이 참석자로 매칭된 일정 목록(`events`)을 덧붙인다(`dash_note` 자체는 그대로 둠)
+- `kakao_brief`의 "내일 일정 없음" 문장에서, 내일 첫 일정에 매칭된 참석자가 있으면 " (이름 외 N, 기록 N건)"을 덧붙인다(200자 예산 안에서)
+- 보드(`web/index.html`) 일정 패널의 「참석」 행을 칩으로: 매칭된 참석자는 사람 노트로 바로 열리는 버튼, 안 매칭되면 이름 옆에 「사람 노트 만들기」 버튼(클릭 시 `/api/person` 호출 후 그 자리에서 matched/path만 갈아 끼움)
+- 테스트 `tests/test_people_link.py` 7건 추가(정규화, 이름/이메일 인덱싱, attach 매칭/비매칭, 생성·중복방지·일정 링크, kakao_brief, HTTP 토큰 게이트). 전체 스위트 314 통과

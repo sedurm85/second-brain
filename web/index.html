@@ -229,6 +229,12 @@ h1, h2, h3 { text-wrap: balance; }
 .ev-rel li:first-child { border-top: 0; }
 .ev-rel .lnk { background: none; border: 0; padding: 0; color: var(--ink); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .ev-rel small { display: block; color: var(--muted); font-size: 12.5px; }
+.ev-people { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.ev-people li { display: flex; align-items: center; gap: 5px; font-size: 13px; }
+.ev-people .lnk { background: var(--accent-soft); border: 1px solid var(--rule); border-radius: 999px; padding: 3px 10px; color: var(--ink); font: inherit; cursor: pointer; text-decoration: none; }
+.ev-people .lnk small { color: var(--muted); margin-left: 3px; }
+.ev-people .unmatched { display: flex; align-items: center; gap: 5px; padding: 3px 10px; border: 1px dashed var(--rule-strong); border-radius: 999px; color: var(--ink-2); }
+.ev-people .mk-person { padding: 2px 8px; font-size: 12px; }
 .rq-h { margin: 12px 0 4px; font-size: 12.5px; color: var(--muted); font-weight: 600; } .rq-h small { font-weight: 400; margin-left: 6px; }
 .rq { list-style: none; margin: 0; padding: 0; } .rq li { padding: 4px 0; font-size: 13.5px; line-height: 1.5; } .rq label { display: flex; gap: 8px; align-items: baseline; cursor: pointer; } .rq li.done span { text-decoration: line-through; color: var(--muted); }
 .ev-sug { margin: 14px 0 6px; padding: 12px 14px; border: 1px dashed var(--accent); border-radius: var(--r); background: var(--accent-soft); }
@@ -1577,11 +1583,16 @@ h1, h2, h3 { text-wrap: balance; }
   function renderEventBody(e) {
     var n = e.note, when = e.all_day ? (e.start === e.end ? e.start : e.start + (e.end && e.end !== e.start ? " ~ " + e.end : "") + " 종일") : (e.start.slice(0, 10) + " " + hm(e.start) + "–" + hm(e.end));
     if (e.all_day) when = e.start + " 종일";
+    var peopleRow = e.people && e.people.length ? "<tr><th>참석</th><td><ul class=\"ev-people\">" + e.people.map(function (p, i) {
+      return p.matched
+        ? '<li><button type="button" class="lnk" data-path="' + esc(p.path) + '">' + esc(p.name) + (p.mentions ? ' <small>' + p.mentions + '건</small>' : "") + "</button></li>"
+        : '<li><span class="unmatched">' + esc(p.name) + '</span><button type="button" class="text-btn mk-person" data-i="' + i + '">사람 노트 만들기</button></li>';
+    }).join("") + "</ul></td></tr>" : (e.attendees && e.attendees.length ? "<tr><th>참석</th><td>" + esc(e.attendees.join(", ")) + "</td></tr>" : "");
     var rows = "<tr><th>언제</th><td>" + esc(when) + "</td></tr>" +
       (e.location ? '<tr><th>어디</th><td>' + esc(e.location) + ' <a href="' + mapLink(e.location) + '" target="_blank" rel="noopener">지도</a></td></tr>' : "") +
       (e.weather ? '<tr><th>날씨</th><td>' + esc(e.weather.summary) + (e.weather.umbrella ? " · 우산" : "") + (e.weather.approx ? " (근처 기준)" : "") + "</td></tr>" : "") +
       "<tr><th>캘린더</th><td>" + esc(e.calendar || e.source || "") + "</td></tr>" +
-      (e.attendees && e.attendees.length ? "<tr><th>참석</th><td>" + esc(e.attendees.join(", ")) + "</td></tr>" : "") +
+      peopleRow +
       (e.url ? '<tr><th>링크</th><td><a href="' + esc(e.url) + '" target="_blank" rel="noopener">' + esc(e.url.replace(/^https?:\/\//, "").slice(0, 60)) + "</a></td></tr>" : "");
     var desc = e.description ? '<h3 class="ev-h">설명</h3><div class="md ev-desc">' + esc(e.description).replace(/\n/g, "<br>") + "</div>" : "";
     var sg = S.suggestions && S.suggestions[e.key];
@@ -1633,6 +1644,18 @@ h1, h2, h3 { text-wrap: balance; }
         post("event-note", { action: "check", path: e.note.path, line: +cb.getAttribute("data-line"), done: cb.checked })
           .then(function (r) { e.note = r.note; S.events[e.id] = e; renderEventBody(e); refreshLive(true); })
           .catch(function (err) { cb.checked = !cb.checked; alert("저장 실패: " + (err.message || err)); });
+      });
+    });
+    body.querySelectorAll(".mk-person").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var p = e.people[+btn.getAttribute("data-i")];
+        btn.disabled = true; btn.textContent = "만드는 중";
+        post("person", { action: "create", name: p.name, event_key: e.key })
+          .then(function (r) {
+            p.matched = true; p.path = r.path;
+            S.events[e.id] = e; renderEventBody(e); refreshLive(true);
+          })
+          .catch(function (err) { btn.disabled = false; btn.textContent = "사람 노트 만들기"; alert("실패: " + (err.message || err)); });
       });
     });
   }
