@@ -28,7 +28,7 @@ NOW = datetime(2026, 9, 30, 6, 0, tzinfo=timezone.utc)
 class MailTest(unittest.TestCase):
     def test_parse_and_triage(self):
         inbox = [
-            (b'1 (FLAGS () BODY[HEADER.FIELDS (...)] {x}', hdr(From="=?utf-8?b?7ISg66y07IKs?= <tax@example.com>", To="me@gmail.com", Subject="=?utf-8?b?7J6Q66OMIO2ZleyduA==?=", Date="Tue, 30 Sep 2026 12:00:00 +0900", Message_ID="<a1@example.com>")),
+            (b'1 (FLAGS () BODY[HEADER.FIELDS (...)] {x}', hdr(From=f"=?utf-8?b?{base64.b64encode('세무사'.encode()).decode()}?= <tax@example.com>", To="me@gmail.com", Subject=f"=?utf-8?b?{base64.b64encode('자료 확인'.encode()).decode()}?=", Date="Tue, 30 Sep 2026 12:00:00 +0900", Message_ID="<a1@example.com>")),
             (b'2 (FLAGS (\\Seen \\Flagged) ...', hdr(From="boss@corp.com", To="me@gmail.com", Subject="회의 자료 확인 부탁", Date="Mon, 29 Sep 2026 09:00:00 +0900", Message_ID="<b2@corp.com>")),
             (b'3 (FLAGS ()', hdr(From="noreply@newsletter.io", To="me@gmail.com", Subject="Weekly digest", Date="Tue, 30 Sep 2026 01:00:00 +0000", Message_ID="<n3@newsletter.io>", List_Unsubscribe="<mailto:x>")),
             (b'4 (FLAGS (\\Seen)', hdr(From="friend@example.com", To="me@gmail.com", Subject="Re: 주말 약속", Date="Sun, 28 Sep 2026 20:00:00 +0900", Message_ID="<f4@example.com>", In_Reply_To="<mine-1@gmail.com>")),
