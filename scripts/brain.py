@@ -4163,7 +4163,7 @@ def _cron_schedule_lines(cron_lines):
         cmd = parts[5]
         m = re.search(r">>?\s*(\S+\.log)", cmd)
         if m:
-            out[os.path.expanduser(m.group(1))] = s
+            out.setdefault(os.path.expanduser(m.group(1)), []).append(s)  # 같은 로그에 여러 스케줄(10시·15시) 허용
         else:
             script = next((c for c in cmd.split() if c.endswith((".py", ".sh"))), None)
             if script:
@@ -4224,9 +4224,11 @@ def office_schedule(widgets, cron_lines=None, plist_dir=None, today=None, now=No
                 intervals.append({"id": w["id"], "title": title, "every_min": every})
                 continue
         if times is None:
-            line = cron_raw.get(src) or cron_raw.get(Path(src).stem)
-            if line:
-                times = schedule_for(line, today)
+            lines_ = cron_raw.get(src) or cron_raw.get(Path(src).stem) or []
+            if isinstance(lines_, str):
+                lines_ = [lines_]
+            if lines_:
+                times = sorted({t for ln in lines_ for t in schedule_for(ln, today)})
         if not times:
             continue
         past = [t for t in times if t <= now_hm]
