@@ -4,6 +4,8 @@ import io
 import json
 import os
 import plistlib
+import re
+import socket
 import sys
 import tempfile
 import unittest
@@ -78,6 +80,59 @@ class AgentsTest(unittest.TestCase):
     def test_bad_name(self):
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(brain.main(["agents", "install", "nothing"]), brain.EXIT_INPUT)  # main이 BrainError를 종료 코드 2로
+
+    def test_serve_plist_keepalive(self):
+        data, log = brain.agent_plist("serve", brain.AGENT_SPECS["serve"], brain_path="/x/brain.py", python="/usr/bin/python3")
+        d = plistlib.loads(data)
+        self.assertEqual(d["Label"], "com.secondbrain.serve")
+        self.assertEqual(d["ProgramArguments"], ["/usr/bin/python3", "/x/brain.py", "serve", "--port", "7777"])
+        self.assertTrue(d["RunAtLoad"])
+        self.assertEqual(d["KeepAlive"], {"SuccessfulExit": False})
+        self.assertNotIn("StartCalendarInterval", d)
+        self.assertNotIn("StartInterval", d)
+        self.assertTrue(log.endswith("agents/serve.log"))
+
+    def test_serve_install_dry_run(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(brain.main(["agents", "install", "serve", "--dry-run"]), 0)
+        self.assertIn("dry", buf.getvalue())
+        self.assertEqual(list(self.agents.glob("*.plist")), [])
+
+    def test_serve_widget_ok_pattern_matches_startup_line(self):
+        # cmd_serve가 실제로 찍는 시작 줄: `url = f"http://127.0.0.1:{srv.server_address[1]}"` 그대로
+        startup_line = "http://127.0.0.1:52341"
+        self.assertIsNotNone(re.search(brain._SERVE_STATUS_OK, startup_line))
+        self.assertIsNone(re.search(brain._SERVE_STATUS_FAIL, startup_line))
+        res = brain.agents_install(["serve"])
+        self.assertEqual(res[0]["name"], "serve")
+        cfg = json.loads(brain.widgets_config_path().read_text(encoding="utf-8"))
+        widgets = {w["id"]: w for w in cfg["widgets"]}
+        self.assertIn("brain-serve", widgets)
+        w = widgets["brain-serve"]
+        self.assertEqual(w["title"], "대시보드 서버")
+        self.assertEqual(w["team"], "운영팀")
+        self.assertIsNotNone(re.search(w["status"]["ok_pattern"], startup_line))
+        self.assertNotIn("stale_minutes", w["status"])  # 상주 서버는 stale 판정 없음
+
+    def test_default_install_excludes_serve(self):
+        res = brain.agents_install(list(brain.DEFAULT_AGENT_NAMES))
+        self.assertNotIn("serve", {r["name"] for r in res})
+        self.assertFalse((self.agents / "com.secondbrain.serve.plist").exists())
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(brain.main(["agents", "install", "--dry-run", "--json"]), 0)
+        out = json.loads(buf.getvalue())
+        self.assertNotIn("serve", {r["name"] for r in out})
+
+    def test_agents_status_reachable_false_on_free_port(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(("127.0.0.1", 0))
+        free_port = s.getsockname()[1]
+        s.close()  # 바인딩 해제 직후라 이 포트엔 아무것도 안 뜬다
+        st = {r["name"]: r for r in brain.agents_status(serve_port=free_port)}
+        self.assertFalse(st["serve"]["reachable"])
+        self.assertEqual(st["serve"]["port"], free_port)
 
 
 if __name__ == "__main__":

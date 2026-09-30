@@ -52,6 +52,9 @@ class DoctorTest(unittest.TestCase):
         self.assertFalse(b["카톡 헬퍼"]["ok"])
         self.assertFalse(b["자동화 위젯"]["ok"])
         self.assertTrue(b["Python"]["ok"])
+        self.assertIn("대시보드", b)  # 상주 포트 응답 여부(환경에 따라 ok가 달라질 수 있어 fix 문구만 조건부 확인)
+        if not b["대시보드"]["ok"]:
+            self.assertIn("agents install serve", b["대시보드"]["fix"])
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             rc = brain.main(["doctor"])

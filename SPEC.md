@@ -461,3 +461,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `prepare_prompt`가 여행이면 예약:/짐:/서류: 접두어 체크리스트(6~10개, `trip.days`·날짜별 날씨 반영)와 출발일 동선만 요청하는 변형 프롬프트로 바뀌고, `_norm_suggestion(raw, e, trip=True)`는 준비 항목 상한을 6→10으로 올린다. `_event_note_payload`는 기존 `steps`에 더해 `days: {날짜: [단계…]}` 그룹을 non-breaking으로 추가
 - 보드(`renderEventBody`): 여행 일정엔 유형 배지 옆에 「여행 n일」 배지와, 헤더 아래 날짜별 탭(D1 10/03 · D2 10/04 …, 탭마다 날씨 요약)이 붙어 그날의 하위 일정·동선을 보여준다(하위 일정은 `data-eid`로 클릭 이동). 동선 추가 폼은 선택된 탭 날짜를 기본값으로 하는 날짜 선택자를 얻고 POST에 `day`를 함께 보낸다. 하위 일정(예: 항공편) 자신의 패널에는 "↑ {여행 제목} 여행의 일부" 줄과 부모로 이동하는 버튼이 뜬다
 - 테스트 `tests/test_trip.py` 6건: 지명형 여행 인식 vs 평범한 종일 일정, 하위/부모 연결, 여행 일수·날씨 길이 상한, 여행용 prepare_prompt(짐·일수 포함), `_norm_suggestion` 여행 상한 10, `_event_note_payload["days"]` 그룹핑. 전체 스위트 404 통과(기존 398 + 신규 6)
+## v0.29 대시보드 상주 에이전트
+
+- `AGENT_SPECS["serve"]`(`com.secondbrain.serve`, `serve --port 7777`) 추가: `agent_plist`가 `keepalive` 플래그를 보면 `RunAtLoad: True` + `KeepAlive: {"SuccessfulExit": False}`(비정상 종료 시에만 재시작, `ThrottleInterval` 10초)로 만들고 `StartCalendarInterval`/`StartInterval`은 넣지 않음. `agents install`(이름 없이)은 기본적으로 serve를 건드리지 않음 — `agents install serve`로 이름을 직접 줘야 설치되어 새 사용자가 모르는 사이 상주 프로세스가 깔리지 않게 함. `--port N`으로 설치 포트 재정의 가능
+- 위젯도 자동 등록되지만(`brain-serve`, "대시보드 서버", 운영팀) 다른 에이전트처럼 "발송 완료" 류 패턴이 아니라 `cmd_serve`가 찍는 시작 줄(`http://127.0.0.1:<port>`)을 `ok_pattern`으로 판정하고, 로그가 tick마다 갱신되지 않으므로 `stale_minutes`는 생략(경과 판정 비활성)
+- `agents_status()`가 serve 항목엔 `urllib.request.urlopen("http://127.0.0.1:<port>/api/session")`으로 실제 응답 여부를 찔러 `reachable`/`port`를 더 붙임(포트는 설치된 plist에서 읽거나 기본값). `doctor_report`에도 "대시보드" 항목으로 같은 프로브를 추가(불통이면 `agents install serve` 또는 `brain.py serve` 안내)
+- `skills/brain-view/SKILL.md`: 서버를 새로 띄우기 전에 먼저 `agents status --json`으로 상주 서버가 있는지/응답하는지 확인 — 있으면 URL만 안내, 없으면(macOS) 상주 등록을 한 번 제안하고, 그것도 아니면 기존 임시 `serve --open` + 백그라운드 실행 흐름으로 폴백

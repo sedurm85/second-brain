@@ -66,7 +66,8 @@ python3 scripts/brain.py journal [--dry-run]           # 오늘 일지 5줄(jour
 python3 scripts/brain.py retro [--days 7]             # 주간 회고 노트 + 되돌아볼 질문 3개(월 09:00 에이전트)
 python3 scripts/brain.py review --semantic             # 링크 제안에 Claude의 내용 기반 쌍 추가(적용은 link A B로)
 python3 scripts/brain.py agents install                # 07:00 브리핑·10분 알림·21:30 마감·23:00 백업 launchd 설치
-python3 scripts/brain.py doctor                        # 설치·연결 점검표(볼트·Claude CLI·캘린더·카톡·위젯·에이전트)
+python3 scripts/brain.py agents install serve          # 대시보드를 로그인 시 자동 실행·상주(macOS, KeepAlive로 죽으면 재시작)
+python3 scripts/brain.py doctor                        # 설치·연결 점검표(볼트·Claude CLI·캘린더·카톡·위젯·에이전트·대시보드)
 python3 scripts/brain.py config init-widgets           # 예시 widgets.json
 python3 scripts/brain.py widget add "채용 스카우트" ~/.local/k-skill-cron/scout.log --team 채용팀 --ok "완료|OK" --fail "실패|Error"
 python3 scripts/brain.py widget list [--team 팀]        # add·move·rename·remove·pause·resume·run·brief·show도 (allow_hire/allow_run 없이도 됨)

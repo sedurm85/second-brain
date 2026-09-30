@@ -5058,7 +5058,18 @@ AGENT_SPECS = {
     "backup": {"label": "com.secondbrain.backup", "args": ["backup"], "calendar": {"Hour": 23, "Minute": 0}, "title": "볼트 백업 (매일 23시)"},
     "prepare": {"label": "com.secondbrain.prepare", "args": ["prepare"], "calendar": {"Hour": 6, "Minute": 40}, "title": "일정 준비 제안 (매일 6:40)"},
     "retro": {"label": "com.secondbrain.retro", "args": ["retro", "--kakao"], "calendar": {"Weekday": 1, "Hour": 9, "Minute": 0}, "title": "주간 회고 (월 9시)"},
+    "serve": {"label": "com.secondbrain.serve", "args": ["serve", "--port", "7777"], "keepalive": True, "title": "대시보드 서버 (상주)"},
 }
+
+# `agents install`/`remove`를 이름 없이 실행할 때의 기본 대상. serve(상주 서버)는 이름을 직접 줘야만 설치된다 —
+# 새 사용자가 `agents install`만 실행했다가 launchd에 상주 프로세스가 조용히 깔리는 걸 막기 위함.
+DEFAULT_AGENT_NAMES = [n for n in AGENT_SPECS if n != "serve"]
+
+# 위젯 자동 등록용 로그 판정 패턴(공용 vs serve 전용). serve의 시작 줄은 cmd_serve가 찍는 `http://127.0.0.1:<port>` 그대로다.
+_AGENT_STATUS_OK = "카톡 발송 완료|알릴 것 없음|발송|백업 완료|준비 제안|제안할 일정이 없어요|주간 회고|회고를 쓰지 않았어요"
+_AGENT_STATUS_FAIL = "Traceback|실패"
+_SERVE_STATUS_OK = r"http://127\.0\.0\.1:\d+"
+_SERVE_STATUS_FAIL = "Traceback|Address already in use|실패"
 
 
 def agents_log_dir():
@@ -5077,11 +5088,18 @@ def agent_plist(name, spec, brain_path=None, python=None):
         env["CLAUDE_CONFIG_DIR"] = os.environ["CLAUDE_CONFIG_DIR"]
     log = str(agents_log_dir() / f"{name}.log")
     d = {"Label": spec["label"], "ProgramArguments": [python, brain_path] + spec["args"], "EnvironmentVariables": env,
-         "StandardOutPath": log, "StandardErrorPath": log, "RunAtLoad": False}
-    if "calendar" in spec:
-        d["StartCalendarInterval"] = spec["calendar"]
+         "StandardOutPath": log, "StandardErrorPath": log}
+    if spec.get("keepalive"):
+        # 상주 서버: 로그인 시 시작하고 죽으면(비정상 종료 시에만) 재시작. `agents remove`가 bootout하면 그대로 내려간다.
+        d["RunAtLoad"] = True
+        d["KeepAlive"] = {"SuccessfulExit": False}
+        d["ThrottleInterval"] = 10
     else:
-        d["StartInterval"] = spec["interval"]
+        d["RunAtLoad"] = False
+        if "calendar" in spec:
+            d["StartCalendarInterval"] = spec["calendar"]
+        else:
+            d["StartInterval"] = spec["interval"]
     return plistlib.dumps(d), log
 
 
@@ -5095,14 +5113,17 @@ def _launchctl(*args):
         return 1, str(e)
 
 
-def agents_install(names, dry=False, force=False):
-    """plist를 ~/Library/LaunchAgents에 쓰고 bootstrap. 이미 같은 Label이 있으면 --force 없이는 건너뜀. 위젯도 추가."""
+def agents_install(names, dry=False, force=False, port=None):
+    """plist를 ~/Library/LaunchAgents에 쓰고 bootstrap. 이미 같은 Label이 있으면 --force 없이는 건너뜀. 위젯도 추가.
+    port는 serve에만 적용되는 재정의(기본 7777)."""
     out = []
     uid = os.getuid()
     plist_dir = launch_agents_dir()
     plist_dir.mkdir(parents=True, exist_ok=True)
     for name in names:
         spec = AGENT_SPECS[name]
+        if name == "serve" and port is not None:
+            spec = dict(spec, args=["serve", "--port", str(port)])
         target = plist_dir / f"{spec['label']}.plist"
         data, log = agent_plist(name, spec)
         rec = {"name": name, "label": spec["label"], "plist": str(target), "log": log, "action": "install"}
@@ -5134,22 +5155,67 @@ def agents_install(names, dry=False, force=False):
                 wid = f"brain-{rec['name']}"
                 if wid in ids or rec["action"].startswith("skip"):
                     continue
-                cfg.setdefault("widgets", []).insert(0, {"id": wid, "title": AGENT_SPECS[rec["name"]]["title"], "kind": "log", "source": rec["log"], "team": "운영팀",
-                                                          "status": {"ok_pattern": "카톡 발송 완료|알릴 것 없음|발송|백업 완료|준비 제안|제안할 일정이 없어요|주간 회고|회고를 쓰지 않았어요", "fail_pattern": "Traceback|실패", "stale_minutes": {"remind": 40, "retro": 8 * 1440 + 120}.get(rec["name"], 1560)}, "lines": 3})
+                if rec["name"] == "serve":
+                    # 상주 서버는 알림 발송류 패턴이 아니라 시작 줄(`http://127.0.0.1:<port>`)로 판정한다.
+                    # 로그가 tick마다 갱신되지 않으므로 stale_minutes는 생략(경과 판정 비활성).
+                    title, status = "대시보드 서버", {"ok_pattern": _SERVE_STATUS_OK, "fail_pattern": _SERVE_STATUS_FAIL}
+                else:
+                    title = AGENT_SPECS[rec["name"]]["title"]
+                    status = {"ok_pattern": _AGENT_STATUS_OK, "fail_pattern": _AGENT_STATUS_FAIL,
+                              "stale_minutes": {"remind": 40, "retro": 8 * 1440 + 120}.get(rec["name"], 1560)}
+                cfg.setdefault("widgets", []).insert(0, {"id": wid, "title": title, "kind": "log", "source": rec["log"], "team": "운영팀",
+                                                          "status": status, "lines": 3})
                 rec["widget"] = wid
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return out
 
 
-def agents_status():
+def _serve_default_port():
+    args = AGENT_SPECS["serve"]["args"]
+    return int(args[args.index("--port") + 1]) if "--port" in args else 7777
+
+
+def _serve_installed_port(target):
+    """설치된 plist에서 실제 --port 값을 읽는다. 없거나 못 읽으면 기본값."""
+    if target.is_file():
+        import plistlib
+        try:
+            d = plistlib.loads(target.read_bytes())
+            pa = d.get("ProgramArguments", [])
+            if "--port" in pa:
+                return int(pa[pa.index("--port") + 1])
+        except (ValueError, plistlib.InvalidFileException, KeyError, IndexError):
+            pass  # 손상된 plist: 기본 포트로 대체
+    return _serve_default_port()
+
+
+def _probe_serve_port(port, timeout=1.0):
+    """127.0.0.1:<port>/api/session 이 응답하면 서버가 살아있다고 본다(4xx/5xx여도 응답은 응답)."""
+    import urllib.error
+    import urllib.request
+    try:
+        urllib.request.urlopen(f"http://127.0.0.1:{port}/api/session", timeout=timeout)
+        return True
+    except urllib.error.HTTPError:
+        return True
+    except (urllib.error.URLError, OSError, ValueError):
+        return False
+
+
+def agents_status(serve_port=None):
     uid = os.getuid()
     out = []
     for name, spec in AGENT_SPECS.items():
         target = launch_agents_dir() / f"{spec['label']}.plist"
         rc, msg = _launchctl("print", f"gui/{uid}/{spec['label']}")
         state = "loaded" if rc == 0 else "not loaded"
-        out.append({"name": name, "label": spec["label"], "installed": target.exists(), "state": state, "title": spec["title"]})
+        rec = {"name": name, "label": spec["label"], "installed": target.exists(), "state": state, "title": spec["title"]}
+        if name == "serve":
+            port = serve_port if serve_port is not None else _serve_installed_port(target)
+            rec["port"] = port
+            rec["reachable"] = _probe_serve_port(port)
+        out.append(rec)
     return out
 
 
@@ -5917,6 +5983,10 @@ def doctor_report(today=None):
         missing = [a["name"] for a in st if a["installed"] and a["state"] != "loaded"]
         add("알림 에이전트", not missing, f"실행 중 {len(loaded)}/{len(st)}: " + (", ".join(loaded) or "없음") + (f" · 설치됐지만 안 뜸: {', '.join(missing)}" if missing else ""),
             "`agents install --force`" if missing else (None if loaded else "`agents install`"))
+    dash_port = _serve_installed_port(launch_agents_dir() / f"{AGENT_SPECS['serve']['label']}.plist")
+    dash_ok = _probe_serve_port(dash_port)
+    add("대시보드", dash_ok, f"127.0.0.1:{dash_port} " + ("응답함" if dash_ok else "응답 없음"),
+        None if dash_ok else "`agents install serve` 또는 `brain.py serve`")
     cache = agenda_mod.cache_dir()
     add("캐시 폴더", os.access(cache, os.W_OK) if cache.exists() else True, str(cache), None)
     return {"date": (today or date.today()).isoformat(), "items": items, "ok": all(i["ok"] for i in items)}
@@ -5982,21 +6052,24 @@ def cmd_restore(args):
 
 
 def cmd_agents(args):
-    names = [n for n in (args.names or list(AGENT_SPECS)) if n in AGENT_SPECS]
+    names = [n for n in (args.names or DEFAULT_AGENT_NAMES) if n in AGENT_SPECS]
     if not names:
         raise BrainError(f"에이전트 이름은 {', '.join(AGENT_SPECS)} 중에서")
     if sys.platform != "darwin" and args.action in ("install", "remove") and not args.dry_run:
         raise BrainError("launchd 에이전트는 macOS에서만 설치할 수 있어요(다른 OS는 cron에 brief/remind를 직접 등록)")
     if args.action == "install":
-        res = agents_install(names, dry=args.dry_run, force=args.force)
+        res = agents_install(names, dry=args.dry_run, force=args.force, port=getattr(args, "port", None))
         lines = [f"- {r['name']}: {r['action']}" + (f" → {r['plist']}" if r["action"] in ("install", "dry") else "") + (f" (bootstrap {r['bootstrap']})" if r.get("bootstrap") else "") for r in res]
         if not args.dry_run and any(r["action"] == "install" for r in res):
             lines.append("카톡을 쓰려면 `config set kakao_cmd <나에게 보내기 헬퍼 경로>`. 없으면 로그에만 남아요.")
         emit(args, res, "\n".join(lines))
         return EXIT_OK
     if args.action == "status":
-        res = agents_status()
-        emit(args, res, "\n".join(f"- {r['name']} ({r['title']}): {'설치됨' if r['installed'] else '미설치'} · {r['state']}" for r in res))
+        res = agents_status(serve_port=getattr(args, "port", None))
+        emit(args, res, "\n".join(
+            f"- {r['name']} ({r['title']}): {'설치됨' if r['installed'] else '미설치'} · {r['state']}"
+            + (f" · {'응답함' if r.get('reachable') else '응답 없음'}(포트 {r.get('port')})" if "reachable" in r else "")
+            for r in res))
         return EXIT_OK
     res = agents_remove(names)
     emit(args, res, "\n".join(f"- {r['name']}: 제거" for r in res))
@@ -6315,7 +6388,7 @@ def build_parser():
     s.add_argument("--limit", type=int, help="최대 N개")
     s.add_argument("--dry-run", action="store_true", help="대상만 보여주고 호출하지 않음")
 
-    s = add("doctor", "설치·연결 점검: 볼트·Python·Claude CLI·캘린더·카톡·위젯·알림 에이전트", cmd_doctor)
+    s = add("doctor", "설치·연결 점검: 볼트·Python·Claude CLI·캘린더·카톡·위젯·알림 에이전트·대시보드", cmd_doctor)
 
     s = add("backup", "볼트를 zip으로 백업(~/.cache/second-brain/backups/, 기본 14개 보관)", cmd_backup)
     s.add_argument("--dest", help="백업 폴더(기본 ~/.cache/second-brain/backups)")
@@ -6328,11 +6401,12 @@ def build_parser():
     s.add_argument("--replace", action="store_true", help="zip에 없는 기존 파일을 삭제(기본은 보존)")
     s.add_argument("--no-safety-backup", action="store_true", help="복구 전 안전 백업을 만들지 않음")
 
-    s = add("agents","비서 알림 에이전트(launchd): install [brief remind evening backup] · status · remove", cmd_agents)
+    s = add("agents","비서 알림 에이전트(launchd): install [brief remind evening backup prepare retro serve] · status · remove", cmd_agents)
     s.add_argument("action", choices=("install", "status", "remove"))
-    s.add_argument("names", nargs="*", help="brief(07:00 브리핑) remind(10분 알림) evening(21:30 마감+일지) backup(23:00 백업) prepare(06:40 준비 제안) retro(월 09:00 회고). 비우면 전부")
+    s.add_argument("names", nargs="*", help="brief(07:00 브리핑) remind(10분 알림) evening(21:30 마감+일지) backup(23:00 백업) prepare(06:40 준비 제안) retro(월 09:00 회고) serve(대시보드 상주, 이름을 직접 줘야 설치됨). 비우면 serve를 제외한 전부")
     s.add_argument("--dry-run", action="store_true", help="쓰지 않고 만들 파일만 보여줌")
     s.add_argument("--force", action="store_true", help="이미 있는 plist 덮어쓰기")
+    s.add_argument("--port", type=int, help="serve 설치/조회 시 포트 재정의(기본 7777, serve에만 적용)")
 
     s = add("calendar", "일정 소스 관리: list · add <ics|eventkit> <이름> · remove <이름> · test", cmd_calendar)
     s.add_argument("action", choices=("list", "add", "remove", "test"))
