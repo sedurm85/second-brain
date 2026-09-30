@@ -3001,7 +3001,10 @@ def find_or_create_event_note(vault, key, title=None, day=None, end=None, locati
         extra["event_end"] = end
     if location:
         extra["location"] = location
-    path = create_note(vault, "event", title, created=day, extra=extra)
+    path = create_note(vault, "event", title, created=day, extra=extra)  # 경로(events/YYYY/날짜-slug)는 일정 날짜로
+    n = Note(vault, path)
+    n.meta["created"] = date.today().isoformat()  # 생성일은 오늘(타임라인·통계용), 일정 날짜는 event_date
+    write_note(path, n.meta, n.body)
     return Note(vault, path), True
 
 
