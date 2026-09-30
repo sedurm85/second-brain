@@ -12,8 +12,10 @@ class LintTest(BrainTestCase):
     def setUp(self):
         super().setUp()
         self.init()
-        # init 샘플 가이드 노트 본문에 예시용 "[[파일]]" 텍스트가 있어 그 자체로 link-broken을
-        # 하나 만든다. lint 테스트의 "깨끗한 볼트" 기준을 흔들지 않도록 지우고 시작한다.
+        # (2026-09-30 온보딩 QA) 예전엔 init 샘플 가이드 노트 본문의 예시용 "[[파일]]" 텍스트가
+        # 그 자체로 link-broken 1건을 만들어 신규 사용자가 첫 lint에서 바로 이슈를 봤다.
+        # SAMPLE_BODY에서 그 표기를 없애 지금은 이슈가 생기지 않지만, lint 테스트의
+        # "깨끗한 볼트" 기준이 샘플 노트 문구 변경에 흔들리지 않도록 여전히 지우고 시작한다.
         for n in brain.load_notes(self.vault):
             if n.title == "세컨드브레인 시작하기":
                 n.path.unlink()

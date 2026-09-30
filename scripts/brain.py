@@ -1670,7 +1670,7 @@ SAMPLE_BODY = """# 세컨드브레인 시작하기
 
 - Claude에게 "이거 기억해둬"라고 말하면 notes/ 아래에 노트가 생겨요.
 - "이렇게 결정했어"라고 하면 decisions/ 아래에 결정 기록(ADR)이 생겨요.
-- "그때 왜 그렇게 정했지?"라고 물으면 볼트를 검색해서 [[파일]]로 인용해 답해요.
+- "그때 왜 그렇게 정했지?"라고 물으면 볼트를 검색해서 관련 노트를 링크로 인용해 답해요.
 
 BRAIN.md는 자동 생성 인덱스라 직접 고치지 않아도 돼요.
 """
@@ -6343,9 +6343,10 @@ def agents_status(serve_port=None):
     out = []
     for name, spec in AGENT_SPECS.items():
         target = launch_agents_dir() / f"{spec['label']}.plist"
+        installed = target.exists()
         rc, msg = _launchctl("print", f"gui/{uid}/{spec['label']}")
-        state = "loaded" if rc == 0 else "not loaded"
-        rec = {"name": name, "label": spec["label"], "installed": target.exists(), "state": state, "title": spec["title"]}
+        state = "loaded" if (rc == 0 and installed) else "not loaded"
+        rec = {"name": name, "label": spec["label"], "installed": installed, "state": state, "title": spec["title"]}
         if name == "serve":
             port = serve_port if serve_port is not None else _serve_installed_port(target)
             rec["port"] = port
@@ -7819,6 +7820,10 @@ def cmd_reminders(args):
         save_config(cfg)
         emit(args, rcfg, "미리알림 연결 끔")
         return EXIT_OK
+    if args.action in ("list", "test") and not rcfg.get("enabled"):
+        emit(args, {"enabled": False, "items": [], "error": None},
+             "미리알림 연결이 꺼져 있어요. `brain.py reminders on`으로 켜면 맥 미리알림 앱에서 읽어와요.")
+        return EXIT_OK
     if args.action in ("list", "test"):
         items = reminders_mod.fetch_reminders(lists=rcfg.get("lists") or None, force=True)
         err = reminders_mod.LAST_ERROR
@@ -7877,7 +7882,13 @@ def build_parser():
         prog="brain.py",
         description="세컨드브레인 — 마크다운 개인 지식 창고 CLI. "
                     "볼트 경로는 ~/.config/second-brain/config.json의 vault(기본 ~/brain).",
-        epilog="종료 코드: 0 성공 · 2 입력 오류 · 3 볼트 없음. 모든 서브커맨드는 --json을 지원합니다.",
+        epilog="명령이 많아 보이면 아래 묶음부터 보세요(각 명령 -h로 자세히):\n"
+               "  자주 쓰는 것  init · new · capture · search · show · today · task · event\n"
+               "  비서         ask · brief · journal · retro · prepare · remind · enrich\n"
+               "  자동화       agents · widget · widgets · calendar · serve · notify · reminders · mail\n"
+               "  관리         doctor · backup · restore · export · lint · relink · link · decide · config · index · review · import\n\n"
+               "종료 코드: 0 성공 · 2 입력 오류 · 3 볼트 없음. 모든 서브커맨드는 --json을 지원합니다.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
         add_help=False,
     )
     p.add_argument("-h", "--help", action="help", help="도움말을 보여주고 종료")

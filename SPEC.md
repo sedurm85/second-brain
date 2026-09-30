@@ -545,3 +545,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 보드(`web/index.html`) 「오늘 시간표」는 빠듯/이동 경고가 있는 일정 블록 뒤에 작은 점 마커를 찍고(이동은 진한 색, 툴팁에 "이동 45분 미만: 장소A → 장소B"), 「지금 볼 것」 영역에는 기존 `.db-src` 스타일 그대로 "여유 경고: ..." 한 줄을 보여준다
 - 코어(`web/core.html`)는 별도 규칙 없이 그대로 동작한다: "오늘" 규칙이 이미 백엔드의 `agenda.sentence`를 그대로 말하므로, 여유 경고가 있으면 자동으로 문장에 실려 나온다
 - 테스트 `tests/test_agenda.py`에 `GapTest` 3건 추가(이동/빠듯 판정, 겹침은 gaps 제외하고 conflicts 유지, 세 문장·`dash_today`·`kakao_brief`가 경고를 언급). 전체 스위트 536 통과(기존 533 + 신규 3). `node --check`로 `web/index.html`·`web/core.html` `<script>` 문법 확인
+## v0.31 온보딩 QA
+
+- 신규 사용자 첫 10분을 임시 HOME(`~/brain`·`~/.config`·`~/.cache` 미접촉)에서 실제로 따라가며 3가지를 고쳤다: (1) `reminders list`/`test`가 연결을 켠 적 없어도(`enabled=false`) 실제 미리알림 조회를 강행하던 것을 가드해 "꺼져 있어요" 안내로 대체(오프라인 아니면 macOS 권한 프롬프트까지 뜰 수 있던 결함), (2) `agents_status()`가 `SECOND_BRAIN_NO_LAUNCHCTL=1`에서 미설치 에이전트를 "미설치 · loaded"로 자기모순되게 보여주던 것을 `installed` 확인으로 가드, (3) `init` 샘플 가이드 노트의 예시 문구 `[[파일]]`이 신규 사용자의 첫 `lint`에서 근거 없는 link-broken 1건을 만들던 것을 문구 수정으로 제거
+- 최상위 `--help`에 36개 서브커맨드를 4단 그룹(자주 쓰는 것/비서/자동화/관리)으로 묶은 epilog 추가(`RawDescriptionHelpFormatter`로 줄바꿈 보존, 개별 서브커맨드 `-h`는 그대로)
+- skills/*/SKILL.md 12개 전수 대조: 참조하는 서브커맨드·플래그가 `build_parser()`와 전부 일치, 드리프트 없음
+- 테스트 `tests/test_onboarding.py` 7건(도움말 그룹핑, 볼트 없는 today, fresh doctor, 전체 온보딩 시퀀스 무크래시, 모든 --json 유효성, agents status 비모순, reminders 기본꺼짐 가드). 전체 스위트 563 통과(기존 556 + 신규 7). 상세 친절도 표는 `docs/onboarding-qa-2026-09-30.md`
