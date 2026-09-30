@@ -2352,7 +2352,8 @@ def dash_today(vault, today=None, now=None, widgets=None, agenda=None):
     t["mail"]["waiting"] = (m.get("waiting") or [])[:3]
     t["mail"]["sentence"] = mail_mod.mail_sentence(m)
     # 표시용 inbox: 오늘 묶음(직접 적은 것 우선). 예전 계약(문자열 목록) 유지
-    t["inbox"] = [x["text"] for x in tb["today"] if x.get("kind") == "task"] or t["inbox"]
+    own = lambda b: [x["text"] for x in tb[b] if x.get("kind") == "task"]
+    t["inbox"] = own("today") or (own("week") + own("someday"))[:6] or t["inbox"]
     t["kakao"] = kakao_brief(t)
     return t
 
