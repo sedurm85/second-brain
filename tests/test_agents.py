@@ -81,3 +81,24 @@ class AgentsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BackupTest(AgentsTest):
+    def test_backup_zip_and_rotation(self):
+        import zipfile
+        from datetime import datetime
+        vault = self.home / "brain"
+        for d in ("notes", "decisions", "events"):
+            (vault / d).mkdir(parents=True)
+        (vault / "BRAIN.md").write_text("# B\n", encoding="utf-8")
+        (vault / "notes" / "a.md").write_text("---\ntitle: a\n---\n# a\n", encoding="utf-8")
+        (vault / ".git").mkdir()
+        (vault / ".git" / "junk").write_text("x", encoding="utf-8")
+        dest = self.home / "bk"
+        for i in range(3):
+            brain.backup_vault(vault, dest, keep=2, now=datetime(2026, 9, 28 + i, 23, 0))
+        names = sorted(p.name for p in dest.glob("brain-*.zip"))
+        self.assertEqual(names, ["brain-20260929.zip", "brain-20260930.zip"])  # keep=2로 가장 오래된 것 정리
+        with zipfile.ZipFile(dest / "brain-20260930.zip") as z:
+            self.assertEqual(sorted(z.namelist()), ["BRAIN.md", "notes/a.md"])  # .git 제외
+        self.assertIn("backup", brain.AGENT_SPECS)

@@ -1,5 +1,7 @@
 # 세컨드브레인 (second-brain)
 
+![세컨드브레인](web/assets/banner.png)
+
 > A Claude Code plugin that turns "remember this" into plain-markdown notes in a local vault, then grows into a living assistant: calendar, tasks, itineraries, a speaking "core" screen and a pixel office where your automations work as employees.
 > No accounts, no API keys, no servers. Obsidian-compatible markdown on your own disk, a 127.0.0.1-only dashboard, standard library only.
 
@@ -50,6 +52,8 @@ python3 scripts/brain.py task carry                    # 오늘 남은 것 전�
 python3 scripts/brain.py event todo "2026-10-03|제주도" "렌터카 예약 확인"
 python3 scripts/brain.py event step "2026-10-03|제주도" "14:00 집 출발 (자가용 50분)"
 python3 scripts/brain.py config set assistant_name 자비스
+python3 scripts/brain.py backup                        # 볼트 zip 백업(14개 보관)
+python3 scripts/brain.py agents install                # 07:00 브리핑·10분 알림·21:30 마감·23:00 백업 launchd 설치
 python3 scripts/brain.py config init-widgets           # 예시 widgets.json
 ```
 

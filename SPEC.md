@@ -237,3 +237,9 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 
 - `widget_history(w, days, today)`: 로그 위젯의 끝 2MB에서 `20YY-MM-DD`가 있는 줄을 날짜별로 세어 runs, 그중 fail_pattern 줄을 fails로. `GET /api/widget-history?id=&days=`(기본 14). 위젯 결과에 `status_cfg`(fail_pattern 전달용)
 - 사무실 상세 패널에 최근 14일 막대(실행 파랑·실패 붉음, 없는 날은 옅은 바닥선), 합계. 테스트 +2, 총 149
+
+## v0.18 백업·사무실 라이트·마감 정리 (2026-09-30)
+
+- `brain.py backup [--dest] [--keep 14]`: 볼트를 `~/.cache/second-brain/backups/brain-YYYYMMDD.zip`으로(같은 날은 덮어씀, `.git` 등 SKIP_DIRS 제외), 오래된 것은 keep개만. `agents install backup`으로 매일 23:00 launchd(위젯 brain-backup, ok_pattern "백업 완료"). 사장님 환경에 설치·첫 백업(67파일 103KB)
+- 사무실 라이트 테마(보드의 brain-theme 저장값·`?theme=` 따름), 이번 주 격자에 동선 표시, 카톡 문구 개선, today inbox 표시 정리, README 배너(힉스필드)
+- 테스트 150. 오늘 하루 v0.3 → v0.18: 커밋 40여 개, 릴리스 v0.12.0·v0.16.0

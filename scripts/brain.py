@@ -3699,6 +3699,7 @@ AGENT_SPECS = {
     "brief": {"label": "com.secondbrain.brief", "args": ["brief", "--kakao"], "calendar": {"Hour": 7, "Minute": 0}, "title": "아침 브리핑 카톡 (매일 7시)"},
     "remind": {"label": "com.secondbrain.remind", "args": ["remind", "--kakao"], "interval": 600, "title": "출발·시작 알림 (10분마다)"},
     "evening": {"label": "com.secondbrain.evening", "args": ["brief", "--evening", "--kakao"], "calendar": {"Hour": 21, "Minute": 30}, "title": "저녁 마감 카톡 (매일 21:30)"},
+    "backup": {"label": "com.secondbrain.backup", "args": ["backup"], "calendar": {"Hour": 23, "Minute": 0}, "title": "볼트 백업 (매일 23시)"},
 }
 
 
@@ -3774,7 +3775,7 @@ def agents_install(names, dry=False, force=False):
                 if wid in ids or rec["action"].startswith("skip"):
                     continue
                 cfg.setdefault("widgets", []).insert(0, {"id": wid, "title": AGENT_SPECS[rec["name"]]["title"], "kind": "log", "source": rec["log"], "team": "운영팀",
-                                                          "status": {"ok_pattern": "카톡 발송 완료|알릴 것 없음|발송", "fail_pattern": "Traceback|실패", "stale_minutes": 1560 if rec["name"] != "remind" else 40}, "lines": 3})
+                                                          "status": {"ok_pattern": "카톡 발송 완료|알릴 것 없음|발송|백업 완료", "fail_pattern": "Traceback|실패", "stale_minutes": 1560 if rec["name"] != "remind" else 40}, "lines": 3})
                 rec["widget"] = wid
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -3803,6 +3804,41 @@ def agents_remove(names):
             target.unlink()
         out.append({"name": name, "label": spec["label"], "removed": True})
     return out
+
+
+BACKUP_KEEP = 14
+
+
+def backup_vault(vault, dest_dir=None, keep=BACKUP_KEEP, now=None):
+    """볼트를 zip으로 백업(~/.cache/second-brain/backups/brain-YYYYMMDD-HHMM.zip). 같은 날 여러 번이면 덮어씀. 오래된 것은 keep개만 남김."""
+    import zipfile
+    now = now or datetime.now()
+    vault = Path(vault)
+    dest = Path(dest_dir) if dest_dir else agenda_mod.cache_dir() / "backups"
+    dest.mkdir(parents=True, exist_ok=True)
+    target = dest / f"brain-{now:%Y%m%d}.zip"
+    count = 0
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
+        for root_dir, dirs, files in os.walk(vault):
+            dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+            for fn in files:
+                fp = Path(root_dir) / fn
+                z.write(fp, fp.relative_to(vault).as_posix())
+                count += 1
+    olds = sorted(dest.glob("brain-*.zip"))
+    removed = []
+    while len(olds) > keep:
+        victim = olds.pop(0)
+        victim.unlink()
+        removed.append(victim.name)
+    return {"path": str(target), "files": count, "bytes": target.stat().st_size, "removed": removed}
+
+
+def cmd_backup(args):
+    v = require_vault()
+    res = backup_vault(v, args.dest, args.keep)
+    emit(args, res, f"백업 완료: {res['path']} ({res['files']}개 파일, {res['bytes'] // 1024}KB)" + (f" · 오래된 백업 {len(res['removed'])}개 정리" if res["removed"] else ""))
+    return EXIT_OK
 
 
 def cmd_agents(args):
@@ -4048,9 +4084,13 @@ def build_parser():
     s.add_argument("--host", help="IMAP 호스트(gmail/naver는 자동)")
     s.add_argument("--sent-folder", help="보낸편지함 폴더 이름")
 
-    s = add("agents", "비서 알림 에이전트(launchd): install [brief remind evening] · status · remove", cmd_agents)
+    s = add("backup", "볼트를 zip으로 백업(~/.cache/second-brain/backups/, 기본 14개 보관)", cmd_backup)
+    s.add_argument("--dest", help="백업 폴더(기본 ~/.cache/second-brain/backups)")
+    s.add_argument("--keep", type=int, default=BACKUP_KEEP, help="보관 개수(기본 14)")
+
+    s = add("agents", "비서 알림 에이전트(launchd): install [brief remind evening backup] · status · remove", cmd_agents)
     s.add_argument("action", choices=("install", "status", "remove"))
-    s.add_argument("names", nargs="*", help="brief(07:00 브리핑) remind(10분 알림) evening(21:30 마감). 비우면 셋 다")
+    s.add_argument("names", nargs="*", help="brief(07:00 브리핑) remind(10분 알림) evening(21:30 마감) backup(23:00 백업). 비우면 넷 다")
     s.add_argument("--dry-run", action="store_true", help="쓰지 않고 만들 파일만 보여줌")
     s.add_argument("--force", action="store_true", help="이미 있는 plist 덮어쓰기")
 
