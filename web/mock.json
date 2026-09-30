@@ -2088,13 +2088,15 @@
         "path": "decisions/NAS-OS를-새-배포판으로-교체.md",
         "title": "NAS OS를 새 배포판으로 교체",
         "revisit": "2026-10-02",
-        "days_left": 2
+        "days_left": 2,
+        "project": "홈서버"
       },
       {
         "path": "decisions/로컬-DB는-SQLite로-간다.md",
         "title": "로컬 DB는 SQLite로 간다",
         "revisit": "2026-10-05",
-        "days_left": 5
+        "days_left": 5,
+        "project": "사이드-앱"
       }
     ],
     "inbox": [
@@ -2119,41 +2121,79 @@
         "title": "블로그 자동 발행",
         "kind": "log",
         "status": "fail",
+        "updated_at": "2026-09-30T07:02:40+09:00",
         "age_minutes": 118,
-        "summary": "Traceback — SmartEditor 셀렉터 타임아웃"
+        "summary": "Traceback — SmartEditor 셀렉터 타임아웃",
+        "data": {
+          "lines": [
+            "[07:00:01] 발행 대상: 2026-09-30-ai-news-blog.md",
+            "[07:01:10] 에디터 로드 대기…",
+            "Traceback (most recent call last):",
+            "  File \"blog_publish.py\", line 88, in publish",
+            "TimeoutError: selector .se-title-text 30000ms 초과"
+          ]
+        }
       },
       {
         "id": "flight",
         "title": "항공권 최저가",
         "kind": "json",
         "status": "stale",
+        "updated_at": "2026-09-27T09:23:00+09:00",
         "age_minutes": 4297,
-        "summary": "3일째 갱신 없음 · 마지막 최저가 312,400원"
+        "summary": "3일째 갱신 없음 · 마지막 최저가 312,400원",
+        "data": {
+          "fields": {
+            "best_price": 312400,
+            "route": "ICN→CNX (2027-01-18)",
+            "checked_at": "2026-09-27T09:23:00+09:00"
+          }
+        }
       },
       {
         "id": "jobscout",
         "title": "채용 스카우트",
         "kind": "markdown",
         "status": "missing",
+        "updated_at": null,
         "age_minutes": null,
-        "summary": "파일이 아직 없어요: ~/.local/k-skill-cron/jobscout_result.md"
+        "summary": "파일이 아직 없어요: ~/.local/k-skill-cron/jobscout_result.md",
+        "data": {
+          "text": ""
+        }
       },
       {
         "id": "weekly-report",
         "title": "주간 반응 리포트",
         "kind": "markdown",
         "status": "warn",
+        "updated_at": "2026-09-29T21:10:00+09:00",
         "age_minutes": 710,
-        "summary": "조회수 수집 일부 실패(블로그 2편)"
+        "summary": "조회수 수집 일부 실패(블로그 2편)",
+        "data": {
+          "text": "# 이번 주 반응 좋은 글\n\n1. **Claude 5 정리** — 조회 1,204\n2. 무료 AI 영상 도구 3선 — 조회 866\n3. `NotebookLM` 활용법 — 조회 640\n\n## 다음 주 주제\n- 추석 연휴 AI 여행 플래너\n- 엑셀 대신 AI 표 정리"
+        }
       },
       {
         "id": "marketset",
         "title": "마켓세트 카톡",
         "kind": "log",
         "status": "ok",
+        "updated_at": "2026-09-30T08:31:04+09:00",
         "age_minutes": 29,
-        "summary": "오늘 08:31 전송 완료 · len:612"
+        "summary": "오늘 08:31 전송 완료 · len:612",
+        "data": {
+          "lines": [
+            "[08:30:01] 삼성전자 조회 OK",
+            "[08:30:02] 한화오션 조회 OK",
+            "[08:30:03] 아마존 조회 OK",
+            "[08:31:02] S&P500·환율·유가 수집 OK",
+            "[08:31:04] 카톡 전송 완료 len:612"
+          ]
+        }
       }
-    ]
+    ],
+    "widgets_total": 7,
+    "kakao": "좋은 아침이에요 · 9/30(수)\n되돌아볼 결정 2건: NAS OS 교체 D-2\n자동화: 실패 1 · 오래됨 1 · 없음 1\n할 일 3건"
   }
 }

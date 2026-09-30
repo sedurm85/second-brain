@@ -332,7 +332,7 @@ a { color: var(--accent); }
 .pill.zero { opacity: .55; }
 
 /* ───────── 위젯 그리드 ───────── */
-.wgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.wgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; align-items: start; }
 .wcard { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; min-width: 0; text-align: left; width: 100%; cursor: pointer; transition: border-color .15s, transform .15s; }
 .wcard:hover { border-color: var(--border-strong); transform: translateY(-1px); }
 .wcard.fail { border-color: color-mix(in srgb, var(--st-crit) 55%, var(--border)); }
@@ -1266,14 +1266,14 @@ a { color: var(--accent); }
     var rvHtml = rv.length ? "<ul>" + rv.map(function (d) {
       var dl = d.days_left, lab = dl == null ? "" : dl <= 0 ? "오늘" : "D-" + dl;
       var cls = dl == null ? "badge" : dl <= 0 ? "badge over" : dl <= 7 ? "badge soon" : "badge";
-      return '<li><button type="button" class="rv-item" data-path="' + esc(d.path) + '"><span class="t">' + esc(d.title) + "</span>" +
+      return '<li><button type="button" class="rv-item" data-path="' + esc(d.path) + '"><span class="t">' + esc(d.title) + (d.project ? ' <span class="muted" style="font-size:12px">· ' + esc(d.project) + "</span>" : "") + "</span>" +
         (lab ? '<span class="' + cls + '">' + lab + "</span>" : "") + "</button></li>";
     }).join("") + "</ul>" : '<p class="t-empty">이번 주에 되돌아볼 결정이 없어요.</p>';
     var ibHtml = inbox.length ? '<ul aria-label="할 일 (표시 전용)">' + inbox.map(function (it) {
       var text = typeof it === "string" ? it : (it && (it.text || it.title)) || "";
       return '<li class="inbox-item"><span class="box" aria-hidden="true"></span><span>' + esc(text) + "</span></li>";
     }).join("") + "</ul>" : '<p class="t-empty">inbox.md에 <code>- [ ] 항목</code>으로 적으면 여기 떠요.</p>';
-    var total = ST.reduce(function (a, s) { return a + (ws[s] || 0); }, 0);
+    var total = typeof t.widgets_total === "number" ? t.widgets_total : ST.reduce(function (a, s) { return a + (ws[s] || 0); }, 0);
     var tops = (t.top_widgets || []).filter(function (w) { return w.status !== "ok"; })
       .sort(function (a, b) { return rank(a.status) - rank(b.status); }).slice(0, 3);
     var auHtml = '<div class="pills" role="list" aria-label="자동화 상태 요약">' + ST.map(function (s) {
@@ -1373,7 +1373,7 @@ a { color: var(--accent); }
     $("wmTitle").textContent = w.title;
     var extra = "";
     if (w.kind === "csv" && d.rows && d.rows.length) { // 표 보기 (차트의 텍스트 대체)
-      var cols = d.columns || ["x", "y"];
+      var cols = (d.columns && d.columns.length >= 2) ? d.columns : ["x", "y"]; // missing이면 columns가 빈 배열
       extra = '<div class="tbl-wrap"><table class="kv"><caption class="sr-only">' + esc(w.title) + " 데이터</caption><thead><tr><th>" + esc(cols[0]) + "</th><td class=\"muted\">" + esc(cols[1]) + "</td></tr></thead><tbody>" +
         d.rows.slice().reverse().map(function (r) { return "<tr><th>" + esc(r[0]) + "</th><td>" + esc(fmtNum(r[1])) + "</td></tr>"; }).join("") + "</tbody></table></div>";
     }
