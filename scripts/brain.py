@@ -3729,8 +3729,54 @@ def office_events(widgets, jobs, now=None):
     return ev[:OFFICE_EVENTS_MAX]
 
 
+OFFICE_KPI_DAYS = 7
+
+
+def office_kpis(widgets, today=None, days=OFFICE_KPI_DAYS):
+    """팀별·전체 7일 KPI: 실행/실패/성공률/일별 막대. 멈춘(state=paused) 위젯과 로그가 아닌 위젯은 뺀다.
+    팀 키는 team_for(w)로 dash_office의 방 이름과 맞춘다(팀 미지정 위젯은 「운영팀」 등 기본 팀으로 묶임)."""
+    today = today or date.today()
+    date_keys = [(today - timedelta(days=days - 1 - i)).isoformat() for i in range(days)]
+
+    def blank_days():
+        return {d: {"date": d, "runs": 0, "fails": 0} for d in date_keys}
+
+    teams = {}
+    total = {"runs": 0, "fails": 0, "members": 0, "days": blank_days()}
+    for w in widgets:
+        if w.get("state") == "paused" or w.get("kind") != "log":
+            continue
+        name = team_for(w)
+        t = teams.setdefault(name, {"runs": 0, "fails": 0, "members": 0, "days": blank_days()})
+        t["members"] += 1
+        total["members"] += 1
+        try:
+            h = widget_history(w, days=days, today=today)
+        except Exception:  # noqa: BLE001 - KPI 한 위젯 오류로 전체를 막지 않는다
+            continue
+        for d in h["days"]:
+            if d["date"] not in t["days"]:
+                continue
+            t["days"][d["date"]]["runs"] += d["runs"]
+            t["days"][d["date"]]["fails"] += d["fails"]
+            total["days"][d["date"]]["runs"] += d["runs"]
+            total["days"][d["date"]]["fails"] += d["fails"]
+        t["runs"] += h.get("total_runs", 0)
+        t["fails"] += h.get("total_fails", 0)
+        total["runs"] += h.get("total_runs", 0)
+        total["fails"] += h.get("total_fails", 0)
+
+    def finalize(rec):
+        runs, fails = rec["runs"], rec["fails"]
+        rate = round(100 * (runs - fails) / runs) if runs else None
+        return {"runs": runs, "fails": fails, "rate": rate, "members": rec["members"],
+                "days": [rec["days"][d] for d in date_keys]}
+
+    return {"teams": {name: finalize(t) for name, t in teams.items()}, "total": finalize(total)}
+
+
 def dash_office(widgets, ps_lines=None, cron_lines=None, now=None):
-    """/api/office 응답: teams, widgets(요약), running, jobs, events, assistant_name."""
+    """/api/office 응답: teams, widgets(요약), running, jobs, events, assistant_name, kpis."""
     cfg = load_config()
     teams = {}
     order = []
@@ -3748,6 +3794,7 @@ def dash_office(widgets, ps_lines=None, cron_lines=None, now=None):
         "jobs": jobs,
         "events": office_events(widgets, jobs, now),
         "assistant_name": str(cfg.get("assistant_name") or "브레인"),
+        "kpis": office_kpis(widgets, today=(now.date() if now else None)),
     }
 
 

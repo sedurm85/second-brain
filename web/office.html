@@ -42,6 +42,10 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 .bar .stat { margin-left: auto; display: flex; gap: 14px; font-size: 13px; color: var(--ink-2); flex-wrap: wrap; }
 .bar .stat b { color: var(--ink); font-weight: 600; }
 .bar .stat .lamp { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; background: var(--paused); }
+.kpi-total { margin-left: auto; font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.kpi-total b { color: var(--ink); font-weight: 600; }
+.kpi-total .compact { display: none; }
+.rate.acc { color: var(--accent); } .rate.warn { color: var(--warn); } .rate.crit { color: var(--crit); }
 .lamp.good { background: var(--good); box-shadow: 0 0 8px var(--good); }
 .lamp.run { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: blink 1.2s ease-in-out infinite; }
 .lamp.crit { background: var(--crit); box-shadow: 0 0 8px var(--crit); animation: blink 1.6s ease-in-out infinite; }
@@ -57,10 +61,13 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 .rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
 .room { background: linear-gradient(180deg, var(--wall) 0, var(--wall) 44px, var(--floor) 44px); border: 1px solid var(--rule-strong); border-radius: 14px; overflow: hidden; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 18px 50px rgba(2, 8, 20, .5); position: relative; }
 .room.claude { background: linear-gradient(180deg, #1c2a3e 0, #1c2a3e 44px, #141f2c 44px); border-color: color-mix(in srgb, var(--accent) 40%, var(--rule-strong)); }
-.room-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px 10px; font-size: 14px; }
+.room-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px 16px 10px; font-size: 14px; }
 .room-head h2 { margin: 0; font-size: 14.5px; font-weight: 700; }
 .room-head .n { color: var(--muted); font-size: 12.5px; }
 .room-head .state { margin-left: auto; font-size: 12px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+.kpi { flex-basis: 100%; display: flex; align-items: center; gap: 6px; margin-top: 2px; font-size: 11px; color: var(--muted); min-width: 0; flex-wrap: wrap; overflow-wrap: anywhere; }
+.kpi svg { flex: none; display: block; }
+.kpi b { color: var(--ink-2); font-weight: 600; }
 .window { position: absolute; right: 16px; top: 8px; width: 46px; height: 28px; border-radius: 4px; border: 2px solid #2b3a4e; background: linear-gradient(180deg, var(--sky-1, #2f5b9a), var(--sky-2, #7fb2e6)); opacity: .9; }
 .window::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: #2b3a4e; }
 .desks { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px 4px; padding: 10px 12px 14px; background-image: repeating-linear-gradient(0deg, transparent 0 22px, rgba(255, 255, 255, .025) 22px 23px), repeating-linear-gradient(90deg, transparent 0 22px, rgba(255, 255, 255, .025) 22px 23px); }
@@ -121,6 +128,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
 @media (max-width: 720px) {
   .bar { height: auto; flex-wrap: wrap; padding: 8px 0; }
   .bar .stat { margin-left: 0; }
+  .kpi-total { margin-left: 0; }
   .rooms { grid-template-columns: minmax(0, 1fr); }
   .room { min-width: 0; }
   /* 상세 패널: 우측 드로어 대신 하단 바텀시트 */
@@ -133,6 +141,9 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
   .bar h1 { font-size: 15px; }
   .bar .links { order: 3; width: 100%; }
   .bar .stat { order: 4; flex-basis: 100%; margin-left: 0; justify-content: space-between; gap: 6px; font-size: 11.5px; }
+  .kpi-total { font-size: 11.5px; }
+  .kpi-total .full { display: none; }
+  .kpi-total .compact { display: inline; }
   .desks { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 4px; }
   .desk { min-width: 0; padding-top: 26px; }
   .desk .nm { font-size: 11px; }
@@ -150,6 +161,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
   <header class="bar">
     <h1><span class="lamp" id="mainLamp"></span>사무실</h1>
     <nav class="links" aria-label="화면 이동"><a href="/">보드</a><a href="/core">코어</a></nav>
+    <span class="kpi-total" id="kpiTotal"></span>
     <div class="stat" id="stat"></div>
     <span class="clock" id="clock">--:--</span>
   </header>
@@ -285,10 +297,34 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
     return '<button type="button" class="desk talk ' + (st === "working" ? "run" : st) + '" data-job="' + esc(j.id) + '" aria-label="' + esc("Claude 작업 " + j.id + ", " + (j.state || "")) + '">' + say +
       sprite("claude-" + j.id, st, S.frame, "claude") + '<div class="nm">' + esc(j.title || ("작업 " + j.id.slice(0, 6))) + '</div><div class="st">' + esc(JOB_KO[j.state] || j.state || "") + (j.updated_min != null ? " · " + ago(j.updated_min) : "") + "</div></button>";
   }
+  /* ───────── 팀 KPI(7일 실행·실패·성공률·막대) ───────── */
+  function rateClass(rate) { return rate == null ? "" : rate >= 95 ? "acc" : rate >= 80 ? "warn" : "crit"; }
+  function kpiSpark(days) {
+    var bw = 6, gap = 2, H = 16, n = days.length, W = n * (bw + gap) - gap;
+    var max = Math.max(1, Math.max.apply(null, days.map(function (d) { return d.runs; })));
+    var bars = days.map(function (d, i) {
+      var x = i * (bw + gap), hh = d.runs ? Math.max(2, Math.round((d.runs / max) * (H - 2))) : 0, fh = d.fails ? Math.max(2, Math.round((d.fails / max) * (H - 2))) : 0;
+      return (hh ? '<rect x="' + x + '" y="' + (H - hh) + '" width="' + bw + '" height="' + hh + '" rx="1" fill="var(--accent)"/>' : "") +
+        (fh ? '<rect x="' + x + '" y="' + (H - fh) + '" width="' + bw + '" height="' + fh + '" rx="1" fill="var(--crit)"/>' : "");
+    }).join("");
+    return '<svg viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" aria-hidden="true">' + bars + "</svg>";
+  }
+  function kpiHtml(k) {
+    if (!k || !k.runs) return '<span class="kpi">아직 기록 없음</span>';
+    return '<span class="kpi">' + kpiSpark(k.days) + "7일 실행 <b>" + k.runs + "</b> · 실패 <b>" + k.fails + '</b> · <span class="rate ' + rateClass(k.rate) + '">성공률 ' + k.rate + "%</span></span>";
+  }
+  function renderKpiTotal(t) {
+    var el = $("kpiTotal");
+    if (!t || !t.runs) { el.innerHTML = '<span class="full">이번 주 회사 전체: 아직 기록 없음</span><span class="compact">기록 없음</span>'; return; }
+    var cls = rateClass(t.rate);
+    el.innerHTML = '<span class="full">이번 주 회사 전체: 실행 <b>' + t.runs + "</b> · 실패 <b>" + t.fails + '</b> · <span class="rate ' + cls + '">성공률 ' + t.rate + '%</span></span>' +
+      '<span class="compact"><span class="rate ' + cls + '">성공률 ' + t.rate + "%</span></span>";
+  }
   function render(d) {
     S.data = d; S.widgets = {};
     (d.widgets || []).forEach(function (w) { S.widgets[w.id] = w; });
     var running = d.running || {};
+    var kpiTeams = (d.kpis || {}).teams || {};
     var rooms = (d.teams || []).map(function (team) {
       var members = team.members.map(function (id) { return S.widgets[id]; }).filter(Boolean);
       if (!members.length) return "";
@@ -296,7 +332,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
       var lamp = anyRun ? "run" : anyFail ? "crit" : members.every(function (w) { return w.status === "ok" || w.status === "paused"; }) ? "good" : "warn";
       var label = anyRun ? "가동 중" : anyFail ? "주의" : "정상";
       return '<section class="room" aria-label="' + esc(team.name) + '"><div class="window"></div><div class="room-head"><h2>' + esc(team.name) + '</h2><span class="n">' + members.length + "명</span>" +
-        '<span class="state"><span class="lamp ' + lamp + '"></span>' + label + "</span></div><div class=\"desks\">" + members.map(function (w) { return deskHtml(w, running[w.id]); }).join("") + "</div></section>";
+        '<span class="state"><span class="lamp ' + lamp + '"></span>' + label + "</span>" + kpiHtml(kpiTeams[team.name]) + "</div><div class=\"desks\">" + members.map(function (w) { return deskHtml(w, running[w.id]); }).join("") + "</div></section>";
     }).join("");
     var jobs = d.jobs || [];
     rooms = '<section class="room claude" aria-label="Claude 작업실"><div class="window"></div><div class="room-head"><h2>Claude 작업실</h2><span class="n">' + jobs.length + "명</span>" +
@@ -307,6 +343,7 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-even
     var ws = d.widgets || [], nRun = Object.keys(running).length, nFail = ws.filter(function (w) { return w.status === "fail"; }).length, nOk = ws.filter(function (w) { return w.status === "ok"; }).length, nPause = ws.filter(function (w) { return w.state === "paused"; }).length;
     $("stat").innerHTML = '<span><span class="lamp run"></span>가동 <b>' + nRun + "</b></span><span><span class=\"lamp good\"></span>정상 <b>" + nOk + "</b></span><span><span class=\"lamp crit\"></span>주의 <b>" + nFail + "</b></span><span><span class=\"lamp\"></span>멈춤 <b>" + nPause + "</b></span>";
     $("mainLamp").className = "lamp " + (nRun ? "run" : nFail ? "crit" : "good");
+    renderKpiTotal((d.kpis || {}).total);
     // 팀장의 한마디
     $("leadWho").textContent = d.assistant_name || "브레인";
     var lead = [];

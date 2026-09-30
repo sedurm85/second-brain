@@ -367,3 +367,10 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - 보드(`web/index.html`) 「할 일」 카드에 「이번 주 계획」 블록 추가(회고 질문과 같은 `.rq`/`data-rq-path` 재사용), 히어로 문장에 "이번 주 계획 N개" 추가. 코어(`web/core.html`) "할 일" 규칙이 계획 있으면 첫 2개를 한 문장으로 덧붙임
 - `dash_search`가 각 검색 결과에 `summary`(프론트매터 summary, 160자 절단) 키를 추가. `/api/search`는 그대로 통과. 보드 검색 결과 목록에 제목 아래 요약(무채색)·스니펫 순으로 표시
 - 테스트 +8, 총 226
+## v0.28 사무실 팀 KPI (2026-09-30)
+
+- `office_kpis(widgets, today=None, days=7)` 추가(`dash_office` 바로 앞): 멈춘(state=paused) 위젯과 kind≠log 위젯을 뺀 활성 로그 위젯을 `team_for(w)` 기준으로 묶어 팀별·전체 7일 실행·실패·성공률(0-100 정수, 실행 0이면 None)·일별 막대(`days`)·소속 인원(`members`)을 집계. `/api/office` 응답에 `"kpis": {"teams": {...}, "total": {...}}`로 포함
+- `web/office.html`: 각 방(`.room-head`)에 `<span class="kpi">`로 「7일 실행 N · 실패 M · 성공률 P%」 + 7칸 인라인 SVG 막대(실행=accent, 실패=crit 겹쳐 그림)를 추가, 실행 0이면 「아직 기록 없음」만 표시. 상단바 오른쪽 램프 앞에 `#kpiTotal`(회사 전체 스트립)을 추가, 420px 이하에서는 「성공률 P%」만 남는 축약형으로 전환
+- 성공률 색상은 기존 토큰 재사용: 95% 이상 `--accent`, 80~94% `--warn`, 80% 미만 `--crit`. `.room-head`에 `flex-wrap`을 줘 좁은 화면에서 KPI 줄이 아래로 밀려도 방 밖으로 넘치지 않게 함
+- `tests/test_office_kpi.py` 6건 추가(팀별 집계, 기본 팀 라벨이 `dash_office`와 일치, paused 제외, 전체 합산, 실행 0→rate None, `/api/office`에 kpis 포함). 전체 스위트 191 통과
+- Playwright로 1280×800/390×800 두 뷰포트에서 `.kpi` 요소 존재 및 `scrollWidth`가 뷰포트를 넘지 않음을 확인(가로 스크롤 없음)
