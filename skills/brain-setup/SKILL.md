@@ -38,6 +38,7 @@ allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brain.py *) Read
 한 번에 하나씩, 사용자가 원하는 것만.
 
 - **캘린더**: 구글만 쓰면 구글 캘린더 설정 → 해당 캘린더 → "iCal 형식의 비공개 주소"를 복사해 `~/.config/second-brain/google.ics.url` 첫 줄에 직접 저장하도록 안내한다(주소는 비밀이라 대화에 붙이지 말라고 말한다). 파일이 생기면 `calendar add ics 구글 --url-file ~/.config/second-brain/google.ics.url` → `calendar test`. 맥 캘린더 앱에 계정이 있으면 `calendar add eventkit 맥`(첫 실행 때 권한 허용).
+- **미리알림**: `reminders on` → 권한 허용 → `reminders test`(기본 꺼짐, 읽기 전용. 완료 체크는 미리알림 앱에서).
 - **비서 이름**: `config set assistant_name <이름>` (코어 화면·자유 질문의 자기 호칭).
 - **알림**: 카카오 "나에게 보내기" 헬퍼 스크립트가 있으면 `config set kakao_cmd <경로>`. 없으면 macOS에서는 알림 센터(`osascript`)로 자동 대체되고, 그것도 안 되면 로그에만 남는다고 설명한다. `notify test`로 실제로 어느 채널이 뜨는지 바로 확인시켜준다.
 - **Claude가 대신 쓰는 것**: `enrich`(가져온 노트 정제), `prepare`(준비 제안, 06:40 에이전트), `journal`(21:30 마감이 씀), `retro`(월 09:00 에이전트), `review --semantic`. 모두 제안이고 볼트 반영은 사용자가 보드에서 채택하거나 `link A B`를 실행할 때만이라고 설명한다.

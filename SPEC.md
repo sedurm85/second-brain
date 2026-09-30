@@ -379,3 +379,10 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `note_append_action(vault, body)`: 보드 노트 패널에서 어떤 노트(note/idea/decision/project/journal…)든 열어 둔 채로 메모·태그·할 일을 바로 추가. `memo`/`todo`는 `_append_section`으로 `## 메모`/`## 할 일` 절 끝에 붙이고(없으면 새로 만듦, decision의 `결정`/`이유` 절은 건드리지 않음), `tag`는 프론트매터 `tags`에 중복 없이 추가(`#` 제거, 최대 12개). 경로는 `safe_vault_path`로 검증하고 `BRAIN.md`/`inbox.md`는 거부. `POST /api/note-append`로 노출, 처리 후 `dash_note`로 다시 감싸 반환
 - 보드(`web/index.html`) 노트 패널 본문 아래 `.note-actions`: 메모/할 일 모드 선택 + 텍스트 입력 + 버튼 하나, 태그 입력 + 「태그 추가」 버튼. 성공 시 반환된 노트로 패널을 다시 그리고(`renderNotePanel`) `refreshLive(true)` 호출. 기존 `renderMd`는 체크박스 줄의 원본 줄 번호를 추적하지 않아 본문 안 체크박스 클릭 토글은 이번 범위에서 뺐음(하드코딩 금지 원칙)
 - 테스트 +11, 총 258
+## v0.28 맥 미리알림 읽기
+
+- 새 모듈 `scripts/reminders.py`(stdlib, 읽기 전용): 맥 미리알림 앱을 JXA(`osascript -l JavaScript`)로 읽어 `{id, title, list, due, due_time, priority, notes, completed, url}` 목록으로. EventKit 캘린더와 같은 패턴 — 최초 1회 권한 허용, 권한 없으면 `LAST_ERROR`에 안내(`-1743` → "시스템 설정 → 개인정보 보호 → 미리알림에서 터미널/파이썬 허용"), `<cache_dir>/reminders.json`에 5분 캐시. 테스트는 `SECOND_BRAIN_REMINDERS_CMD`로 osascript를 가짜 스크립트로 대체
+- 설정 `reminders: {"enabled": false, "lists": []}`(기본 꺼짐, EventKit과 같은 이유). CLI `brain.py reminders on [--lists A,B] · off · list · test`
+- `dash_tasks`가 켜져 있으면 미리알림을 `kind: "reminder"` 항목(읽기 전용)으로 오늘/이번 주/언젠가 묶음에 합침(마감 지났거나 오늘 → 오늘, 7일 안 → 이번 주, 없음 → 언젠가). `task_action`의 `check`는 kind가 reminder면 거부(완료는 미리알림 앱에서). `kakao_brief`는 켜져 있고 개수가 있으면 "미리알림 N" 한 줄 추가
+- 보드 「할 일」 4열에서 `kind === "reminder"` 항목은 체크박스 없이 「미리알림」 배지로만 표시(읽기 전용)
+- 테스트 +10, 총 228

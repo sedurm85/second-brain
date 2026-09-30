@@ -46,6 +46,7 @@ Claude Code에서 두 줄이면 끝납니다.
 
 ```bash
 python3 scripts/brain.py calendar add ics 구글 --url-file ~/.config/second-brain/google.ics.url
+python3 scripts/brain.py reminders on --lists 장보기,회사  # 맥 미리알림 읽기(기본 꺼짐, 최초 1회 권한 허용)
 python3 scripts/brain.py agenda                        # 오늘·7일 일정
 python3 scripts/brain.py today                         # 브리핑(사람용 + 카톡용 200자)
 python3 scripts/brain.py brief --kakao                 # 아침 브리핑 카톡

@@ -48,6 +48,7 @@ The first "remember this" asks once whether to create the vault at `~/brain/`. T
 
 ```bash
 python3 scripts/brain.py calendar add ics google --url-file ~/.config/second-brain/google.ics.url
+python3 scripts/brain.py reminders on --lists Groceries,Work  # read macOS Reminders (off by default, one-time permission prompt)
 python3 scripts/brain.py agenda                        # today and the next 7 days
 python3 scripts/brain.py today                         # briefing (human + 200-char Kakao version)
 python3 scripts/brain.py brief --kakao                 # morning briefing to KakaoTalk

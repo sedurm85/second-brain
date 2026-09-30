@@ -282,6 +282,7 @@ h1, h2, h3 { text-wrap: balance; }
 .task .kind.decision { border-color: var(--t-decision); color: var(--t-decision); }
 .task .kind.automation { border-color: var(--st-crit); color: var(--st-crit); }
 .task .kind.prep { border-color: var(--t-event); color: var(--t-event); }
+.task .kind.reminder { border-color: var(--t-source); color: var(--t-source); }
 .task .mv { display: none; gap: 4px; flex: none; }
 .task:hover .mv, .task:focus-within .mv { display: inline-flex; }
 .task .mv button { background: none; border: 1px solid var(--rule); border-radius: 4px; color: var(--muted); font-size: 11px; padding: 1px 6px; }
@@ -1881,14 +1882,16 @@ h1, h2, h3 { text-wrap: balance; }
   }
 
   /* ───────── 할 일 4열 ───────── */
-  var KIND_KO = { decision: "결정", automation: "자동화", prep: "준비" };
+  var KIND_KO = { decision: "결정", automation: "자동화", prep: "준비", reminder: "미리알림" };
   function taskItem(t, bucket) {
     var own = !t.kind || t.kind === "task";
+    var isReminder = t.kind === "reminder";
     var meta = "";
     if (own && t.due) meta = (t.days_left < 0 ? '<span class="ov">' + (-t.days_left) + "일 지남</span>" : t.days_left === 0 ? "오늘" : t.days_left === 1 ? "내일" : "D-" + t.days_left) + " · " + t.due;
     if (t.waiting) meta = t.waiting + (t.waiting_days != null ? " 기다린 지 " + t.waiting_days + "일" : "");
-    if (!own && t.due) meta = (t.days_left < 0 ? '<span class="ov">' + (-t.days_left) + "일 지남</span>" : t.days_left === 0 ? "오늘" : "D-" + t.days_left) + (t.summary ? " · " + esc(t.summary.slice(0, 40)) : "");
-    var body = own ? esc(t.text) : '<button type="button" class="lnk" ' + (t.kind === "automation" ? 'data-wid="' + esc(t.wid) + '"' : 'data-path="' + esc(t.path) + '"') + ">" + esc(t.text) + "</button>";
+    if (!own && !isReminder && t.due) meta = (t.days_left < 0 ? '<span class="ov">' + (-t.days_left) + "일 지남</span>" : t.days_left === 0 ? "오늘" : "D-" + t.days_left) + (t.summary ? " · " + esc(t.summary.slice(0, 40)) : "");
+    if (isReminder) meta = (t.due ? (t.days_left < 0 ? '<span class="ov">' + (-t.days_left) + "일 지남</span>" : t.days_left === 0 ? "오늘" : "D-" + t.days_left) + " · " + t.due : "마감 없음") + (t.source ? " · " + esc(t.source) : "");
+    var body = own ? esc(t.text) : (isReminder ? esc(t.text) : '<button type="button" class="lnk" ' + (t.kind === "automation" ? 'data-wid="' + esc(t.wid) + '"' : 'data-path="' + esc(t.path) + '"') + ">" + esc(t.text) + "</button>");
     var mv = own ? '<span class="mv">' + (bucket !== "today" ? '<button type="button" data-mv="today" title="오늘로">오늘</button>' : "") + (bucket !== "week" ? '<button type="button" data-mv="tomorrow" title="내일로">내일</button>' : "") + (bucket !== "someday" ? '<button type="button" data-mv="someday" title="언젠가로">언젠가</button>' : "") + '<button type="button" data-mv="remove" title="지우기">×</button></span>' : "";
     return '<li class="task' + (t.done ? " done" : "") + '" data-line="' + (own ? t.line : "") + '">' + (own ? '<input type="checkbox"' + (t.done ? " checked" : "") + ' aria-label="완료">' : '<span class="kind ' + esc(t.kind) + '">' + (KIND_KO[t.kind] || t.kind) + "</span>") +
       '<span class="tx">' + body + (meta ? "<small>" + meta + "</small>" : "") + "</span>" + mv + "</li>";

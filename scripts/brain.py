@@ -25,6 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import agenda as agenda_mod  # noqa: E402 - 일정 어댑터(같은 폴더)
 import mailer as mail_mod  # noqa: E402 - 메일 어댑터(IMAP 읽기 전용, 기본 꺼짐)
+import reminders as reminders_mod  # noqa: E402 - 미리알림 어댑터(맥 미리알림, 읽기 전용, 기본 꺼짐)
 
 VERSION = "0.1.0"
 
@@ -2289,12 +2290,32 @@ def derived_tasks(vault, today, widgets=None, agenda=None):
     return out
 
 
+def reminder_tasks(cfg, today):
+    """설정에서 켜져 있으면 맥 미리알림을 읽기 전용 할 일 항목(kind=reminder)으로 바꾼다.
+    실패해도 대시보드는 살아야 하므로 예외는 로그만 남기고 빈 목록을 준다."""
+    rcfg = cfg.get("reminders") if isinstance(cfg, dict) else None
+    if not isinstance(rcfg, dict) or not rcfg.get("enabled"):
+        return []
+    try:
+        items = reminders_mod.fetch_reminders(lists=rcfg.get("lists") or None)
+    except Exception as e:  # noqa: BLE001 - 미리알림 실패해도 대시보드는 살아야 한다
+        log(f"경고: 미리알림 수집 실패({type(e).__name__}: {e})")
+        return []
+    out = []
+    for r in items:
+        due = r.get("due")
+        days_left = (date.fromisoformat(due) - today).days if due and DATE_RE.match(str(due)) else None
+        out.append({"kind": "reminder", "text": r.get("title") or "(제목 없음)", "due": due, "days_left": days_left,
+                    "source": r.get("list") or "", "rid": r.get("id"), "done": False})
+    return out
+
+
 def dash_tasks(vault, today=None, widgets=None, agenda=None):
-    """/api/tasks. inbox 할 일 + 파생 할 일을 4묶음으로."""
+    """/api/tasks. inbox 할 일 + 파생 할 일 + 미리알림(켜져 있으면)을 4묶음으로."""
     today = today or date.today()
     own = parse_tasks(vault, today) if vault else []
     b = bucket_tasks(own, today)
-    for d in derived_tasks(vault, today, widgets, agenda):
+    for d in derived_tasks(vault, today, widgets, agenda) + reminder_tasks(load_config(), today):
         dl = d.get("days_left")
         if dl is not None and dl <= 0:
             b["today"].append(d)
@@ -2313,6 +2334,8 @@ def task_action(vault, body, today=None):
     """쓰기: add(text, due|someday|waiting|since|project) · check(line, done) · move(line, to: today|tomorrow|week|someday|clear) · remove(line)."""
     today = today or date.today()
     action = body.get("action")
+    if action == "check" and str(body.get("kind") or "") == "reminder":
+        raise BrainError("미리알림은 미리알림 앱에서 완료해 주세요")
     p = vault / "inbox.md"
     if not p.is_file():
         p.write_text("# inbox\n\n", encoding="utf-8")
@@ -2502,6 +2525,9 @@ def kakao_brief(t):
         parts.append(f"할 일 {len(own_today)}: " + ", ".join(x["text"][:14] for x in own_today[:2]) + (" 등" if len(own_today) > 2 else ""))
     elif tk.get("week") or tk.get("waiting") or tk.get("someday"):
         parts.append("할 일 오늘 0" + (f"·이번 주 {tk['week']}" if tk.get("week") else "") + (f"·언젠가 {tk['someday']}" if tk.get("someday") else "") + (f"·기다림 {tk['waiting']}" if tk.get("waiting") else ""))
+    rem_n = sum(1 for x in (t.get("tasks") or {}).get("today", []) + (t.get("tasks") or {}).get("week", []) + (t.get("tasks") or {}).get("someday", []) if x.get("kind") == "reminder")
+    if rem_n:
+        parts.append(f"미리알림 {rem_n}")
     if t["revisit"]:
         parts.append("되돌아볼 결정 " + ", ".join(f"{_short(d_['title'])[:16]}({_dleft(d_)})" for d_ in t["revisit"][:2]))
     w = t["this_week"]
@@ -5271,6 +5297,38 @@ def cmd_notify(args):
     return EXIT_OK if res["sent"] else EXIT_INPUT
 
 
+def cmd_reminders(args):
+    """맥 미리알림(읽기 전용): on [--lists A,B] · off · list · test. 기본 꺼짐(EventKit 캘린더와 같은 이유)."""
+    cfg = load_config()
+    rcfg = dict(cfg.get("reminders")) if isinstance(cfg.get("reminders"), dict) else {"enabled": False, "lists": []}
+    if args.action == "on":
+        rcfg["enabled"] = True
+        if args.lists:
+            rcfg["lists"] = split_csv(args.lists)
+        cfg["reminders"] = rcfg
+        save_config(cfg)
+        emit(args, rcfg, "미리알림 연결 켬" + (f" (목록: {', '.join(rcfg['lists'])})" if rcfg.get("lists") else " (모든 목록)")
+             + ". 처음 실행하면 권한 창이 떠요. `brain.py reminders test`로 확인해 보세요.")
+        return EXIT_OK
+    if args.action == "off":
+        rcfg["enabled"] = False
+        cfg["reminders"] = rcfg
+        save_config(cfg)
+        emit(args, rcfg, "미리알림 연결 끔")
+        return EXIT_OK
+    if args.action in ("list", "test"):
+        items = reminders_mod.fetch_reminders(lists=rcfg.get("lists") or None, force=True)
+        err = reminders_mod.LAST_ERROR
+        if args.action == "test":
+            emit(args, {"count": len(items), "error": err},
+                 f"미리알림 {len(items)}개 확인" if not err else f"미리알림 조회 실패: {err}")
+        else:
+            human = "\n".join(f"- [{x['list']}] {x['title']}" + (f" (마감 {x['due']})" if x.get("due") else "") for x in items)
+            emit(args, {"items": items, "error": err}, human or (f"미리알림 조회 실패: {err}" if err else "미리알림이 없어요."))
+        return EXIT_OK if not err else EXIT_INPUT
+    raise BrainError("action은 on · off · list · test 중 하나")
+
+
 def cmd_config(args):
     if args.action == "init-widgets":
         p, created = init_widgets_config()
@@ -5491,6 +5549,10 @@ def build_parser():
     s.add_argument("--path", help="ics: 로컬 .ics 파일")
     s.add_argument("--calendars", help="eventkit: 읽을 캘린더 이름(쉼표). 비우면 전부")
     s.add_argument("--days", type=int, default=7, help="test일 때 며칠치")
+
+    s = add("reminders", "맥 미리알림(읽기 전용): on [--lists A,B] · off · list · test", cmd_reminders)
+    s.add_argument("action", choices=("on", "off", "list", "test"))
+    s.add_argument("--lists", help="읽을 미리알림 목록 이름(쉼표). 비우면 전부")
     return p
 
 
