@@ -6628,7 +6628,7 @@ DEFAULT_AGENT_NAMES = [n for n in AGENT_SPECS if n != "serve"]
 
 # 위젯 자동 등록용 로그 판정 패턴(공용 vs serve 전용). serve의 시작 줄은 cmd_serve가 찍는 `http://127.0.0.1:<port>` 그대로다.
 _AGENT_STATUS_OK = "카톡 발송 완료|알릴 것 없음|발송|백업 완료|준비 제안|제안할 일정이 없어요|주간 회고|월간 회고|회고를 쓰지 않았어요"
-_AGENT_STATUS_FAIL = "Traceback|실패"
+_AGENT_STATUS_FAIL = "Traceback|발송 실패|알림 채널이 없어요|오류:|Error:"  # 본문 속 "실패" 단어(회고·브리핑 내용)로 오탐하지 않게
 _SERVE_STATUS_OK = r"http://127\.0\.0\.1:\d+"
 _SERVE_STATUS_FAIL = "Traceback|Address already in use|실패"
 
