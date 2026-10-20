@@ -29,6 +29,14 @@ Claude Code에서 두 줄이면 끝납니다.
 
 "대시보드 보여줘"(또는 `/second-brain:brain-view`) 한 번이면 `brain.py serve`가 내 컴퓨터에서만 서빙합니다. 외부 서비스·라이브러리 없이 HTML 파일 셋과 파이썬 하나입니다. `/report`는 인쇄용 주간 리포트 한 장입니다(아래 그림). 볼트가 없으면 `python3 scripts/brain.py serve --demo`로 가공 데이터 데모를 볼 수 있습니다. 데모는 실제 `~/.cache/second-brain` 캐시와 완전히 격리된 자기 캐시를 쓰며(오프라인), 오늘 일정 3개, 연체·기다림이 섞인 할 일 다섯 줄, 준비 체크리스트가 달린 회의, 장소(김포국제공항)와 동선 4단계·날씨 캐시가 붙은 출장, 자동화 4개(실패 1, 최근 7일 이력 포함), 대기 중인 제안 2건, 직원 요약과 코어 대화 기록까지 들어 있어 비서 기능을 그대로 만져 볼 수 있습니다.
 
+### 글 공방 `/studio`
+
+블로그 글을 쓰는 사람을 위한 네 번째 탭입니다. 오늘 떠오른 키워드를 한 줄씩 적어 두면(볼트의 `idea` 노트, 태그 `글감`), 고른 글감으로 헤드리스 Claude가 콘텐츠 허브의 `/blog-write` 스킬을 돌려 원본 1편을 씁니다. 원본이 나오면 이번 글에 맞는 플랫폼(브런치·링크드인·미디엄·네이버 블로그·네이버 카페)만 골라 변환하고, 제목·부제 글자수와 `**` 볼드·마크다운 잔존 같은 플랫폼 규칙을 배지로 검수합니다. 「본문 복사」로 각 플랫폼에 직접 옮긴 뒤 게시 주소를 남기면 기록 히트맵과 플랫폼별 막대에 쌓입니다. 자동 발행은 하지 않습니다.
+
+- 콘텐츠 폴더: 기본 `~/repo/project/content` (`writer/YYYY-MM-DD-slug[-platform].md` 규칙). 바꾸려면 설정 `studio_content_dir` 또는 환경 변수 `SECOND_BRAIN_STUDIO_DIR`
+- 실행 명령: 기본 `claude -p --output-format stream-json --verbose --permission-mode acceptEdits --allowedTools …`. 바꾸려면 설정 `studio_cmd` 또는 `SECOND_BRAIN_STUDIO_CMD`
+- 상태(글 묶음·게시 기록·작업 이력)는 `~/.cache/second-brain/studio.json` 하나, 원고는 md 파일이 원본입니다. 작업은 한 번에 하나씩 차례로 돌고, Claude 일일 호출 상한 설정을 따릅니다.
+
 ![데모 보드](web/preview-demo.png)
 
 ![주간 리포트](web/preview-report.png)

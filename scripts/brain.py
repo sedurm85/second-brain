@@ -29,6 +29,7 @@ import apple_notes as apple_notes_mod  # noqa: E402 - 애플 메모 어댑터(JX
 import mailer as mail_mod  # noqa: E402 - 메일 어댑터(IMAP 읽기 전용, 기본 꺼짐)
 import reminders as reminders_mod  # noqa: E402 - 미리알림 어댑터(맥 미리알림, 읽기 전용, 기본 꺼짐)
 import weather as weather_mod  # noqa: E402 - 날씨 어댑터(읽기 전용, 실패해도 일정 표시는 막지 않음)
+import studio as studio_mod  # noqa: E402 - 글 공방 탭(키워드→원본→플랫폼 변환·게시 기록)
 
 VERSION = "0.1.0"
 
@@ -3837,7 +3838,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             vault = self.server.vault
             if not vault_exists(vault) and route != "/api/ask":
                 return self._json(400, {"error": "볼트가 없어요. brain-setup으로 먼저 만들어 주세요"})
-            body = self._read_json()
+            body = self._read_json(limit=1_000_000 if route == "/api/studio/save" else 65536)  # 원고 저장은 본문 전체
             if route == "/api/event-note":
                 res = event_note_action(vault, body)
                 self.server.agenda_cache.invalidate()
@@ -3881,6 +3882,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     changed[k] = v
                 save_config(cfg)
                 return self._json(200, {"ok": True, "changed": changed})
+            if route.startswith("/api/studio/"):
+                try:
+                    r = studio_mod.handle_post(sys.modules[__name__], route, body, vault, self.server.studio)
+                except studio_mod.StudioError as e:
+                    return self._json(400, {"error": str(e)})
+                if r is not None:
+                    return self._json(200, r)
             if route == "/api/ask":
                 widgets = collect_widgets(self.server.widget_cache)
                 t = dash_today(vault, self.server.today, widgets=widgets, agenda=self.server.agenda_cache.get())
@@ -3926,6 +3934,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._static("office.html")
             if route in ("/report", "/report.html"):
                 return self._static("report.html")
+            if route in ("/studio", "/studio.html"):
+                return self._static("studio.html")
+            if route.startswith("/api/studio"):
+                try:
+                    r = studio_mod.handle_get(sys.modules[__name__], route, qs, vault)
+                except studio_mod.StudioError as e:
+                    return self._json(400, {"error": str(e)})
+                if r is not None:
+                    return self._json(200, r)
             if route == "/api/office":
                 d = dash_office(collect_widgets(self.server.widget_cache))
                 wcfg = load_widgets_config()
@@ -4039,6 +4056,7 @@ def make_server(vault, port=7777, web_dir=None, today=None, quiet=False):
     srv.today = today
     srv.quiet = quiet
     srv.widget_cache = WidgetCache()
+    srv.studio = studio_mod.JobRunner(sys.modules[__name__])  # 글 공방 헤드리스 작업(한 번에 하나씩)
     return srv
 
 
