@@ -58,11 +58,15 @@ class StudioUnitTest(unittest.TestCase):
         self.assertEqual(checks["title"]["level"], "ok")
 
     def test_remember_checks(self):
-        text = doc("보안팀장 16년차의 첫 허용", "보안팀장 16년차, 올해 처음으로 'AI 금지'를 풀었습니다.\n\n" + "가" * 1000)
+        text = doc("보안팀장 16년차의 첫 허용", "보안팀장 16년차, 올해 처음으로 'AI 금지'를 풀었습니다.\n\n" + "가" * 850)
         checks = {c["key"]: c for c in studio.check_doc(brain, text, "remember")}
         self.assertNotIn("title", checks)  # 리멤버엔 제목 칸이 없다
         self.assertEqual(checks["chars"]["level"], "ok")
         self.assertEqual(checks["markdown"]["level"], "ok")
+        self.assertEqual(checks["hashtags"]["level"], "ok")
+        long_tag = {c["key"]: c for c in studio.check_doc(brain, doc("t", "가" * 1200 + "\n\n#DevOps #커리어"), "remember")}
+        self.assertEqual(long_tag["chars"]["level"], "warn")  # 1,100자 넘으면 줄이기
+        self.assertEqual(long_tag["hashtags"]["label"], "해시태그 2개")
         bad = {c["key"]: c for c in studio.check_doc(brain, doc("t", "## 소제목\n" + "가" * 1600), "remember")}
         self.assertEqual(bad["chars"]["level"], "fail")
         self.assertEqual(bad["markdown"]["level"], "fail")

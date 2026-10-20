@@ -43,8 +43,8 @@ PLATFORMS = {
                    "tone": "해요체 검색형 가이드. 마크다운은 전부 빼고 이모지는 괜찮아요."},
     "naver-cafe": {"label": "네이버 카페", "title_max": 30, "body": (600, 1500), "hard_max": 1500, "plain": True,
                    "tone": "해요체 초요약, 1,500자 하드 리밋. 마크다운은 전부 빼요."},
-    "remember": {"label": "리멤버", "body": (900, 1300), "hard_max": 1500, "plain": True,
-                 "tone": "직장인 고민 하나를 팀장·CISO 현장 장면으로. 합니다체, 한 줄 한 문장, 마크다운은 빼요."},
+    "remember": {"label": "리멤버", "body": (800, 1100), "hard_max": 1500, "plain": True, "no_hashtags": True,
+                 "tone": "직장인 고민 하나를 팀장·CISO 현장 장면으로. 800~1,000자, 합니다체, 해시태그·마크다운 없이."},
 }
 PLATFORM_ORDER = ["brunch", "linkedin", "medium", "naver-blog", "naver-cafe", "remember"]
 FILE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-(.+?)(?:-(brunch|linkedin|medium|naver-blog|naver-cafe|remember))?\.md$")
@@ -187,6 +187,10 @@ def check_doc(api, text, platform=None, original_chars=None):
         hits = [name for name, rx in _MD_RESIDUE if rx.search(body)]
         out.append({"key": "markdown", "label": "마크다운 없음" if not hits else "마크다운 " + ", ".join(hits),
                     "level": "ok" if not hits else "fail", "detail": "네이버는 마크다운을 렌더링하지 않아요"})
+    if spec.get("no_hashtags"):
+        k = len(re.findall(r"(?:^|\s)#[^\s#]+", body))
+        out.append({"key": "hashtags", "label": "해시태그 없음" if not k else f"해시태그 {k}개",
+                    "level": "ok" if not k else "warn", "detail": "리멤버 피드는 해시태그를 거의 쓰지 않아요"})
     if spec.get("korean"):
         ko = len(re.findall(r"[가-힣]", body))
         en = len(re.findall(r"[A-Za-z]", body))
