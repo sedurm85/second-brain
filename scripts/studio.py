@@ -194,13 +194,46 @@ def check_doc(api, text, platform=None, original_chars=None):
     return out
 
 
-def thumbnail_prompt(body):
-    m = re.search(r"^##\s*Thumbnail Prompt\s*$(.*?)(?=^##\s|\Z)", body, re.M | re.S)
-    if not m:
-        return ""
-    t = m.group(1).strip()
-    t = re.sub(r"^```\w*\s*|\s*```$", "", t)
+_THUMB_HEAD = re.compile(r"^(#{2,3})\s*(?:Thumbnail Prompt\b[^\n]*|[^\n]*썸네일 프롬프트[^\n]*)$", re.M)
+
+
+def _clean_prompt(t):
+    """코드블록·인용(>)·「**Prompt**:」 표시와 감싼 따옴표를 떼고 붙여넣을 본문만."""
+    m = re.search(r"```[\w-]*\s*\n(.*?)\n?```", t, re.S)
+    t = (m.group(1) if m else t).strip()
+    t = re.sub(r"^\s*>\s?", "", t, flags=re.M)
+    t = re.sub(r"\*\*([^*\n]+)\*\*", r"\1", t).strip()  # 「**Style**:」 같은 볼드 표시는 이미지 도구에 필요 없다
+    t = re.sub(r"^Prompt\s*:\s*", "", t)
+    if len(t) > 1 and t[0] in "\"“" and t[-1] in "\"”":
+        t = t[1:-1]
     return t.strip()
+
+
+def thumbnail_options(body):
+    """썸네일 프롬프트 섹션 → [{label, prompt}]. 「### Option 1 …」로 나뉘면 안마다, 아니면 한 덩어리.
+    제목 변형: 「## Thumbnail Prompt」「## Thumbnail Prompt (AI Image Generation)」「### DALL-E 3 썸네일 프롬프트」."""
+    h = _THUMB_HEAD.search(body)
+    if not h:
+        return []
+    rest = body[h.end():]
+    # ## 제목이면 다음 ## 까지(안의 ### 는 안 나누기), ### 제목이면 다음 제목이나 --- 까지
+    stop = re.search(r"^##\s" if len(h.group(1)) == 2 else r"^(?:#{2,3}\s|-{3,}\s*$)", rest, re.M)
+    sec = (rest[:stop.start()] if stop else rest).strip()
+    parts = re.split(r"^#{3,4}\s+(.+)$", sec, flags=re.M) if len(h.group(1)) == 2 else [sec]
+    if len(parts) == 1:
+        t = _clean_prompt(sec)
+        return [{"label": "", "prompt": t}] if t else []
+    out = []
+    for label, chunk in zip(parts[1::2], parts[2::2]):
+        t = _clean_prompt(chunk)
+        if t:
+            out.append({"label": label.strip(), "prompt": t})
+    return out
+
+
+def thumbnail_prompt(body):
+    opts = thumbnail_options(body)
+    return opts[0]["prompt"] if opts else ""
 
 
 def copy_text(api, text, platform):
@@ -413,6 +446,7 @@ def piece_detail(api, pid):
             meta, body = split_doc(api, text)
             pc["original_chars"] = len(body)
             pc["thumbnail"] = thumbnail_prompt(body)
+            pc["thumbnails"] = thumbnail_options(body)
         except StudioError:
             pc["original_missing"] = True
     return pc

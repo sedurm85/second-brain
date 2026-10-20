@@ -91,6 +91,23 @@ class StudioUnitTest(unittest.TestCase):
     def test_thumbnail_prompt(self):
         self.assertEqual(studio.thumbnail_prompt("## Thumbnail Prompt\n```\n푸른 화면\n```\n"), "푸른 화면")
 
+    def test_thumbnail_options_split_and_strip(self):
+        fenced = ("## Thumbnail Prompt\n\n### Option 1 (Recommended) — 다섯 문\n\n```\n돌 관문 16:9\n```\n\n"
+                  "### Option 2 (Alternative) — 다섯 강\n\n```text\n강 삼각주 16:9\n```\n\n## 다음\n무시")
+        self.assertEqual(studio.thumbnail_options(fenced), [
+            {"label": "Option 1 (Recommended) — 다섯 문", "prompt": "돌 관문 16:9"},
+            {"label": "Option 2 (Alternative) — 다섯 강", "prompt": "강 삼각주 16:9"}])
+        bare = "## Thumbnail Prompt\n### A안\n첫 장면\n### B안\n둘째 장면\n"
+        self.assertEqual([o["prompt"] for o in studio.thumbnail_options(bare)], ["첫 장면", "둘째 장면"])
+        self.assertEqual(studio.thumbnail_options("## Thumbnail Prompt\n그냥 한 덩어리\n"), [{"label": "", "prompt": "그냥 한 덩어리"}])
+        self.assertEqual(studio.thumbnail_options("## Sources\n1. a"), [])
+        ai = "## Thumbnail Prompt (AI Image Generation)\n\nStyle: 네온\n\nPrompt: 로봇 가재\n\n## 끝"
+        self.assertEqual(studio.thumbnail_options(ai), [{"label": "", "prompt": "Style: 네온\n\nPrompt: 로봇 가재"}])
+        dalle = '### DALL-E 3 썸네일 프롬프트\n\n> **Prompt**: "A dramatic illustration"\n\n---\n\n*기준일*'
+        self.assertEqual(studio.thumbnail_options(dalle), [{"label": "", "prompt": "A dramatic illustration"}])
+        bold = "## Thumbnail Prompt\n**Style:** 영화풍\n**Prompt:** 대장간"
+        self.assertEqual(studio.thumbnail_options(bold)[0]["prompt"], "Style: 영화풍\nPrompt: 대장간")
+
 
 class StudioServeTest(unittest.TestCase):
 

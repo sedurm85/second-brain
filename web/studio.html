@@ -211,8 +211,11 @@ label.field { display: block; font-size: 12px; color: var(--ink-2); margin: 10px
 .editor-bar .tools { margin-left: auto; display: flex; gap: 6px; }
 textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--font-sans); padding: 16px 18px; tab-size: 2; }
 .thumb { margin: 0 20px 14px; padding: 12px 14px; border: 1px dashed var(--rule-strong); border-radius: var(--r); }
-.thumb h3 { font-size: 12px; margin: 0 0 6px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
-.thumb p { margin: 0; font-size: 13px; color: var(--ink-2); white-space: pre-wrap; max-height: 5.4em; overflow: auto; }
+.thumb h3 { font-size: 12px; margin: 0 0 8px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
+.thumb-opt + .thumb-opt { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule); }
+.thumb-label { font-size: 12px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+.thumb-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+.thumb p { margin: 0; font-size: 13px; color: var(--ink-2); white-space: pre-wrap; max-height: 7.2em; overflow: auto; overflow-wrap: anywhere; }
 
 .empty { padding: 48px 28px; text-align: left; max-width: 520px; }
 .empty h2 { font-size: 18px; margin: 0 0 8px; }
@@ -613,7 +616,7 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
       el.innerHTML = '<div id="msTop"></div><div id="msBody"></div>';
     }
     $("msTop").innerHTML = msTop(d);
-    var bodySig = (d.original || "") + "|" + (d.thumbnail || "") + "|" + (d.jobs || []).some(isRunning);
+    var bodySig = (d.original || "") + "|" + JSON.stringify(d.thumbnails || []) + "|" + (d.jobs || []).some(isRunning);
     if (el.dataset.body !== bodySig) { el.dataset.body = bodySig; $("msBody").innerHTML = msBody(d); if (d.original) fillEditor(d); }
     if (S.origText && S.detailFor === d.original) renderOrigBadges(S.origText.checks);
   }
@@ -641,7 +644,13 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
     if (!d.original) {
       return running ? "" : '<div class="empty"><p>원본이 아직 없어요.</p><div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" type="button" id="rewrite">원본 다시 맡기기</button><button class="btn ghost" type="button" id="delPiece">이 글 지우기</button></div></div>';
     }
-    return (d.thumbnail ? '<div class="thumb"><h3>썸네일 프롬프트 <button class="btn ghost sm" type="button" id="thumbCopy">복사</button></h3><p>' + esc(d.thumbnail) + "</p></div>" : "") +
+    var th = d.thumbnails || [];
+    return (th.length ? '<div class="thumb"><h3>썸네일 프롬프트' + (th.length > 1 ? ' <span class="hint">' + th.length + "개 안</span>" : "") +
+      '<a class="btn ghost sm" href="https://gemini.google.com/app" target="_blank" rel="noopener" style="margin-left:auto">Gemini 열기 ↗</a></h3>' +
+      th.map(function (o, i) {
+        return '<div class="thumb-opt">' + (o.label ? '<div class="thumb-label">' + esc(o.label) + "</div>" : "") +
+          '<div class="thumb-row"><p>' + esc(o.prompt) + '</p><button class="btn sm" type="button" data-thumb="' + i + '">복사</button></div></div>';
+      }).join("") + "</div>" : "") +
       '<div class="editor-wrap"><div class="editor-bar"><span class="path mono">' + esc(d.original) + '</span><span class="dirty" id="dirty" hidden>저장 안 됨</span>' +
       '<span class="tools"><button class="btn sm" type="button" id="origCopy">본문 복사</button><button class="btn sm primary" type="button" id="save" disabled>저장 ⌘S</button></span></div>' +
       '<label class="sr-only" for="manuscript">원본 원고</label><textarea class="manuscript" id="manuscript" spellcheck="false" placeholder="원본을 불러오는 중"></textarea></div>';
@@ -789,6 +798,7 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
     if (b.dataset.hide) return post("keyword-hide", { id: b.dataset.hide }).then(function () { S.sel.delete(b.dataset.hide); toast("숨겼어요. 노트는 볼트에 그대로 있어요"); return load(); }).catch(fail);
     if (b.dataset.import) { busy(b, true); return post("import", { path: b.dataset.import }).then(function (r) { return load().then(function () { select(r.piece.id); }); }).catch(function (e2) { busy(b, false); fail(e2); }); }
     if (b.dataset.tab) { S.tab = b.dataset.tab; S.variant = null; S.editing = false; renderPf(); loadVariant(); return; }
+    if (b.dataset.thumb) return copy(S.detail.thumbnails[+b.dataset.thumb].prompt, b);
     if (b.dataset.stop) return post("stop", { id: b.dataset.stop }).then(function () { toast("멈췄어요"); return load(); }).catch(fail);
     switch (b.id) {
       case "selGo": if (S.dirty) return confirmLeave(); if (S.cur) setUrl(null, true); S.compose = true; S.cur = null; S.detail = null; renderStages(); renderMs(); renderPf(); $("msPanel").scrollIntoView({ behavior: "smooth", block: "start" }); return;
@@ -797,7 +807,7 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
       case "delPiece":
         if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "한 번 더 누르면 지워요"; setTimeout(function () { b.dataset.armed = ""; b.textContent = "이 글 지우기"; }, 4000); return; }
         return post("delete", { id: S.cur }).then(function () { setUrl(null, false); showMain(); toast("지웠어요(파일은 그대로)"); return load(); }).catch(fail);
-      case "thumbCopy": return copy(S.detail.thumbnail, b);
+      case "": break;
       case "origCopy": return copy($("manuscript").value.replace(/^---[\s\S]*?\n---\n+/, ""), b);
       case "save": busy(b, true); return post("save", { path: S.detail.original, text: $("manuscript").value }).then(function () {
         S.dirty = false; S.draft = null; S.origText = null; $("dirty").hidden = true; busy(b, false, "저장됨"); b.disabled = true; loadOriginal(); }).catch(function (e2) { busy(b, false); fail(e2); });
