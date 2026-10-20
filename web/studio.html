@@ -664,13 +664,23 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
     var b = $("msBadges"); if (!b) return;
     b.innerHTML = (checks || []).map(function (c) { return '<span class="badge ' + c.level + '" title="' + esc(c.detail) + '">' + esc(c.label) + "</span>"; }).join("");
   }
+  function composeChips(ks) {
+    return ks.length ? '<label class="field">고른 글감</label><div class="chipset">' + ks.map(function (k) { return '<span class="chip">' + esc(k.title) + "</span>"; }).join("") + "</div>" : "";
+  }
   function renderCompose(el) {
     var ks = S.data.keywords.filter(function (k) { return S.sel.has(k.id); });
     var first = ks[0] ? ks[0].title : "";
+    if ($("composeForm")) {  // 이미 열린 폼은 다시 그리지 않는다: 폴링·글감 체크가 쓰던 메모와 커서를 날리지 않게
+      $("cChips").innerHTML = composeChips(ks);
+      var t = $("cTitle");
+      if (t.dataset.auto === "1" && document.activeElement !== t) t.value = first;  // 손대지 않은 주제만 첫 글감을 따라간다
+      return;
+    }
+    el.dataset.piece = "";
     el.innerHTML = '<form class="pad" id="composeForm" style="padding:22px 22px 26px"><h2 style="margin:0 0 4px;font-size:18px">원본 맡기기</h2>' +
       '<p class="hint" style="margin:0 0 6px">/blog-write 스킬이 리서치부터 원본 1편(10,000자 이상, 출처 15개 이상)까지 써요. 변환과 발행은 하지 않아요.</p>' +
-      (ks.length ? '<label class="field">고른 글감</label><div class="chipset">' + ks.map(function (k) { return '<span class="chip">' + esc(k.title) + "</span>"; }).join("") + "</div>" : "") +
-      '<label class="field" for="cTitle">주제</label><input type="text" id="cTitle" maxlength="160" required autocomplete="off" value="' + esc(first) + '">' +
+      '<div id="cChips">' + composeChips(ks) + "</div>" +
+      '<label class="field" for="cTitle">주제</label><input type="text" id="cTitle" maxlength="160" required autocomplete="off" data-auto="1" value="' + esc(first) + '">' +
       '<label class="field" for="cBrief">방향 메모 (선택)</label><textarea id="cBrief" rows="5" placeholder="누구에게, 어떤 관점으로, 꼭 넣고 싶은 경험이나 사례…"></textarea>' +
       '<div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit" id="cGo">원본 쓰기 시작</button><button class="btn ghost" type="button" id="cCancel">취소</button></div></form>';
     $("cTitle").focus(); $("cTitle").select();
@@ -760,6 +770,7 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
   document.addEventListener("input", function (e) {
     if (e.target.id === "manuscript") { S.dirty = true; S.draft = e.target.value; $("save").disabled = false; $("dirty").hidden = false; }
     if (e.target.id === "rq") { S.rq = e.target.value; renderRecent(); }
+    if (e.target.id === "cTitle") e.target.dataset.auto = "";
   });
   document.addEventListener("keydown", function (e) {
     if ((e.metaKey || e.ctrlKey) && e.key === "s" && document.activeElement && (document.activeElement.id === "manuscript" || document.activeElement.id === "vEdit")) {
