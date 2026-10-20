@@ -57,6 +57,17 @@ class StudioUnitTest(unittest.TestCase):
         self.assertIn("제목 기호 #", checks["markdown"]["label"])
         self.assertEqual(checks["title"]["level"], "ok")
 
+    def test_remember_checks(self):
+        text = doc("보안팀장 16년차의 첫 허용", "보안팀장 16년차, 올해 처음으로 'AI 금지'를 풀었습니다.\n\n" + "가" * 1000)
+        checks = {c["key"]: c for c in studio.check_doc(brain, text, "remember")}
+        self.assertNotIn("title", checks)  # 리멤버엔 제목 칸이 없다
+        self.assertEqual(checks["chars"]["level"], "ok")
+        self.assertEqual(checks["markdown"]["level"], "ok")
+        bad = {c["key"]: c for c in studio.check_doc(brain, doc("t", "## 소제목\n" + "가" * 1600), "remember")}
+        self.assertEqual(bad["chars"]["level"], "fail")
+        self.assertEqual(bad["markdown"]["level"], "fail")
+        self.assertEqual(studio.FILE_RE.match("2026-10-20-ai-ban-remember.md").group(3), "remember")
+
     def test_title_limit_counts_every_char(self):
         text = doc("가" * 31, "본문")
         checks = {c["key"]: c for c in studio.check_doc(brain, text, "naver-blog")}
@@ -127,6 +138,7 @@ class StudioServeTest(unittest.TestCase):
         (w / "backup").mkdir(parents=True)
         (w / "2026-10-01-old-post.md").write_text(doc("예전 원본", "본문"), encoding="utf-8")
         (w / "2026-10-01-old-post-naver-cafe.md").write_text(doc("예전 카페", "카페 본문"), encoding="utf-8")
+        (w / "2026-10-01-old-post-remember.md").write_text(doc("예전 리멤버", "리멤버 본문"), encoding="utf-8")
         (w / "backup" / "2026-03-10-ancient.md").write_text(doc("백업 원본", "옛 본문"), encoding="utf-8")
         (w / "notes.txt").write_text("무시", encoding="utf-8")
         fake = self.home / "fake_claude.py"
@@ -185,10 +197,10 @@ class StudioServeTest(unittest.TestCase):
         d = self.get("/api/studio")
         self.assertTrue(d["content_ok"])
         stems = {r["stem"]: r for r in d["recent"]}
-        self.assertEqual(stems["2026-10-01-old-post"]["platforms"], ["naver-cafe"])
+        self.assertEqual(stems["2026-10-01-old-post"]["platforms"], ["naver-cafe", "remember"])
         self.assertEqual(stems["2026-10-01-old-post"]["title"], "예전 원본")
         self.assertTrue(stems["2026-03-10-ancient"]["backup"])
-        self.assertEqual(d["history"]["per_day"]["2026-10-01"], 2)
+        self.assertEqual(d["history"]["per_day"]["2026-10-01"], 3)
         self.assertEqual(d["history"]["per_platform"]["naver-cafe"], 1)
         self.assertEqual([p["key"] for p in d["platforms"]], studio.PLATFORM_ORDER)
 
@@ -256,7 +268,8 @@ class StudioServeTest(unittest.TestCase):
         self.assertEqual(a["title"], "예전 원본")
         self.post("/api/studio/import", {"path": "writer/2026-10-01-old-post-naver-cafe.md"}, status=400)
         d = self.get(f"/api/studio/piece?id={a['id']}")
-        self.assertEqual(d["files"], {"naver-cafe": "writer/2026-10-01-old-post-naver-cafe.md"})
+        self.assertEqual(d["files"], {"naver-cafe": "writer/2026-10-01-old-post-naver-cafe.md",
+                                      "remember": "writer/2026-10-01-old-post-remember.md"})
 
     def test_path_guards(self):
         self.get("/api/studio/file?path=../brain/BRAIN.md", status=400)

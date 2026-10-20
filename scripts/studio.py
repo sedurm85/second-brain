@@ -43,9 +43,11 @@ PLATFORMS = {
                    "tone": "해요체 검색형 가이드. 마크다운은 전부 빼고 이모지는 괜찮아요."},
     "naver-cafe": {"label": "네이버 카페", "title_max": 30, "body": (600, 1500), "hard_max": 1500, "plain": True,
                    "tone": "해요체 초요약, 1,500자 하드 리밋. 마크다운은 전부 빼요."},
+    "remember": {"label": "리멤버", "body": (900, 1300), "hard_max": 1500, "plain": True,
+                 "tone": "직장인 고민 하나를 팀장·CISO 현장 장면으로. 합니다체, 한 줄 한 문장, 마크다운은 빼요."},
 }
-PLATFORM_ORDER = ["brunch", "linkedin", "medium", "naver-blog", "naver-cafe"]
-FILE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-(.+?)(?:-(brunch|linkedin|medium|naver-blog|naver-cafe))?\.md$")
+PLATFORM_ORDER = ["brunch", "linkedin", "medium", "naver-blog", "naver-cafe", "remember"]
+FILE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-(.+?)(?:-(brunch|linkedin|medium|naver-blog|naver-cafe|remember))?\.md$")
 _MD_RESIDUE = [
     ("제목 기호 #", re.compile(r"^\s{0,3}#{1,6}\s", re.M)),
     ("구분선 ---", re.compile(r"^\s*-{3,}\s*$", re.M)),
@@ -239,7 +241,7 @@ def thumbnail_prompt(body):
 def copy_text(api, text, platform):
     """게시판에 붙여넣을 본문: 프론트매터를 떼고, 원본 제목(H1)은 제목 칸에 따로 넣으니 뺀다."""
     _, body = split_doc(api, text)
-    if platform in ("naver-blog", "naver-cafe", "brunch", "linkedin"):
+    if platform in ("naver-blog", "naver-cafe", "brunch", "linkedin", "remember"):
         body = re.sub(r"\A#\s+.+\n+", "", body)
     return body.strip() + "\n"
 
