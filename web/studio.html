@@ -455,7 +455,7 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
       S.data = d;
       if (S.cur && !d.pieces.some(function (p) { return p.id === S.cur; })) {  // 지워진 글의 주소로 들어왔다
         S.cur = null; S.detail = null;
-        try { history.replaceState(null, "", "/studio"); } catch (e) { console.error("[글 공방] 주소 갱신 불가", e); }
+        setUrl(null, false);
       }
       renderAll();
       if (S.cur) return loadDetail(S.cur, true);
@@ -724,11 +724,22 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
   function renderAll() { renderTop(); renderKw(); renderStages(); renderRecent(); renderRecords(); if (!S.cur) { renderMs(); renderPf(); } }
 
   /* ───── 이벤트 ───── */
-  function select(id) {
+  function setUrl(id, push) {  // 글을 여는 건 기록을 쌓고(뒤로 가기로 메인 복귀), 정리성 이동은 덮어쓴다
+    var url = id ? "/studio?piece=" + encodeURIComponent(id) : "/studio";
+    if (location.pathname + location.search === url) return;
+    try { history[push ? "pushState" : "replaceState"]({ piece: id || null }, "", url); }
+    catch (e) { console.error("[글 공방] 주소 갱신 불가", e); }
+  }
+  function showMain() {  // 글 공방 메인(고른 글 없음)
+    S.compose = false; S.cur = null; S.detail = null; S.variant = null; S.tab = null; S.pick = new Set();
+    S.origText = null; S.dirty = false; S.draft = null; S.sigMs = null; S.sigPf = null; $("ms").dataset.piece = "";
+    renderStages(); renderMs(); renderPf();
+  }
+  function select(id, fromHistory) {
     if (S.dirty && !confirmLeave()) return;
     S.compose = false; S.cur = id; S.detail = null; S.variant = null; S.tab = null; S.pick = new Set(); S.origText = null; S.dirty = false;
     S.draft = null; S.sigMs = null; S.sigPf = null; $("ms").dataset.piece = "";
-    try { history.replaceState(null, "", "/studio?piece=" + encodeURIComponent(id)); } catch (e) { console.error("[글 공방] 주소 갱신 불가", e); }
+    if (!fromHistory) setUrl(id, true);
     renderStages(); $("ms").innerHTML = '<p class="hint pad">불러오는 중…</p>'; loadDetail(id);
     if (window.matchMedia("(max-width: 1180px)").matches) $("msPanel").scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -769,12 +780,12 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
     if (b.dataset.tab) { S.tab = b.dataset.tab; S.variant = null; S.editing = false; renderPf(); loadVariant(); return; }
     if (b.dataset.stop) return post("stop", { id: b.dataset.stop }).then(function () { toast("멈췄어요"); return load(); }).catch(fail);
     switch (b.id) {
-      case "selGo": if (S.dirty) return confirmLeave(); S.compose = true; S.cur = null; S.detail = null; renderStages(); renderMs(); renderPf(); $("msPanel").scrollIntoView({ behavior: "smooth", block: "start" }); return;
+      case "selGo": if (S.dirty) return confirmLeave(); if (S.cur) setUrl(null, true); S.compose = true; S.cur = null; S.detail = null; renderStages(); renderMs(); renderPf(); $("msPanel").scrollIntoView({ behavior: "smooth", block: "start" }); return;
       case "cCancel": S.compose = false; renderMs(); renderPf(); return;
       case "rewrite": busy(b, true); return post("rewrite", { id: S.cur }).then(function () { toast("원본을 다시 맡겼어요"); return load(); }).catch(function (e2) { busy(b, false); fail(e2); });
       case "delPiece":
         if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "한 번 더 누르면 지워요"; setTimeout(function () { b.dataset.armed = ""; b.textContent = "이 글 지우기"; }, 4000); return; }
-        return post("delete", { id: S.cur }).then(function () { S.cur = null; S.detail = null; toast("지웠어요(파일은 그대로)"); return load().then(function () { renderMs(); renderPf(); }); }).catch(fail);
+        return post("delete", { id: S.cur }).then(function () { setUrl(null, false); showMain(); toast("지웠어요(파일은 그대로)"); return load(); }).catch(fail);
       case "thumbCopy": return copy(S.detail.thumbnail, b);
       case "origCopy": return copy($("manuscript").value.replace(/^---[\s\S]*?\n---\n+/, ""), b);
       case "save": busy(b, true); return post("save", { path: S.detail.original, text: $("manuscript").value }).then(function () {
@@ -800,6 +811,11 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
     }).catch(function (e2) { busy(btn, false); fail(e2); });
   });
 
+  window.addEventListener("popstate", function () {  /* 뒤로·앞으로 가기: 주소의 글을 연다(없으면 메인) */
+    var id = new URLSearchParams(location.search).get("piece");
+    if (S.dirty) { setUrl(S.cur, true); confirmLeave(); return; }  // 저장 안 한 원고는 지키고 주소를 되돌린다
+    if (id) { if (id !== S.cur) select(id, true); } else showMain();
+  });
   setInterval(function () {  /* 작업 경과 시간만 1초마다 고친다(나머지는 폴링이 그린다) */
     document.querySelectorAll("[data-since]").forEach(function (n) { n.textContent = ago(n.dataset.since) + " 경과"; });
   }, 1000);
