@@ -3175,19 +3175,19 @@ def parse_inbox(vault):
 
 
 TASK_LINE_RE = re.compile(r"^(\s*[-*]\s+\[)( |x|X)(\]\s+)(.*)$")
-TAG_RE = re.compile(r"@(due|since|waiting|project)\(([^)]*)\)|@(someday|today|tomorrow)\b")
+TAG_RE = re.compile(r"@(due|since|waiting|project|done)\(([^)]*)\)|@(someday|today|tomorrow)\b")
 
 
 def parse_task_line(text):
     """'- [ ] 세무사 답장 @waiting(세무사) @since(2026-09-28)' 의 본문 부분을 태그와 내용으로."""
-    tags = {"due": None, "someday": False, "waiting": None, "since": None, "project": None}
+    tags = {"due": None, "someday": False, "waiting": None, "since": None, "project": None, "done": None}
     def take(m):
         k, v, bare = m.group(1), m.group(2), m.group(3)
         if bare == "someday":
             tags["someday"] = True
         elif bare in ("today", "tomorrow"):
             tags["due"] = bare  # 상대 표현은 호출자가 날짜로 바꿈
-        elif k in ("due", "since"):
+        elif k in ("due", "since", "done"):
             tags[k] = (v or "").strip()[:10]
         elif k == "waiting":
             tags["waiting"] = (v or "").strip() or "?"
@@ -3219,7 +3219,7 @@ def parse_tasks(vault, today=None):
         if due and not DATE_RE.match(due):
             due = None
         out.append({"line": i, "text": body, "done": m.group(2).lower() == "x", "due": due, "someday": tags["someday"],
-                    "waiting": tags["waiting"], "since": tags["since"], "project": tags["project"], "raw": ln, "kind": "task"})
+                    "waiting": tags["waiting"], "since": tags["since"], "project": tags["project"], "done_at": tags["done"], "raw": ln, "kind": "task"})
     return out
 
 
@@ -3375,8 +3375,12 @@ def task_action(vault, body, today=None):
         raise BrainError("할 일 줄이 아니에요(inbox.md가 바뀌었을 수 있어요. 새로 고쳐 주세요)")
     m = TASK_LINE_RE.match(lines[i])
     if action == "check":
-        mark = "x" if body.get("done", True) else " "
-        lines[i] = f"{m.group(1)}{mark}{m.group(3)}{m.group(4)}"
+        done = body.get("done", True)
+        mark = "x" if done else " "
+        rest = re.sub(r"\s*@done\([^)]*\)", "", m.group(4)).rstrip()
+        if done:
+            rest += f" @done({today.isoformat()})"  # 완료 날짜: 일지가 '오늘 끝낸 일'만 집도록
+        lines[i] = f"{m.group(1)}{mark}{m.group(3)}{rest}"
     elif action == "move":
         to = str(body.get("to") or "")
         rest = TAG_RE.sub(lambda mm: "" if mm.group(1) in ("due",) or mm.group(3) in ("someday", "today", "tomorrow") else mm.group(0), m.group(4))
@@ -6996,7 +7000,7 @@ def journal_material(vault, today, widgets=None, agenda=None):
     weather_today = next((e["weather"]["summary"] for e in (ag.get("today") or []) if e.get("weather")), None)
     tb = dash_tasks(vault, today, widgets or [], ag) if vault else {"done_recent": [], "today": []}
     is_today = today == date.today()
-    done = [x["text"] for x in tb.get("done_recent") or []][-6:] if is_today else []  # 완료 시각이 없어 오늘 일지에만 넣는다
+    done = [x["text"] for x in tb.get("done_recent") or [] if x.get("done_at") == day][-6:]  # @done(오늘)인 것만(날짜 없는 옛 체크는 제외)
     own_open = lambda b: [x["text"] for x in tb.get(b) or [] if x.get("kind") == "task" and not x.get("done")]
     left = (own_open("today") or own_open("week") or own_open("someday"))[:5]  # 내일 첫 일 후보: 오늘 남은 것 → 이번 주 → 언젠가
     bad = [f"{w['title']}: {w.get('summary') or w['status']}" for w in (widgets or []) if w.get("state") != "paused" and w.get("status") in ("fail", "stale")][:4]
