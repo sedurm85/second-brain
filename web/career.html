@@ -277,7 +277,8 @@ label.fl { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
     var pos = d.positions.filter(function (p) { return !S.filter || p.status === S.filter; });
     $("posCount").textContent = d.positions.length + "건" + (S.filter ? " · " + S.filter + "만 " + pos.length : "");
     $("posGroups").innerHTML = GROUPS.map(function (g) {
-      var items = pos.filter(function (p) { return g.st.indexOf(p.status) >= 0; });
+      var items = pos.filter(function (p) { return g.st.indexOf(p.status) >= 0; })
+        .sort(function (a, b) { return (g.st.indexOf(a.status) - g.st.indexOf(b.status)) || ((a.due_left == null ? 999 : a.due_left) - (b.due_left == null ? 999 : b.due_left)) || ((b.score || 0) - (a.score || 0)); });
       if (!items.length && (S.filter || g.fold)) return "";
       var inner = items.length ? '<div class="cards">' + items.map(card).join("") + "</div>" : '<p class="empty">없어요.</p>';
       var head = "<h3>" + esc(g.label) + ' <span class="count">' + items.length + "</span></h3>";
