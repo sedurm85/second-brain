@@ -30,6 +30,7 @@ import mailer as mail_mod  # noqa: E402 - 메일 어댑터(IMAP 읽기 전용, �
 import reminders as reminders_mod  # noqa: E402 - 미리알림 어댑터(맥 미리알림, 읽기 전용, 기본 꺼짐)
 import weather as weather_mod  # noqa: E402 - 날씨 어댑터(읽기 전용, 실패해도 일정 표시는 막지 않음)
 import studio as studio_mod  # noqa: E402 - 글 공방 탭(키워드→원본→플랫폼 변환·게시 기록)
+import career as career_mod  # noqa: E402 - 커리어 탭(포지션 파이프라인·헤드헌터·내 자산, career/ 폴더)
 
 VERSION = "0.1.0"
 
@@ -41,7 +42,7 @@ NOTE_TYPES = ("note", "idea", "source", "meeting", "event", "journal")
 ALL_TYPES = NOTE_TYPES + ("decision", "project", "person")
 DECISION_STATUSES = ("open", "decided", "superseded")
 SKIP_FILES = {"BRAIN.md", "inbox.md"}
-SKIP_DIRS = {".git", ".obsidian", ".trash", "node_modules", "_demo", "_templates", "_attachments"}
+SKIP_DIRS = {".git", ".obsidian", ".trash", "node_modules", "_demo", "_templates", "_attachments", "career"}  # career/는 커리어 탭 전용(보드·검색·인덱스 제외)
 
 DEFAULT_CONFIG = {"vault": "~/brain", "git_autocommit": False, "index_head": 40, "claude_hourly_limit": 40}
 
@@ -3593,6 +3594,8 @@ def kakao_brief(t):
         parts.append((2, f"자동화 정상 {t['widgets_summary']['ok']}", None))
     if (t.get("suggestions") or {}).get("count"):
         parts.append((3, f"준비 제안 {t['suggestions']['count']}건(보드에서 채택)", None))
+    if t.get("career_due"):  # 헤드헌터 답장·포지션 다음 할 일 기한(이틀 안)
+        parts.append((2, career_mod.due_sentence(t["career_due"]), lambda x: career_mod.due_sentence(t["career_due"], 1)))
     tk = (t.get("tasks") or {}).get("counts") or {}
     own_today = [x for x in (t.get("tasks") or {}).get("today", []) if x.get("kind") == "task"]
     if own_today:
@@ -3731,6 +3734,11 @@ def dash_today(vault, today=None, now=None, widgets=None, agenda=None):
     own = lambda b: [x["text"] for x in tb[b] if x.get("kind") == "task"]
     t["inbox"] = own("today") or (own("week") + own("someday"))[:6] or t["inbox"]
     pend = pending_suggestions(today=today)
+    try:
+        t["career_due"] = career_mod.due_items(sys.modules[__name__], vault, today, within=1) if vault else []
+    except Exception as e:  # noqa: BLE001 - 커리어 데이터 문제로 브리핑이 죽지 않게
+        log(f"경고: 커리어 기한 읽기 실패({e})")
+        t["career_due"] = []
     t["suggestions"] = {"count": len(pend), "by_key": {k: {"items": s["items"], "created": s.get("created")} for k, s in pend.items()}}
     t["kakao"] = kakao_brief(t)
     return t
@@ -3886,6 +3894,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     changed[k] = v
                 save_config(cfg)
                 return self._json(200, {"ok": True, "changed": changed})
+            if route.startswith("/api/career/"):
+                try:
+                    r = career_mod.handle_post(sys.modules[__name__], route, body, vault)
+                except career_mod.CareerError as e:
+                    return self._json(400, {"error": str(e)})
+                if r is not None:
+                    return self._json(200, r)
             if route.startswith("/api/studio/"):
                 try:
                     r = studio_mod.handle_post(sys.modules[__name__], route, body, vault, self.server.studio)
@@ -3940,6 +3955,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._static("report.html")
             if route in ("/studio", "/studio.html"):
                 return self._static("studio.html")
+            if route in ("/career", "/career.html"):
+                return self._static("career.html")
+            if route == "/api/career" or route.startswith("/api/career/"):
+                try:
+                    r = career_mod.handle_get(sys.modules[__name__], route, qs, vault)
+                except career_mod.CareerError as e:
+                    return self._json(400, {"error": str(e)})
+                if r is not None:
+                    return self._json(200, r)
             if route.startswith("/api/studio"):
                 try:
                     r = studio_mod.handle_get(sys.modules[__name__], route, qs, vault)
@@ -4467,6 +4491,87 @@ def cmd_widgets(args):
         age = "" if w["age_minutes"] is None else f" ({w['age_minutes']}분 전)"
         lines.append(f"[{w['status'].upper()}] {w['title']} — {w['summary']}{age}")
     print("\n".join(lines))
+    return EXIT_OK
+
+
+def _career_kv(pairs, allowed):
+    out = {}
+    for kv in pairs:
+        if "=" not in kv:
+            raise BrainError(f"k=v 형식이 아니에요: {kv}")
+        k, v = kv.split("=", 1)
+        k = k.strip().replace("-", "_")
+        if k not in allowed and k not in ("fit", "gap"):
+            raise BrainError(f"바꿀 수 없는 항목: {k} (가능: {', '.join(allowed)}, fit, gap)")
+        out[k] = v
+    return out
+
+
+def cmd_career(args):
+    """커리어 탭과 같은 데이터(볼트 career/)를 터미널·대화에서 다룬다."""
+    v = require_vault()
+    api = sys.modules[__name__]
+    a = list(args.args or [])
+    try:
+        if args.action == "list":
+            pos = career_mod.list_positions(api, v)
+            if args.status:
+                pos = [p for p in pos if p["status"] == args.status]
+            lines = [f"[{p['status']}] {p['id']} · {p['title']}" + (f" · {p['score']}점" if p["score"] is not None else "")
+                     + (f" · 다음: {p['next_action']} {p['next_due']}" if p["next_action"] else "") for p in pos]
+            emit(args, pos, "\n".join(lines) or "포지션이 없어요. `career add --company …`")
+        elif args.action == "show":
+            p = career_mod._position_payload(api, career_mod._find(v, "position", a[0] if a else ""), date.today(), with_body=True)
+            emit(args, p, json.dumps(p, ensure_ascii=False, indent=1))
+        elif args.action == "add":
+            data = {"company": args.company, "role": args.role, "status": args.status or "발견", "score": args.score, "source": args.source,
+                    "url": args.url, "location": args.location, "contact": args.contact, "next_action": args.next_action,
+                    "next_due": args.due, "revisit_trigger": args.trigger, "summary": args.summary, "fit": args.fit, "gap": args.gap}
+            p = career_mod.add_position(api, v, {k: x for k, x in data.items() if x is not None})
+            emit(args, p, f"포지션 추가: {p['id']} ({p['status']})")
+        elif args.action == "set":
+            if not a:
+                raise BrainError("career set <id> 항목=값 …")
+            p = career_mod.update_position(api, v, a[0], _career_kv(a[1:], career_mod.POSITION_FIELDS), args.note)
+            emit(args, p, f"수정: {p['id']} ({p['status']})")
+        elif args.action == "status":
+            if len(a) < 2:
+                raise BrainError("career status <id> <" + "|".join(career_mod.STATUSES) + ">")
+            p = career_mod.update_position(api, v, a[0], {"status": a[1]}, args.note or " ".join(a[2:]) or None)
+            emit(args, p, f"상태: {p['id']} → {p['status']}")
+        elif args.action == "log":
+            if len(a) < 2:
+                raise BrainError("career log <id> <내용>")
+            p = career_mod.update_position(api, v, a[0], {}, " ".join(a[1:]))
+            emit(args, p, f"기록: {p['id']}")
+        elif args.action == "delete":
+            career_mod.delete_position(api, v, a[0] if a else "")
+            emit(args, {"ok": True}, "삭제했어요")
+        elif args.action == "contact":
+            sub = a[0] if a else "list"
+            if sub == "list":
+                cs = career_mod.list_contacts(api, v)
+                emit(args, cs, "\n".join(f"[{c['status']}] {c['id']} · {c['title']}" + (f" · 답장 {c['reply_due']}" if c["reply_due"] else "") for c in cs) or "연락처가 없어요")
+            elif sub == "add":
+                data = {"name": args.name, "firm": args.firm, "channel": args.channel, "status": args.status or "응대중",
+                        "reply_due": args.reply_due, "positions": args.positions, "summary": args.summary, "memo": args.memo}
+                c = career_mod.add_contact(api, v, {k: x for k, x in data.items() if x is not None})
+                emit(args, c, f"연락처 추가: {c['id']}")
+            elif sub == "set":
+                c = career_mod.update_contact(api, v, a[1], _career_kv(a[2:], career_mod.CONTACT_FIELDS), args.note)
+                emit(args, c, f"수정: {c['id']}")
+            elif sub == "log":
+                c = career_mod.update_contact(api, v, a[1], {}, " ".join(a[2:]))
+                emit(args, c, f"기록: {c['id']}")
+            else:
+                raise BrainError("career contact list|add|set|log")
+        elif args.action == "due":
+            items = career_mod.due_items(api, v, within=7)
+            emit(args, items, "\n".join(f"{x['due']} (D{x['days_left']:+d}) {x['who']} · {x['what']}" for x in items) or "7일 안 기한 없음")
+        elif args.action == "profile":
+            emit(args, {"text": career_mod.read_profile(v)}, career_mod.read_profile(v))
+    except career_mod.CareerError as e:
+        raise BrainError(str(e))
     return EXIT_OK
 
 
@@ -8575,6 +8680,13 @@ def build_parser():
 
     add("today", "오늘 브리핑: 일정·되돌아볼 결정·자동화 상태·inbox·이번 주 신규(+카톡용 200자)", cmd_today)
     add("widgets", "위젯(~/.config/second-brain/widgets.json) 상태 조회", cmd_widgets)
+
+    s = add("career", "커리어 탭 데이터: list · show <id> · add · set <id> k=v… · status <id> <상태> · log <id> <내용> · contact list|add|set|log · due · profile", cmd_career)
+    s.add_argument("action", choices=("list", "show", "add", "set", "status", "log", "delete", "contact", "due", "profile"))
+    s.add_argument("args", nargs="*", help="id·상태·내용·k=v 또는 contact의 하위 동작(list|add|set|log)과 인자")
+    for f in ("company", "role", "status", "score", "source", "url", "location", "contact", "next-action", "due", "trigger", "summary", "fit", "gap", "note",
+              "name", "firm", "channel", "reply-due", "positions", "memo"):
+        s.add_argument("--" + f)
 
     s = add("widget", "위젯(자동화 직원) 채용·이동·이름변경·설정변경·퇴사·정지·재개·실행·요약·조회·목록. 터미널이라 allow_run/allow_hire를 건너뛴다", cmd_widget)
     s.add_argument("action", choices=("add", "move", "rename", "set", "remove", "pause", "resume", "run", "brief", "show", "list"))

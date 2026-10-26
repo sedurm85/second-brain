@@ -595,3 +595,10 @@ Claude와 대화하다 "이거 기억해둬"라고 하면 마크다운 볼트에
 - `@media (max-width: 560px)`에 툴바를 별도 줄로 내리는 `.header-tools { flex-basis: 100% }`, 이번 주 그리드를 1열로 접는 `.week` 규칙 교체, `.ev-form`/`.ev-sug .row`에 `flex-wrap: wrap`(입력은 `flex:1 1 100%`로 줄바꿈), `.icon-btn`(40×40)·`.chip`/`.s-chip`·`.text-btn`·토스트 버튼·체크박스 탭 타깃 확대를 추가. `.ev-status`에는 미디어 쿼리 밖에서 `min-width:0`(공용 안전장치)만 보탰다. 데스크톱 CSS는 손대지 않음
 - 지식 그래프·자동화·개요·결정 보드·타임라인·일지·사람·프로젝트 섹션은 기존에 이미 1열 반응형·`text-overflow`·`columns` 다단으로 잘 대응돼 있어 추가 수정 없이 확인만 함
 - 검증: 재스크린샷으로 검색창 70px→194px, 닫기 버튼 36→40px 확인. `document.documentElement.scrollWidth`가 `/`·노트 패널 열림·일정 패널 열림 모두 390 이하. `node -e "new Function(...)"`로 인라인 스크립트 문법 확인. `tests/e2e/test_board.py`에 `test_09_mobile_nav_scrolls_and_tasks_stack` 추가(390px에서 `.nav`가 `overflow-x:auto`+`nowrap`으로 가로 스크롤, `.tasks`의 `grid-template-columns`가 트랙 1개). 전체 스위트 613 통과(기존 612 + 신규 1)
+
+## v0.32 커리어 탭 (2026-10-26)
+
+- `/career` 별도 탭: 포지션 파이프라인(발견·검토·진행·지원·면접·오퍼·보류·안함·종료, 카드에서 바로 상태 선택), 핏 점수·출처·다음 할 일·기한·보류 재평가 조건·핏 분석/갭·기록, 헤드헌터 연락부(소속·채널·답장 기한·연결 포지션·기록), 잡스카우트 결과/매니저 리포트 읽기(「카드로」 올리기), 내 자산 메모
+- 데이터는 볼트 `career/`(positions/, contacts/, profile.md) 마크다운. `career`를 SKIP_DIRS에 넣어 보드·검색·그래프·BRAIN.md 인덱스에서 뺀다(재직 중 이직 정보 노출 방지)
+- `scripts/career.py` + `/api/career*`(쓰기는 세션 토큰), CLI `brain.py career list|show|add|set|status|log|contact|due|profile`, 이틀 안 기한은 아침 카톡에 「커리어 … D-1」 한 줄
+- 자동 갱신은 목록만 다시 그리고 열린 서랍·편집 중인 폼은 건드리지 않는다
