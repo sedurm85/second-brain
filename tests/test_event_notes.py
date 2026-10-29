@@ -9,13 +9,16 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import agenda  # noqa: E402
 import brain  # noqa: E402
+import agenda  # noqa: E402,F401 - 시계 고정 대상
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _clock  # noqa: E402
 
 KST = ZoneInfo("Asia/Seoul")
 ICS = """BEGIN:VCALENDAR
@@ -47,6 +50,7 @@ END:VCALENDAR
 
 class EventNoteTest(unittest.TestCase):
     def setUp(self):
+        self._unfreeze = _clock.freeze(date(2026, 9, 30))
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
         self._old = {k: os.environ.get(k) for k in ("HOME", "XDG_CACHE_HOME", "SECOND_BRAIN_VAULT", "SECOND_BRAIN_OFFLINE")}
@@ -67,6 +71,7 @@ class EventNoteTest(unittest.TestCase):
         self.now = datetime(2026, 9, 30, 9, 0, tzinfo=KST)
 
     def tearDown(self):
+        self._unfreeze()
         for k, v in self._old.items():
             if v is None:
                 os.environ.pop(k, None)

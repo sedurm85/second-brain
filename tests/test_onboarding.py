@@ -18,12 +18,16 @@ import io
 import json
 import os
 import sys
+from datetime import date
 import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import brain  # noqa: E402
+import agenda  # noqa: E402,F401 - 시계 고정 대상
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _clock  # noqa: E402
 
 
 def _run(argv):
@@ -44,6 +48,7 @@ class OnboardingFirstTenMinutesTest(unittest.TestCase):
                 "SECOND_BRAIN_NO_LAUNCHCTL", "SECOND_BRAIN_OFFLINE")
 
     def setUp(self):
+        self._unfreeze = _clock.freeze(date(2026, 9, 30))
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
         self._old = {k: os.environ.get(k) for k in self.ENV_KEYS}
@@ -59,6 +64,7 @@ class OnboardingFirstTenMinutesTest(unittest.TestCase):
         self.vault = self.home / "brain"
 
     def tearDown(self):
+        self._unfreeze()
         for k, v in self._old.items():
             if v is None:
                 os.environ.pop(k, None)

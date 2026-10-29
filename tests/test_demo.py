@@ -11,10 +11,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import brain  # noqa: E402
+import agenda  # noqa: E402,F401 - 시계 고정 대상
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _clock  # noqa: E402
 
 
 class DemoTest(unittest.TestCase):
     def setUp(self):
+        self._unfreeze = _clock.freeze(date(2026, 9, 30))
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
         self._old = {k: os.environ.get(k) for k in ("HOME", "XDG_CACHE_HOME", "SECOND_BRAIN_VAULT", "SECOND_BRAIN_JOBS_DIR", "SECOND_BRAIN_OFFLINE")}
@@ -26,6 +30,7 @@ class DemoTest(unittest.TestCase):
         brain.CONFIG_OVERRIDES.clear()
 
     def tearDown(self):
+        self._unfreeze()
         brain.CONFIG_OVERRIDES.clear()
         for k, v in self._old.items():
             if v is None:

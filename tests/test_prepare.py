@@ -8,11 +8,14 @@ import tempfile
 import threading
 import unittest
 import urllib.request
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import brain  # noqa: E402
+import agenda  # noqa: E402,F401 - 시계 고정 대상
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _clock  # noqa: E402
 
 KST = timezone(timedelta(hours=9))
 ICS = """BEGIN:VCALENDAR
@@ -42,6 +45,7 @@ END:VCALENDAR
 
 class PrepareTest(unittest.TestCase):
     def setUp(self):
+        self._unfreeze = _clock.freeze(date(2026, 9, 30))
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
         self._old = {k: os.environ.get(k) for k in ("HOME", "XDG_CACHE_HOME", "SECOND_BRAIN_VAULT", "SECOND_BRAIN_ASK_CMD", "SECOND_BRAIN_OFFLINE")}
@@ -71,6 +75,7 @@ print("```json\\n" + json.dumps(out, ensure_ascii=False) + "\\n```")
         self.today = datetime(2026, 9, 30, 9, 0, tzinfo=KST).date()
 
     def tearDown(self):
+        self._unfreeze()
         for k, v in self._old.items():
             if v is None:
                 os.environ.pop(k, None)

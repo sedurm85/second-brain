@@ -14,6 +14,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import brain  # noqa: E402
+import agenda  # noqa: E402,F401 - 시계 고정 대상
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _clock  # noqa: E402
 
 TODAY = date(2026, 9, 30)
 
@@ -26,6 +29,7 @@ class ServeTestCase(unittest.TestCase):
     """볼트: 프로젝트 1, 사람 1, 노트 3, 결정 3(open 1·decided 1·superseded 1)."""
 
     def setUp(self):
+        self._unfreeze = _clock.freeze(TODAY)
         self.tmp = tempfile.mkdtemp()
         self.home = Path(os.path.realpath(self.tmp))
         self._old_home = os.environ.get("HOME")
@@ -66,6 +70,7 @@ class ServeTestCase(unittest.TestCase):
         self.srv.server_close()
 
     def tearDown(self):
+        self._unfreeze()
         self.stop()
         if self._old_home is not None:
             os.environ["HOME"] = self._old_home
@@ -277,11 +282,13 @@ class StaticTest(ServeTestCase):
 
 class DemoVaultTest(unittest.TestCase):
     def setUp(self):
+        self._unfreeze = _clock.freeze(TODAY)
         self.tmp = tempfile.mkdtemp()
         self._old_home = os.environ.get("HOME")
         os.environ["HOME"] = os.path.realpath(self.tmp)
 
     def tearDown(self):
+        self._unfreeze()
         if self._old_home is not None:
             os.environ["HOME"] = self._old_home
         shutil.rmtree(self.tmp, ignore_errors=True)

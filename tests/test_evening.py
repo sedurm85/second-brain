@@ -15,12 +15,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import brain  # noqa: E402
+import agenda  # noqa: E402,F401 - 시계 고정 대상
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _clock  # noqa: E402
 
 TODAY = date(2026, 9, 30)
 
 
 class EveningTest(unittest.TestCase):
     def setUp(self):
+        self._unfreeze = _clock.freeze(TODAY)
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
         self._old = {k: os.environ.get(k) for k in ("HOME", "XDG_CACHE_HOME", "SECOND_BRAIN_VAULT", "SECOND_BRAIN_ASK_CMD", "SECOND_BRAIN_OFFLINE")}
@@ -45,6 +49,7 @@ class EveningTest(unittest.TestCase):
         (self.vault / "inbox.md").write_text("# inbox\n\n- [ ] 보고서 초안 @due(2026-09-29)\n- [ ] 치과 예약 @due(2026-09-30) @project(건강)\n- [ ] 세무사 답장 @waiting(세무사)\n- [ ] 언젠가 @someday\n- [x] 끝 @due(2026-09-30)\n", encoding="utf-8")
 
     def tearDown(self):
+        self._unfreeze()
         for k, v in self._old.items():
             if v is None:
                 os.environ.pop(k, None)
