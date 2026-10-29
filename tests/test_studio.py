@@ -24,7 +24,13 @@ FAKE_CLAUDE = textwrap.dedent('''
     if "FAIL_PLEASE" in prompt:
         out({"type": "result", "is_error": True, "result": "일부러 실패"})
         sys.exit(1)
-    if prompt.startswith("/blog-write"):
+    if "원본을 다시 써 주세요" in prompt:
+        path = re.search(r"대상 파일: (\\S+\\.md)", prompt).group(1)
+        if "KEEP_SAME" not in prompt:
+            time.sleep(1.1)
+            Path(path).write_text('---\\ntitle: "다시 쓴 원본"\\n---\\n\\n새 본문\\n', encoding="utf-8")
+        out({"type": "result", "is_error": False, "result": "STUDIO_FILE: " + path})
+    elif prompt.startswith("/blog-write"):
         out({"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "WebSearch", "input": {"query": "에이전트 보안"}}]}})
         body = "# 가짜 원본\\n\\n" + ("본문 " * 40) + "\\n\\n## Sources\\n1. a\\n2. b\\n\\n## Thumbnail Prompt\\n```\\n푸른 16:9 썸네일\\n```\\n"
         Path("writer/2026-10-20-fake-topic.md").write_text('---\\ntitle: "가짜 원본"\\ndate: 2026-10-20\\n---\\n\\n' + body, encoding="utf-8")
@@ -257,6 +263,35 @@ class StudioServeTest(unittest.TestCase):
         d, job = self.wait_job(a["id"])
         self.assertEqual(job["status"], "failed")
         self.assertIn("하나도", job["error"])
+
+    def test_redraft_revise_snapshot_restore_and_stale(self):
+        a = self.post("/api/studio/import", {"path": "writer/2026-10-01-old-post.md"})["piece"]
+        orig = self.content / "writer/2026-10-01-old-post.md"
+        before = orig.read_text(encoding="utf-8")
+        self.post("/api/studio/redraft", {"id": a["id"], "mode": "revise", "note": ""}, status=400)  # 고치기는 방향 필수
+        self.post("/api/studio/redraft", {"id": a["id"], "mode": "weird", "note": "x"}, status=400)
+        self.post("/api/studio/redraft", {"id": a["id"], "mode": "revise", "note": "도입을 내 경험으로"})
+        d, job = self.wait_job(a["id"])
+        self.assertEqual(job["status"], "done", job)
+        self.assertEqual(job["kind"], "redraft")
+        self.assertEqual(job["mode"], "revise")
+        self.assertIn("다시 쓴 원본", orig.read_text(encoding="utf-8"))
+        self.assertEqual(len(d["versions"]), 1)
+        self.assertEqual(d["versions"][0]["label"], "다시 쓰기 전")
+        self.assertEqual(sorted(d["stale"]), ["naver-cafe", "remember"])  # 변환본은 예전 원고 기준
+        self.post("/api/studio/restore", {"id": a["id"], "name": "../../etc/passwd"}, status=400)
+        self.post("/api/studio/restore", {"id": a["id"], "name": d["versions"][0]["name"]})
+        self.assertEqual(orig.read_text(encoding="utf-8"), before)
+        self.assertEqual(self.get(f"/api/studio/piece?id={a['id']}")["stale"], [])  # 변환본을 만든 원고로 돌아왔다
+        d2 = self.get(f"/api/studio/piece?id={a['id']}")
+        self.assertEqual([v["label"] for v in d2["versions"]], ["되돌리기 전", "다시 쓰기 전"])
+
+    def test_redraft_unchanged_file_is_failure(self):
+        a = self.post("/api/studio/import", {"path": "writer/2026-10-01-old-post.md"})["piece"]
+        self.post("/api/studio/redraft", {"id": a["id"], "mode": "fresh", "note": "KEEP_SAME"})
+        d, job = self.wait_job(a["id"])
+        self.assertEqual(job["status"], "failed")
+        self.assertIn("바뀌지 않았어요", job["error"])
 
     def test_failed_job_reports_error(self):
         pc = self.post("/api/studio/piece", {"title": "FAIL_PLEASE"})["piece"]

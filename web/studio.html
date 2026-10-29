@@ -217,6 +217,24 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
 .thumb-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; }
 .thumb p { margin: 0; font-size: 13px; color: var(--ink-2); white-space: pre-wrap; max-height: 7.2em; overflow: auto; overflow-wrap: anywhere; }
 
+.redraft { margin: 0 20px 14px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface-2); }
+.redraft > summary { cursor: pointer; padding: 10px 14px; font-weight: 600; font-size: 13px; display: flex; gap: 8px; align-items: center; list-style: none; }
+.redraft > summary::-webkit-details-marker { display: none; }
+.redraft > summary::before { content: "▸"; color: var(--muted); transition: transform 160ms var(--ease-out); }
+.redraft[open] > summary::before { transform: rotate(90deg); }
+.rd-body { padding: 0 14px 14px; }
+.rd-mode { border: 0; padding: 0; margin: 0; display: grid; gap: 6px; }
+.rd-mode label { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; cursor: pointer; font-size: 13px; }
+.rd-mode label .t { white-space: nowrap; font-weight: 500; }
+.rd-mode label .hint { flex-basis: 100%; padding-left: 22px; }
+.rd-mode input { accent-color: var(--accent); }
+.rd-ver { margin-top: 14px; border-top: 1px solid var(--rule); padding-top: 10px; }
+.rd-ver h4 { margin: 0 0 6px; font-size: 12px; color: var(--ink-2); }
+.rd-row { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 12px; color: var(--ink-2); padding: 4px 0; }
+.rd-row > span { white-space: nowrap; }
+.rd-row .btn { margin-left: auto; }
+.pp .st.stale { color: var(--st-warn); }
+textarea.manuscript[readonly] { opacity: .65; cursor: not-allowed; }
 .empty { padding: 48px 28px; text-align: left; max-width: 520px; }
 .empty h2 { font-size: 18px; margin: 0 0 8px; }
 .empty p { color: var(--ink-2); margin: 0 0 6px; }
@@ -471,7 +489,7 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
       S.detail = d;
       if (!S.tab || !d.files[S.tab]) S.tab = Object.keys(d.files)[0] || null;
       var sigMs = JSON.stringify([d.stage, d.original, d.thumbnail, (d.jobs || []).map(function (j) { return [j.id, j.status, j.steps.length, j.error]; })]);
-      var sigPf = JSON.stringify([d.files, d.posts, (d.jobs || []).some(isRunning)]);
+      var sigPf = JSON.stringify([d.files, d.posts, d.stale, (d.jobs || []).some(isRunning)]);
       if (sigMs !== S.sigMs) { S.sigMs = sigMs; renderMs(); }
       if (sigPf !== S.sigPf) { S.sigPf = sigPf; renderPf(); }
       if (S.tab && (changed || !S.variant || S.variant.path !== d.files[S.tab])) loadVariant();
@@ -494,7 +512,7 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
     el.className = "top-status" + (run.length ? " busy" : "");
     if (run.length) {
       var j = run[0], pc = d.pieces.find(function (p) { return p.id === j.piece_id; });
-      $("topStatusText").textContent = (j.kind === "write" ? "원본 쓰는 중" : "변환 중") + " · " + (pc ? pc.title : "") + (run.length > 1 ? " 외 " + (run.length - 1) + "건 대기" : "");
+      $("topStatusText").textContent = ({ write: "원본 쓰는 중", redraft: "원본 다시 쓰는 중" }[j.kind] || "변환 중") + " · " + (pc ? pc.title : "") + (run.length > 1 ? " 외 " + (run.length - 1) + "건 대기" : "");
     } else { $("topStatusText").textContent = "대기 중"; }
     var today = d.today, kwToday = d.keywords.filter(function (k) { return k.created === today; }).length;
     var by = { drafting: 0, original: 0, adapted: 0, posted: 0 };
@@ -616,7 +634,7 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
       el.innerHTML = '<div id="msTop"></div><div id="msBody"></div>';
     }
     $("msTop").innerHTML = msTop(d);
-    var bodySig = (d.original || "") + "|" + JSON.stringify(d.thumbnails || []) + "|" + (d.jobs || []).some(isRunning);
+    var bodySig = (d.original || "") + "|" + (d.original_mtime || "") + "|" + (d.versions || []).length + "|" + JSON.stringify(d.thumbnails || []) + "|" + (d.jobs || []).some(isRunning);
     if (el.dataset.body !== bodySig) { el.dataset.body = bodySig; $("msBody").innerHTML = msBody(d); if (d.original) fillEditor(d); }
     if (S.origText && S.detailFor === d.original) renderOrigBadges(S.origText.checks);
   }
@@ -632,15 +650,29 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
     html += '<div class="badges" id="msBadges"></div></div>';
     if (job && (running || job.status === "failed" || job.status === "stopped" || (job.status === "done" && isRecent(job.ended)))) {
       html += '<div class="joblog' + (job.status === "failed" ? " failed" : "") + '"><header>' + (running ? '<span class="spin"></span>' : "") +
-        "<span>" + (job.kind === "write" ? "원본 작성" : "변환 · " + job.platforms.map(function (k) { return plat(k).label; }).join(", ")) + " · " + jobState(job.status) + "</span>" +
+        "<span>" + (job.kind === "write" ? "원본 작성" : job.kind === "redraft" ? (job.mode === "fresh" ? "처음부터 다시 쓰기" : "원고 고치기") : "변환 · " + job.platforms.map(function (k) { return plat(k).label; }).join(", ")) + " · " + jobState(job.status) + "</span>" +
         '<span class="el mono"' + (running && job.started ? ' data-since="' + esc(job.started) + '"' : "") + ">" + (running && job.started ? ago(job.started) : "") + (running ? ' 경과</span><button class="btn ghost sm" type="button" data-stop="' + esc(job.id) + '">멈추기</button>' : "</span>") + "</header>" +
         "<ol>" + (job.steps.length ? job.steps.slice(-14).map(function (s) { return "<li>" + esc(s) + "</li>"; }).join("") : "<li>" + (running ? "준비 중…" : "남은 단계 기록 없음") + "</li>") + "</ol>" +
         (job.error ? '<div class="err">' + esc(job.error) + "</div>" : "") + "</div>";
     }
     return html;
   }
+  function redraftBox(d, running) {
+    if (running) return "";
+    var vs = d.versions || [];
+    return '<details class="redraft" id="rdBox"><summary>원본 다시 쓰기 <span class="hint">Claude에게 다시 맡겨요</span></summary><div class="rd-body">' +
+      '<fieldset class="rd-mode"><legend class="sr-only">다시 쓰기 방식</legend>' +
+      '<label><input type="radio" name="rdMode" value="revise" checked> <span class="t">지금 원고 고치기</span> <span class="hint">적은 방향대로 손봐요. 나머지 사실·출처는 그대로</span></label>' +
+      '<label><input type="radio" name="rdMode" value="fresh"> <span class="t">처음부터 다시 쓰기</span> <span class="hint">같은 주제로 새로 써요(리서치 포함 10~25분)</span></label></fieldset>' +
+      '<label class="field" for="rdNote">바꿀 방향</label><textarea id="rdNote" rows="4" placeholder="예: 도입을 내 경험 장면으로 바꾸고, 4장은 절반으로 줄여 주세요…"></textarea>' +
+      '<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button class="btn primary sm" type="button" id="rdGo">다시 쓰기 맡기기</button><span class="hint">덮어쓰기 전 원고는 따로 보관돼요</span></div>' +
+      (vs.length ? '<div class="rd-ver"><h4>이전 원고 ' + vs.length + "개</h4>" + vs.map(function (v) {
+        return '<div class="rd-row"><span class="mono">' + esc(v.at) + "</span><span>" + esc(v.label) + '</span><span class="mono">' + v.chars.toLocaleString() + '자</span><button class="btn ghost sm" type="button" data-restore="' + esc(v.name) + '">이 원고로 되돌리기</button></div>';
+      }).join("") + "</div>" : "") + "</div></details>";
+  }
   function msBody(d) {
     var running = (d.jobs || []).some(isRunning);
+    var rewriting = (d.jobs || []).some(function (j) { return isRunning(j) && j.kind === "redraft"; });
     if (!d.original) {
       return running ? "" : '<div class="empty"><p>원본이 아직 없어요.</p><div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" type="button" id="rewrite">원본 다시 맡기기</button><button class="btn ghost" type="button" id="delPiece">이 글 지우기</button></div></div>';
     }
@@ -650,15 +682,16 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
       th.map(function (o, i) {
         return '<div class="thumb-opt">' + (o.label ? '<div class="thumb-label">' + esc(o.label) + "</div>" : "") +
           '<div class="thumb-row"><p>' + esc(o.prompt) + '</p><button class="btn sm" type="button" data-thumb="' + i + '">복사</button></div></div>';
-      }).join("") + "</div>" : "") +
+      }).join("") + "</div>" : "") + redraftBox(d, running) +
       '<div class="editor-wrap"><div class="editor-bar"><span class="path mono">' + esc(d.original) + '</span><span class="dirty" id="dirty" hidden>저장 안 됨</span>' +
+      (rewriting ? '<span class="hint" style="color:var(--st-warn)">다시 쓰는 중이라 잠겼어요</span>' : "") +
       '<span class="tools"><button class="btn sm" type="button" id="origCopy">본문 복사</button><button class="btn sm primary" type="button" id="save" disabled>저장 ⌘S</button></span></div>' +
-      '<label class="sr-only" for="manuscript">원본 원고</label><textarea class="manuscript" id="manuscript" spellcheck="false" placeholder="원본을 불러오는 중"></textarea></div>';
+      '<label class="sr-only" for="manuscript">원본 원고</label><textarea class="manuscript" id="manuscript" spellcheck="false" placeholder="원본을 불러오는 중"' + (rewriting ? " readonly" : "") + "></textarea></div>";
   }
   function fillEditor(d) {
     if (S.dirty && S.draft != null && S.detailFor === d.original) { $("manuscript").value = S.draft; $("save").disabled = false; $("dirty").hidden = false; }
-    else if (S.origText && S.detailFor === d.original) $("manuscript").value = S.origText.text;
-    else loadOriginal();
+    else if (S.origText && S.detailFor === d.original && S.origText.mtime === d.original_mtime) $("manuscript").value = S.origText.text;
+    else loadOriginal();  // 다시 쓰기·되돌리기로 파일이 바뀌었으면 새로 읽는다
   }
   function isRecent(iso) { return iso && (Date.now() - new Date(iso).getTime()) < 10 * 60 * 1000; }
   function jobState(s) { return { queued: "대기", running: "진행 중", done: "끝남", failed: "실패", stopped: "멈춤" }[s] || s; }
@@ -706,7 +739,7 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
       var have = files[p.key], posted = posts[p.key] && posts[p.key].posted;
       return '<label class="pp" style="--c:' + pvar(p.key) + '"><span class="bar"></span><input type="checkbox" data-pick="' + p.key + '"' + (S.pick.has(p.key) ? " checked" : "") + (d.original ? "" : " disabled") + '>' +
         '<span><span class="nm">' + esc(p.label) + '</span><br><span class="tone">' + esc(p.tone) + "</span></span>" +
-        '<span class="st' + (have ? " have" : "") + '">' + (posted ? "게시함" : have ? "있음" : "없음") + "</span></label>";
+        '<span class="st' + (have ? ((d.stale || []).indexOf(p.key) >= 0 && !posted ? " stale" : " have") : "") + '" title="' + ((d.stale || []).indexOf(p.key) >= 0 ? "원고가 이 변환본보다 나중에 바뀌었어요" : "") + '">' + (posted ? "게시함" : have ? ((d.stale || []).indexOf(p.key) >= 0 ? "다시 변환 필요" : "있음") : "없음") + "</span></label>";
     }).join("") + "</fieldset>" +
       '<div class="adapt-go"><label class="sr-only" for="aNote">변환 추가 요청</label><input type="text" id="aNote" placeholder="예: 링크드인은 팀장 시점으로 (선택)…" autocomplete="off">' +
       '<button class="btn primary" type="button" id="adapt"' + (d.original && !running && S.pick.size ? "" : " disabled") + ">" +
@@ -798,11 +831,25 @@ textarea.manuscript { min-height: 62vh; resize: vertical; font: 14px/1.85 var(--
     if (b.dataset.hide) return post("keyword-hide", { id: b.dataset.hide }).then(function () { S.sel.delete(b.dataset.hide); toast("숨겼어요. 노트는 볼트에 그대로 있어요"); return load(); }).catch(fail);
     if (b.dataset.import) { busy(b, true); return post("import", { path: b.dataset.import }).then(function (r) { return load().then(function () { select(r.piece.id); }); }).catch(function (e2) { busy(b, false); fail(e2); }); }
     if (b.dataset.tab) { S.tab = b.dataset.tab; S.variant = null; S.editing = false; renderPf(); loadVariant(); return; }
+    if (b.dataset.restore) {
+      if (S.dirty) return confirmLeave();
+      if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "한 번 더 누르면 되돌려요"; setTimeout(function () { b.dataset.armed = ""; b.textContent = "이 원고로 되돌리기"; }, 4000); return; }
+      busy(b, true);
+      return post("restore", { id: S.cur, name: b.dataset.restore }).then(function () {
+        toast("이전 원고로 되돌렸어요(지금 원고도 보관해 뒀어요)"); S.origText = null; S.sigMs = null; return loadDetail(S.cur); }).catch(function (e2) { busy(b, false); fail(e2); });
+    }
     if (b.dataset.thumb) return copy(S.detail.thumbnails[+b.dataset.thumb].prompt, b);
     if (b.dataset.stop) return post("stop", { id: b.dataset.stop }).then(function () { toast("멈췄어요"); return load(); }).catch(fail);
     switch (b.id) {
       case "selGo": if (S.dirty) return confirmLeave(); if (S.cur) setUrl(null, true); S.compose = true; S.cur = null; S.detail = null; renderStages(); renderMs(); renderPf(); $("msPanel").scrollIntoView({ behavior: "smooth", block: "start" }); return;
       case "cCancel": S.compose = false; renderMs(); renderPf(); return;
+      case "rdGo": {
+        if (S.dirty) return confirmLeave();
+        var mode = (document.querySelector('input[name="rdMode"]:checked') || {}).value || "revise";
+        busy(b, true);
+        return post("redraft", { id: S.cur, mode: mode, note: $("rdNote").value }).then(function () {
+          toast(mode === "revise" ? "원고 고치기를 맡겼어요" : "처음부터 다시 쓰기를 맡겼어요"); S.sigMs = null; S.sigPf = null; return load(); }).catch(function (e2) { busy(b, false); fail(e2); });
+      }
       case "rewrite": busy(b, true); return post("rewrite", { id: S.cur }).then(function () { toast("원본을 다시 맡겼어요"); return load(); }).catch(function (e2) { busy(b, false); fail(e2); });
       case "delPiece":
         if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "한 번 더 누르면 지워요"; setTimeout(function () { b.dataset.armed = ""; b.textContent = "이 글 지우기"; }, 4000); return; }

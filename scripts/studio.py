@@ -451,6 +451,10 @@ def piece_detail(api, pid):
             text = _resolve(api, pc["original"]).read_text(encoding="utf-8", errors="replace")
             meta, body = split_doc(api, text)
             pc["original_chars"] = len(body)
+            om = (content_dir(api) / pc["original"]).stat().st_mtime
+            pc["original_mtime"] = om
+            pc["stale"] = [k for k, rel in pc["files"].items() if (content_dir(api) / rel).stat().st_mtime < om - 1]
+            pc["versions"] = list_versions(api, pc)
             pc["thumbnail"] = thumbnail_prompt(body)
             pc["thumbnails"] = thumbnail_options(body)
         except StudioError:
@@ -468,7 +472,7 @@ def read_file(api, rel, platform=None):
         orig = target.parent / f"{m.group(1)}-{m.group(2)}.md" if m else None
         if orig and orig.is_file():
             orig_chars = len(split_doc(api, orig.read_text(encoding="utf-8", errors="replace"))[1])
-    return {"path": _rel(api, target), "text": text, "title": str(meta.get("title") or ""),
+    return {"path": _rel(api, target), "text": text, "title": str(meta.get("title") or ""), "mtime": target.stat().st_mtime,
             "subtitle": str(meta.get("subtitle") or ""), "chars": len(body),
             "checks": check_doc(api, text, platform, orig_chars),
             "copy": copy_text(api, text, platform) if platform else body + "\n",
@@ -505,6 +509,86 @@ def write_prompt(pc, keywords):
         "마지막 줄에 반드시 `STUDIO_FILE: writer/파일명.md` 형식으로 만든 파일 경로를 적어 주세요.",
     ]
     return "\n".join(lines)
+
+
+REDRAFT_MODES = {"revise": "지금 원고 고치기", "fresh": "처음부터 다시 쓰기"}
+VERSIONS_KEPT = 10
+
+
+def redraft_prompt(pc, keywords, mode, note=""):
+    """원본을 같은 파일에 다시 쓴다. revise=지금 원고를 방향대로 고침, fresh=같은 주제로 새로 씀."""
+    path = pc["original"]
+    lines = [f"콘텐츠 허브 writer 원본을 다시 써 주세요. 대상 파일: {path}", f"주제: {pc['title']}", ""]
+    if keywords:
+        lines.append("처음 고른 글감:")
+        lines += [f"- {k['title']}" + (f" — {k['memo'][:200]}" if k.get("memo") else "") for k in keywords]
+        lines.append("")
+    if pc.get("brief"):
+        lines += ["처음 방향 메모:", pc["brief"], ""]
+    if note:
+        lines += ["이번에 바꿀 방향(가장 우선):", str(note)[:4000], ""]
+    lines += [".claude/skills/blog-write/SKILL.md 와 .claude/skills/blog/blog-writing/ 규칙(원본 글 구조·품질 기준·Sources·Thumbnail Prompt)과 .claude/CLAUDE.md 를 따르세요."]
+    if mode == "revise":
+        lines += [f"먼저 {path} 를 읽고, 위 방향대로 고쳐 같은 파일에 덮어쓰세요.",
+                  "방향에서 말하지 않은 부분의 사실·수치·출처는 그대로 두세요. 새 수치를 넣으면 Sources에 출처를 더하세요."]
+    else:
+        lines += ["같은 주제로 원본을 처음부터 다시 쓰세요(필요하면 리서치부터). 지금 원고는 참고만 하세요.",
+                  f"새 파일을 만들지 말고 {path} 에 덮어쓰세요(파일명·날짜 유지)."]
+    lines += ["플랫폼 변환·발행은 하지 마세요. 질문하지 말고 끝까지 진행하세요.",
+              f"마지막 줄에 `STUDIO_FILE: {path}` 라고 적어 주세요."]
+    return "\n".join(lines)
+
+
+def _versions_dir(pc):
+    d = agenda_mod.cache_dir() / "studio-history" / Path(pc["original"]).stem
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def snapshot_original(api, pc, reason):
+    """덮어쓰기 전 원고를 캐시에 보관(writer 백업 폴더는 사람 전용이라 쓰지 않는다). 최근 VERSIONS_KEPT개."""
+    src = _resolve(api, pc["original"])
+    d = _versions_dir(pc)
+    name = datetime.now().strftime("%Y%m%d-%H%M%S") + f"-{reason}.md"
+    (d / name).write_text(src.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
+    mt = src.stat().st_mtime
+    os.utime(d / name, (mt, mt))  # 원래 수정 시각을 남겨 둔다(되돌리면 변환본 최신 여부가 다시 맞는다)
+    for old in sorted(d.glob("*.md"))[:-VERSIONS_KEPT]:
+        old.unlink()
+    return name
+
+
+def list_versions(api, pc):
+    if not pc.get("original"):
+        return []
+    labels = {"redraft": "다시 쓰기 전", "restore": "되돌리기 전"}
+    out = []
+    for f in sorted(_versions_dir(pc).glob("*.md"), reverse=True):
+        m = re.match(r"^(\d{8})-(\d{6})-(\w+)\.md$", f.name)
+        if not m:
+            continue
+        at = f"{m.group(1)[:4]}-{m.group(1)[4:6]}-{m.group(1)[6:]} {m.group(2)[:2]}:{m.group(2)[2:4]}"
+        body = split_doc(api, f.read_text(encoding="utf-8", errors="replace"))[1]
+        out.append({"name": f.name, "at": at, "label": labels.get(m.group(3), m.group(3)), "chars": len(body)})
+    return out
+
+
+def restore_version(api, pid, name):
+    pc = load_state()["pieces"].get(pid)
+    if not pc or not pc.get("original"):
+        raise StudioError("없는 글이에요")
+    if not re.match(r"^\d{8}-\d{6}-\w+\.md$", str(name or "")):
+        raise StudioError("없는 버전이에요")
+    src = _versions_dir(pc) / name
+    if not src.is_file():
+        raise StudioError("없는 버전이에요")
+    text = src.read_text(encoding="utf-8", errors="replace")
+    snapshot_original(api, pc, "restore")  # 되돌리기도 되돌릴 수 있게
+    dst = _resolve(api, pc["original"], write=True)
+    dst.write_text(text, encoding="utf-8")
+    mt = src.stat().st_mtime
+    os.utime(dst, (mt, mt))
+    return {"ok": True}
 
 
 def adapt_prompt(pc, platforms, note=""):
@@ -567,7 +651,7 @@ class JobRunner:
                     j["status"], j["error"], j["ended"] = "stopped", "서버가 다시 시작돼 중단됐어요", _now()
         _mutate(f)
 
-    def submit(self, kind, piece_id, prompt, platforms=None):
+    def submit(self, kind, piece_id, prompt, platforms=None, extra=None):
         cfg = self.api.load_config()
         self.api._claude_check_cap(cfg)
 
@@ -577,6 +661,7 @@ class JobRunner:
             job = {"id": "j" + datetime.now().strftime("%Y%m%d%H%M%S%f")[:-3], "kind": kind, "piece_id": piece_id,
                    "platforms": list(platforms or []), "status": "queued", "created": _now(), "started": "",
                    "ended": "", "steps": [], "error": "", "result": ""}
+            job.update(extra or {})
             d["jobs"].append(job)
             d["jobs"] = d["jobs"][-MAX_JOBS_KEPT:]
             return job
@@ -699,6 +784,15 @@ class JobRunner:
                     pc["updated"] = _now()
                 else:
                     j["status"], j["error"] = "failed", "원본 파일을 찾지 못했어요(STUDIO_FILE 줄 없음)"
+            if ok and pc and j["kind"] == "redraft":
+                try:  # 맡길 때 기록한 수정 시각과 달라졌는지로 판단(직전에 저장한 파일도 정확히 가린다)
+                    changed = (content_dir(api) / pc["original"]).stat().st_mtime != j.get("orig_mtime")
+                except OSError:
+                    changed = False
+                if changed:
+                    pc["updated"] = _now()
+                else:
+                    j["status"], j["error"] = "failed", "원고 파일이 바뀌지 않았어요(이전 원고 그대로)"
             if ok and pc and j["kind"] == "adapt":
                 missing = _missing_variants(api, pc, j.get("platforms") or [], j.get("started") or j["created"])
                 if len(missing) == len(j.get("platforms") or []):
@@ -844,6 +938,28 @@ def handle_post(api, route, body, vault, runner):
         st = load_state()
         klist = [k for k in list_keywords(api, vault, st) if k["id"] in (pc.get("keywords") or [])]
         return {"ok": True, "job": runner.submit("write", pid, write_prompt(pc, klist))}
+    if route == "/api/studio/redraft":
+        pid = str(body.get("id") or "")
+        mode = str(body.get("mode") or "revise")
+        note = str(body.get("note") or "").strip()
+        if mode not in REDRAFT_MODES:
+            raise StudioError("다시 쓰기 방식은 revise 또는 fresh예요")
+        if mode == "revise" and not note:
+            raise StudioError("무엇을 고칠지 방향을 적어 주세요")
+        pc = load_state()["pieces"].get(pid)
+        if not pc or not pc.get("original"):
+            raise StudioError("원본이 있는 글만 다시 쓸 수 있어요")
+        if any(j.get("piece_id") == pid and j.get("status") in ("queued", "running") for j in load_state()["jobs"]):
+            raise StudioError("이 글은 이미 작업 중이에요")
+        _resolve(api, pc["original"], write=True)
+        st = load_state()
+        klist = [k for k in list_keywords(api, vault, st) if k["id"] in (pc.get("keywords") or [])]
+        snapshot_original(api, pc, "redraft")
+        om = (content_dir(api) / pc["original"]).stat().st_mtime
+        job = runner.submit("redraft", pid, redraft_prompt(pc, klist, mode, note), extra={"mode": mode, "orig_mtime": om})
+        return {"ok": True, "job": job}
+    if route == "/api/studio/restore":
+        return restore_version(api, str(body.get("id") or ""), body.get("name"))
     if route == "/api/studio/stop":
         return {"ok": runner.stop(str(body.get("id") or ""))}
     if route == "/api/studio/posted":
