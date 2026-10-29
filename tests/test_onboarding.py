@@ -127,7 +127,7 @@ class OnboardingFirstTenMinutesTest(unittest.TestCase):
             (["widget", "list"], brain.EXIT_OK),
             (["agents", "status"], brain.EXIT_OK),
             (["calendar", "list"], brain.EXIT_OK),
-            (["notify", "test"], brain.EXIT_OK),
+            (["notify", "test"], brain.EXIT_OK if sys.platform == "darwin" else brain.EXIT_INPUT),  # 맥 밖에선 알림 채널 없음이 정상
             (["reminders", "list"], brain.EXIT_OK),
         ]
         for argv, want in steps2:
