@@ -78,6 +78,14 @@ class StudioUnitTest(unittest.TestCase):
         self.assertEqual(bad["markdown"]["level"], "fail")
         self.assertEqual(studio.FILE_RE.match("2026-10-20-ai-ban-remember.md").group(3), "remember")
 
+    def test_hapnida_tone_check(self):
+        mixed = doc("[t]", "숫자를 찾아보니 흥미로웠습니다.\n그 말이 와닿은 것 같았어요.\n팀원들이었어요.\n얼마나 걸릴지 궁금하네요.")
+        c = {x["key"]: x for x in studio.check_doc(brain, mixed, "linkedin")}
+        self.assertEqual(c["tone"]["label"], "해요체 섞임 2곳")  # 「~네요」 마무리는 세지 않는다
+        clean = doc("[t]", "흥미로웠습니다.\n팀원들이었습니다.\n궁금하네요.")
+        self.assertEqual({x["key"]: x for x in studio.check_doc(brain, clean, "remember")}["tone"]["level"], "ok")
+        self.assertNotIn("tone", {x["key"] for x in studio.check_doc(brain, mixed, "naver-blog")})  # 해요체 채널은 검사 안 함
+
     def test_title_limit_counts_every_char(self):
         text = doc("가" * 31, "본문")
         checks = {c["key"]: c for c in studio.check_doc(brain, text, "naver-blog")}

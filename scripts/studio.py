@@ -35,7 +35,7 @@ MAX_JOBS_KEPT = 40
 PLATFORMS = {
     "brunch": {"label": "브런치", "title_max": 30, "subtitle_max": 40, "body": (2500, 3700),
                "plain": False, "tone": "평어체 서사. 짧은 단락과 「―」 구분선, 명사형 부제. 표·코드블록은 빼요."},
-    "linkedin": {"label": "링크드인", "body": (1100, 1300), "plain": False,
+    "linkedin": {"label": "링크드인", "body": (1100, 1300), "plain": False, "hapnida": True,
                  "tone": "1인칭 사고 흐름 5단락. 불릿 나열 대신 발견→인사이트→다음 행동, 해시태그 5~7개."},
     "medium": {"label": "미디엄", "body": None, "plain": False, "korean": True,
                "tone": "한글 그대로, 원본 분량 100% 안팎. TL;DR과 Sources는 남기고 표도 써요."},
@@ -43,10 +43,12 @@ PLATFORMS = {
                    "tone": "해요체 검색형 가이드. 마크다운은 전부 빼고 이모지는 괜찮아요."},
     "naver-cafe": {"label": "네이버 카페", "title_max": 30, "body": (600, 1500), "hard_max": 1500, "plain": True,
                    "tone": "해요체 초요약, 1,500자 하드 리밋. 마크다운은 전부 빼요."},
-    "remember": {"label": "리멤버", "body": (800, 1100), "hard_max": 1500, "plain": True, "no_hashtags": True,
+    "remember": {"label": "리멤버", "body": (800, 1100), "hard_max": 1500, "plain": True, "no_hashtags": True, "hapnida": True,
                  "tone": "직장인 고민 하나를 팀장·CISO 현장 장면으로. 800~1,000자, 합니다체, 해시태그·마크다운 없이."},
 }
 PLATFORM_ORDER = ["brunch", "linkedin", "medium", "naver-blog", "naver-cafe", "remember"]
+# 합니다체 채널에 섞인 해요체 어미(「~네요」는 마무리용이라 세지 않는다)
+_HAEYO = re.compile(r"[가-힣](?:었어요|았어요|였어요|어요|아요|해요|예요|에요)(?=[.!?…,)」\"']?(?:\s|$))")
 FILE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-(.+?)(?:-(brunch|linkedin|medium|naver-blog|naver-cafe|remember))?\.md$")
 _MD_RESIDUE = [
     ("제목 기호 #", re.compile(r"^\s{0,3}#{1,6}\s", re.M)),
@@ -187,6 +189,11 @@ def check_doc(api, text, platform=None, original_chars=None):
         hits = [name for name, rx in _MD_RESIDUE if rx.search(body)]
         out.append({"key": "markdown", "label": "마크다운 없음" if not hits else "마크다운 " + ", ".join(hits),
                     "level": "ok" if not hits else "fail", "detail": "네이버는 마크다운을 렌더링하지 않아요"})
+    if spec.get("hapnida"):
+        found = _HAEYO.findall(body)
+        out.append({"key": "tone", "label": "합니다체 통일" if not found else f"해요체 섞임 {len(found)}곳",
+                    "level": "ok" if not found else "warn",
+                    "detail": "~어요·~었어요·~예요를 ~습니다로" + (": " + ", ".join(dict.fromkeys(found))[:80] if found else "")})
     if spec.get("no_hashtags"):
         k = len(re.findall(r"(?:^|\s)#[^\s#]+", body))
         out.append({"key": "hashtags", "label": "해시태그 없음" if not k else f"해시태그 {k}개",
