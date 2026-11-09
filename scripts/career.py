@@ -395,19 +395,46 @@ def scout_sources(api):
     return res, rep
 
 
+def parse_scout(text):
+    """jobscout_result.md(구간 「## YYYY-MM-DD 신규 N건」이 아래로 쌓임) → 최신 구간부터 [{date, items:[{star, company, role, location, url}]}]."""
+    sections, cur, last = [], None, None
+    for ln in text.split("\n"):
+        m = re.match(r"^##\s+(\d{4}-\d{2}-\d{2})", ln)
+        if m:
+            cur = {"date": m.group(1), "items": []}
+            sections.append(cur)
+            last = None
+            continue
+        s = ln.strip()
+        if cur is None or not s:
+            continue
+        if s[0] in "·•-*⭐" or re.match(r"^\d+\.", s):
+            star = s.startswith("⭐")
+            body = re.sub(r"^[·•\-*⭐\s]+", "", s)
+            co, _, role = body.partition(" — ")
+            last = {"star": star, "company": co.strip(), "role": role.strip(), "location": "", "url": ""}
+            cur["items"].append(last)
+        elif last is not None:  # 다음 줄: 「지역 주소」
+            u = re.search(r"(https?://\S+|[\w.-]+\.(?:co\.kr|com|kr)/\S+)", s)
+            if u:
+                last["url"] = u.group(1) if u.group(1).startswith("http") else "https://" + u.group(1)
+                last["location"] = s[:u.start()].strip()
+            else:
+                last["location"] = s
+    sections.reverse()
+    return sections
+
+
 def scout_overview(api, limit=8):
-    """잡스카우트 최신 결과 줄과 매니저 리포트 목록(읽기 전용)."""
+    """잡스카우트 최신 수집분(최신 구간부터)과 매니저 리포트 목록(읽기 전용). 이미 카드가 있는 공고는 표시."""
     res, rep = scout_sources(api)
     lines, updated = [], None
     if res.is_file():
         updated = datetime.fromtimestamp(res.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
-        for ln in res.read_text(encoding="utf-8", errors="replace").split("\n"):
-            s = ln.strip()
-            if s.startswith(("-", "*", "⭐", "•")) or re.match(r"^\d+\.", s):
-                url = re.search(r"https?://\S+", s)
-                lines.append({"text": re.sub(r"https?://\S+", "", s.lstrip("-*• ")).strip()[:200], "url": url.group(0).rstrip(")") if url else ""})
-            if len(lines) >= 30:
-                break
+        for sec in parse_scout(res.read_text(encoding="utf-8", errors="replace"))[:2]:
+            for it in sec["items"]:
+                lines.append({"date": sec["date"], "text": ("⭐ " if it["star"] else "") + it["company"] + (" · " + it["role"] if it["role"] else ""),
+                              "company": it["company"], "role": it["role"], "location": it["location"], "url": it["url"]})
     reports = []
     if rep.is_dir():
         for f in sorted(rep.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)[:limit]:

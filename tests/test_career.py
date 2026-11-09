@@ -89,12 +89,15 @@ class CareerTest(unittest.TestCase):
         self.assertIn("킬러 수치", career.read_profile(self.vault))
         career.save_profile(brain, self.vault, "# 자산\n\n## 킬러 수치\n- IT 비용 30% 절감\n")
         self.assertIn("30%", career.read_profile(self.vault))
-        (self.home / "scout.md").write_text("# 결과\n- ⭐ 가나다 · 보안 리드 https://example.com/1\n- 라마바 · 플랫폼장\n", encoding="utf-8")
+        (self.home / "scout.md").write_text("## 2026-10-01 신규 1건\n· 옛회사 — 옛공고\n  서울 example.com/0\n"
+                                            "## 2026-10-20 신규 2건\n⭐ 가나다 — 보안 리드\n  경기도 화성시 https://example.com/1\n· 라마바 — 플랫폼장\n  서울 강남구\n", encoding="utf-8")
         (self.home / "reports").mkdir()
         (self.home / "reports" / "2026-10-20.md").write_text("# 10/20 리포트\n본문", encoding="utf-8")
         s = career.scout_overview(brain)
-        self.assertEqual(len(s["lines"]), 2)
+        self.assertEqual([l["date"] for l in s["lines"]][:2], ["2026-10-20", "2026-10-20"])  # 최신 구간부터
         self.assertEqual(s["lines"][0]["url"], "https://example.com/1")
+        self.assertEqual((s["lines"][0]["company"], s["lines"][0]["location"]), ("가나다", "경기도 화성시"))
+        self.assertEqual(s["lines"][2]["url"], "https://example.com/0")  # 스킴 없는 주소도 링크로
         self.assertEqual(s["reports"][0]["title"], "10/20 리포트")
         self.assertIn("본문", career.read_report(brain, "2026-10-20.md")["text"])
         with self.assertRaises(career.CareerError):

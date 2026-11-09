@@ -316,9 +316,15 @@ label.fl { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
   function loadScout() {
     api("/api/career/scout").then(function (s) {
       $("scoutUpdated").textContent = s.result_updated ? "결과 갱신 " + s.result_updated : "결과 파일 없음";
-      $("scoutLines").innerHTML = s.lines.slice(0, 15).map(function (l, i) {
-        return '<li><div class="row"><span>' + esc(l.text) + "</span>" + (l.url ? ' <a href="' + esc(l.url) + '" target="_blank" rel="noopener">공고</a>' : "") +
-          ' <button type="button" class="btn sm ghost" data-raise="' + i + '">카드로</button></div></li>';
+      var have = {}; (S.data ? S.data.positions : []).forEach(function (p) { if (p.url) have[p.url] = p; });
+      var lastDate = "";
+      $("scoutLines").innerHTML = s.lines.slice(0, 30).map(function (l, i) {
+        var hd = l.date !== lastDate ? '<li class="empty" style="list-style:none;margin-left:-16px;margin-top:6px">' + esc(l.date) + " 수집</li>" : ""; lastDate = l.date;
+        var on = have[l.url];
+        return hd + '<li><div class="row"><span>' + esc(l.text) + (l.location ? ' <small style="color:var(--muted)">' + esc(l.location) + "</small>" : "") + "</span>" +
+          (l.url ? ' <a href="' + esc(l.url) + '" target="_blank" rel="noopener">공고</a>' : "") +
+          (on ? ' <button type="button" class="btn sm ghost" data-open-position="' + esc(on.id) + '">카드 있음 · ' + esc(on.status) + "</button>"
+              : ' <button type="button" class="btn sm ghost" data-raise="' + i + '">카드로</button>') + "</div></li>";
       }).join("") || '<li class="empty">최근 결과가 없어요.</li>';
       S.scout = s;
       $("reports").innerHTML = s.reports.map(function (r) {
@@ -448,8 +454,7 @@ label.fl { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
     }).catch(alertLine);
     if (t.dataset.raise != null) {
       var l = S.scout.lines[+t.dataset.raise] || {};
-      var m = l.text.match(/^[⭐\s]*([^·|\-—:]+?)\s*[·|\-—:]\s*(.+)$/);
-      newPosition({ company: m ? m[1].trim() : l.text.slice(0, 40), role: m ? m[2].trim().slice(0, 120) : "", url: l.url, status: "발견", source: "잡스카우트" });
+      newPosition({ company: l.company, role: (l.role || "").slice(0, 120), url: l.url, location: l.location, status: "발견", source: "잡스카우트" });
     }
   });
   document.addEventListener("change", function (e) {
