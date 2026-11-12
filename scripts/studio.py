@@ -46,7 +46,9 @@ PLATFORMS = {
     "remember": {"label": "리멤버", "body": (800, 1100), "hard_max": 1500, "plain": True, "no_hashtags": True, "hapnida": True,
                  "tone": "직장인 고민 하나를 팀장·CISO 현장 장면으로. 800~1,000자, 합니다체, 해시태그·마크다운 없이."},
 }
-PLATFORM_ORDER = ["brunch", "linkedin", "medium", "naver-blog", "naver-cafe", "remember"]
+PLATFORM_ORDER = ["brunch", "linkedin", "medium", "naver-blog", "naver-cafe", "remember"]  # 파일명 인식용(전부)
+# 글 공방에서 쓰는 플랫폼. 미디엄·네이버 카페는 안 써서 뺐다(2026-11-12). 예전 파일은 FILE_RE로 계속 인식만 한다
+ACTIVE_PLATFORMS = ["brunch", "linkedin", "naver-blog", "remember"]
 # 합니다체 채널에 섞인 해요체 어미(「~네요」는 마무리용이라 세지 않는다)
 _HAEYO = re.compile(r"[가-힣](?:었어요|았어요|였어요|어요|아요|해요|예요|에요)(?=[.!?…,)」\"']?(?:\s|$))")
 FILE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-(.+?)(?:-(brunch|linkedin|medium|naver-blog|naver-cafe|remember))?\.md$")
@@ -157,6 +159,7 @@ def check_doc(api, text, platform=None, original_chars=None):
         k = len(re.findall(r"^\s*(?:\[\^\w+\]:|\d+\.|[-*]\s)", m.group(1), re.M)) if m else 0
         out.append({"key": "sources", "label": f"출처 {k}개", "level": "ok" if k >= 15 else "warn",
                     "detail": "Sources 15개 이상"})
+        out.append(_bracket_check(body))
         return out
     spec = PLATFORMS[platform]
     title = str(meta.get("title") or "")
@@ -189,6 +192,7 @@ def check_doc(api, text, platform=None, original_chars=None):
         hits = [name for name, rx in _MD_RESIDUE if rx.search(body)]
         out.append({"key": "markdown", "label": "마크다운 없음" if not hits else "마크다운 " + ", ".join(hits),
                     "level": "ok" if not hits else "fail", "detail": "네이버는 마크다운을 렌더링하지 않아요"})
+    out.append(_bracket_check(body))
     if spec.get("hapnida"):
         found = _HAEYO.findall(body)
         out.append({"key": "tone", "label": "합니다체 통일" if not found else f"해요체 섞임 {len(found)}곳",
@@ -220,6 +224,13 @@ def _clean_prompt(t):
     if len(t) > 1 and t[0] in "\"“" and t[-1] in "\"”":
         t = t[1:-1]
     return t.strip()
+
+
+def _bracket_check(body):
+    """「」 낫표는 AI가 쓴 티가 난다(2026-11-12 사용자 지적) — 원본·변환본 모두 0개가 목표."""
+    n = body.count("「")
+    return {"key": "brackets", "label": "낫표 「」 없음" if not n else f"낫표 「」 {n}곳",
+            "level": "ok" if not n else "warn", "detail": "강조는 문장으로, 큰따옴표는 실제 발언·제목에만"}
 
 
 def thumbnail_options(body):
@@ -293,19 +304,20 @@ def scan_writer(api):
 def history(api, groups, pieces):
     """히트맵(날짜별 만든 파일 수)·플랫폼별 합계·게시 기록 합계. 지어낸 수치 없이 파일과 상태에서만."""
     per_day = {}
-    per_platform = {k: 0 for k in PLATFORM_ORDER}
+    per_platform = {k: 0 for k in ACTIVE_PLATFORMS}
     originals = 0
     for g in groups:
         files = (1 if g["original"] else 0) + len(g["platforms"])
         per_day[g["date"]] = per_day.get(g["date"], 0) + files
         originals += 1 if g["original"] else 0
         for k in g["platforms"]:
-            per_platform[k] = per_platform.get(k, 0) + 1
-    posted = {k: 0 for k in PLATFORM_ORDER}
+            if k in per_platform:
+                per_platform[k] += 1
+    posted = {k: 0 for k in ACTIVE_PLATFORMS}
     for pc in pieces.values():
         for k, v in (pc.get("posts") or {}).items():
-            if v.get("posted"):
-                posted[k] = posted.get(k, 0) + 1
+            if v.get("posted") and k in posted:
+                posted[k] += 1
     return {"per_day": per_day, "per_platform": per_platform, "posted": posted,
             "originals": originals, "pieces": len(groups)}
 
@@ -441,7 +453,7 @@ def platform_files(api, pc):
         return {}
     stem = orig[:-3]
     root = content_dir(api)
-    return {k: f"{stem}-{k}.md" for k in PLATFORM_ORDER if (root / f"{stem}-{k}.md").is_file()}
+    return {k: f"{stem}-{k}.md" for k in ACTIVE_PLATFORMS if (root / f"{stem}-{k}.md").is_file()}
 
 
 def piece_detail(api, pid):
@@ -876,13 +888,13 @@ def overview(api, vault):
         except OSError:
             return False
     recent = [{"stem": g["stem"], "date": g["date"], "title": g["title"] or g["slug"], "original": g["original"],
-               "platforms": sorted(g["platforms"].keys(), key=PLATFORM_ORDER.index), "backup": g["backup"],
+               "platforms": [k for k in ACTIVE_PLATFORMS if k in g["platforms"]], "backup": g["backup"],
                "imported": g["original"] in imported, "writing": in_progress(g["original"])}
               for g in groups[:40]]
     running = [j for j in st["jobs"] if j.get("status") in ("queued", "running")]
     return {"today": date.today().isoformat(), "content_dir": str(content_dir(api)),
             "content_ok": writer_dir(api).is_dir(),
-            "platforms": [dict(PLATFORMS[k], key=k) for k in PLATFORM_ORDER],
+            "platforms": [dict(PLATFORMS[k], key=k) for k in ACTIVE_PLATFORMS],
             "keywords": list_keywords(api, vault, st), "pieces": pieces, "recent": recent,
             "history": history(api, groups, st["pieces"]), "running": running}
 
@@ -924,7 +936,7 @@ def handle_post(api, route, body, vault, runner):
         return {"ok": True, "piece": import_piece(api, str(body.get("path") or ""))}
     if route == "/api/studio/adapt":
         pid = str(body.get("id") or "")
-        plats = [p for p in PLATFORM_ORDER if p in (body.get("platforms") or [])]
+        plats = [p for p in ACTIVE_PLATFORMS if p in (body.get("platforms") or [])]
         if not plats:
             raise StudioError("변환할 플랫폼을 하나 이상 골라 주세요")
         pc = load_state()["pieces"].get(pid)

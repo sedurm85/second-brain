@@ -86,6 +86,13 @@ class StudioUnitTest(unittest.TestCase):
         self.assertEqual({x["key"]: x for x in studio.check_doc(brain, clean, "remember")}["tone"]["level"], "ok")
         self.assertNotIn("tone", {x["key"] for x in studio.check_doc(brain, mixed, "naver-blog")})  # 해요체 채널은 검사 안 함
 
+    def test_bracket_check_everywhere(self):
+        txt = doc("t", "이건 「핵심」이고 「또」 있다.")
+        for plat in (None, "brunch", "linkedin", "naver-blog", "remember"):
+            c = {x["key"]: x for x in studio.check_doc(brain, txt, plat)}
+            self.assertEqual(c["brackets"]["label"], "낫표 「」 2곳", plat)
+        self.assertEqual({x["key"]: x for x in studio.check_doc(brain, doc("t", "그냥 문장"), "brunch")}["brackets"]["level"], "ok")
+
     def test_title_limit_counts_every_char(self):
         text = doc("가" * 31, "본문")
         checks = {c["key"]: c for c in studio.check_doc(brain, text, "naver-blog")}
@@ -215,12 +222,12 @@ class StudioServeTest(unittest.TestCase):
         d = self.get("/api/studio")
         self.assertTrue(d["content_ok"])
         stems = {r["stem"]: r for r in d["recent"]}
-        self.assertEqual(stems["2026-10-01-old-post"]["platforms"], ["naver-cafe", "remember"])
+        self.assertEqual(stems["2026-10-01-old-post"]["platforms"], ["remember"])  # 카페는 글 공방에서 뺐다
         self.assertEqual(stems["2026-10-01-old-post"]["title"], "예전 원본")
         self.assertTrue(stems["2026-03-10-ancient"]["backup"])
         self.assertEqual(d["history"]["per_day"]["2026-10-01"], 3)
-        self.assertEqual(d["history"]["per_platform"]["naver-cafe"], 1)
-        self.assertEqual([p["key"] for p in d["platforms"]], studio.PLATFORM_ORDER)
+        self.assertEqual(d["history"]["per_platform"], {"brunch": 0, "linkedin": 0, "naver-blog": 0, "remember": 1})
+        self.assertEqual([p["key"] for p in d["platforms"]], ["brunch", "linkedin", "naver-blog", "remember"])
 
     def test_studio_page_served(self):
         with urllib.request.urlopen(self.base + "/studio") as r:
@@ -250,19 +257,19 @@ class StudioServeTest(unittest.TestCase):
         self.assertTrue(any("WebSearch" in s for s in job["steps"]))
         self.assertEqual(self.get("/api/studio")["keywords"][0]["used_by"], [pc["id"]])
         self.post("/api/studio/adapt", {"id": pc["id"], "platforms": []}, status=400)
-        self.post("/api/studio/adapt", {"id": pc["id"], "platforms": ["naver-cafe", "brunch", "nope"]})
+        self.post("/api/studio/adapt", {"id": pc["id"], "platforms": ["remember", "brunch", "medium", "nope"]})
         d, job = self.wait_job(pc["id"])
         self.assertEqual(job["status"], "done", job)
-        self.assertEqual(job["platforms"], ["brunch", "naver-cafe"])
-        self.assertEqual(sorted(d["files"]), ["brunch", "naver-cafe"])
+        self.assertEqual(job["platforms"], ["brunch", "remember"])  # 미디엄은 받지 않는다
+        self.assertEqual(sorted(d["files"]), ["brunch", "remember"])
         self.assertEqual(d["stage"], "adapted")
-        f = self.get("/api/studio/file?" + urllib.parse.urlencode({"path": d["files"]["naver-cafe"], "platform": "naver-cafe"}))
+        f = self.get("/api/studio/file?" + urllib.parse.urlencode({"path": d["files"]["remember"], "platform": "remember"}))
         self.assertEqual(f["copy"], "변환 본문이에요.\n")
         self.assertTrue(f["editable"])
-        self.post("/api/studio/posted", {"id": pc["id"], "platform": "naver-cafe", "posted": True,
+        self.post("/api/studio/posted", {"id": pc["id"], "platform": "remember", "posted": True,
                                          "url": "https://cafe.naver.com/x/1"})
         ov = self.get("/api/studio")
-        self.assertEqual(ov["history"]["posted"]["naver-cafe"], 1)
+        self.assertEqual(ov["history"]["posted"]["remember"], 1)
         self.assertEqual(next(p for p in ov["pieces"] if p["id"] == pc["id"])["stage"], "posted")
 
     def test_adapt_without_files_is_failure(self):
@@ -286,7 +293,7 @@ class StudioServeTest(unittest.TestCase):
         self.assertIn("다시 쓴 원본", orig.read_text(encoding="utf-8"))
         self.assertEqual(len(d["versions"]), 1)
         self.assertEqual(d["versions"][0]["label"], "다시 쓰기 전")
-        self.assertEqual(sorted(d["stale"]), ["naver-cafe", "remember"])  # 변환본은 예전 원고 기준
+        self.assertEqual(sorted(d["stale"]), ["remember"])  # 변환본은 예전 원고 기준
         self.post("/api/studio/restore", {"id": a["id"], "name": "../../etc/passwd"}, status=400)
         self.post("/api/studio/restore", {"id": a["id"], "name": d["versions"][0]["name"]})
         self.assertEqual(orig.read_text(encoding="utf-8"), before)
@@ -315,8 +322,7 @@ class StudioServeTest(unittest.TestCase):
         self.assertEqual(a["title"], "예전 원본")
         self.post("/api/studio/import", {"path": "writer/2026-10-01-old-post-naver-cafe.md"}, status=400)
         d = self.get(f"/api/studio/piece?id={a['id']}")
-        self.assertEqual(d["files"], {"naver-cafe": "writer/2026-10-01-old-post-naver-cafe.md",
-                                      "remember": "writer/2026-10-01-old-post-remember.md"})
+        self.assertEqual(d["files"], {"remember": "writer/2026-10-01-old-post-remember.md"})
 
     def test_path_guards(self):
         self.get("/api/studio/file?path=../brain/BRAIN.md", status=400)
