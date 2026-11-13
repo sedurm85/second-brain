@@ -4550,9 +4550,37 @@ def cmd_study(args):
                 except (study_mod.StudyError, BrainError) as e:
                     human += f"\n장 채움 실패: {e}"
             emit(args, doc, human)
+        elif args.action == "review":
+            targets = a or ([c for c in study_mod.ORDER if study_mod.chapter_path(v, c).is_file()] if args.all else [])
+            if not targets:
+                raise BrainError("study review <장…> 또는 --all")
+            lines, out = [], []
+            for c in targets:
+                try:
+                    r = study_mod.review(api, v, c)
+                    out.append(r)
+                    lines.append(f"{c} 검수 · 문제 수정 {len(r['questions_fixed'])} · 본문 수정 {r['concept_fixed']} · {r['verdict']}")
+                except (study_mod.StudyError, BrainError) as e:
+                    lines.append(f"{c} 검수 실패: {e}")
+                print(lines[-1], flush=True)
+            emit(args, out, "검수 완료 " + str(len(out)) + "장 · 기록: study/review-log.md")
+        elif args.action == "target":
+            if not a:
+                raise BrainError("study target YYYY-MM-DD")
+            pc = study_mod.set_target(v, a[0])
+            emit(args, pc, f"목표 {pc['target']} D-{pc['d_day']} · 장 {pc['chapters_done']}/19 (계획 {pc['chapters_expected']}) · 주 {pc['per_week']}장")
+        elif args.action == "week":
+            msg = study_mod.weekly_report(v)
+            if args.kakao:
+                res = notify(msg)
+                emit(args, {"text": msg, "sent": res["sent"]}, msg + ("\n\n알림 발송 완료" if res["sent"] else "\n\n알림 발송 실패"))
+                return EXIT_OK if res["sent"] else EXIT_INPUT
+            emit(args, {"text": msg}, msg)
         else:
             o = study_mod.overview(v)
-            emit(args, o, f"장 {o['chapters_ready']}/{o['chapters_total']} 준비 · 문제 {o['bank']}개 · 연속 {o['streak']}일 · 오답 대기 {o['wrong_due']}")
+            pc = o["pace"]
+            emit(args, o, f"장 {o['chapters_ready']}/{o['chapters_total']} 준비(검수 {o['reviewed']}) · 문제 {o['bank']}개 · 연속 {o['streak']}일 · 오답 대기 {o['wrong_due']}\n"
+                          f"목표 {pc['target']} D-{pc['d_day']} · 읽은 장 {pc['chapters_done']} (계획 {pc['chapters_expected']}, {pc['status']}) · 남은 진도 주 {pc['per_week']}장")
     except study_mod.StudyError as e:
         raise BrainError(str(e)) from e
     return 0
@@ -6771,6 +6799,11 @@ def cmd_brief(args):
                         journal_extra = [(2, "일지: " + j["kakao"], None)]  # 일지 한 줄도 같은 예산 배정에 합류(우선순위 2)
             except BrainError as e:
                 log(f"일지 건너뜀: {e}")
+        if v:
+            try:  # 공부방: 오늘 안 했으면 독려(우선순위 1), 했으면 한 줄(3)
+                journal_extra = (journal_extra or []) + [study_mod.evening_part(v) + (None,)]
+            except Exception as e:  # noqa: BLE001 - 공부방 데이터 문제로 마감 카톡이 죽지 않게
+                log(f"경고: 공부방 읽기 실패({e})")
         t["kakao"] = evening_brief(t, tomorrow, extra_parts=journal_extra)
         t["evening"] = True
     if args.kakao:
@@ -6797,6 +6830,7 @@ AGENT_SPECS = {
     "prepare": {"label": "com.secondbrain.prepare", "args": ["prepare"], "calendar": {"Hour": 6, "Minute": 40}, "title": "일정 준비 제안 (매일 6:40)"},
     "retro": {"label": "com.secondbrain.retro", "args": ["retro", "--kakao"], "calendar": {"Weekday": 1, "Hour": 9, "Minute": 0}, "title": "주간 회고 (월 9시)"},
     "retro-monthly": {"label": "com.secondbrain.retro-monthly", "args": ["retro", "--monthly", "--kakao"], "calendar": {"Day": 1, "Hour": 9, "Minute": 10}, "title": "월간 회고 (매월 1일 9:10)"},
+    "study-week": {"label": "com.secondbrain.study-week", "args": ["study", "week", "--kakao"], "calendar": {"Weekday": 1, "Hour": 8, "Minute": 55}, "title": "공부방 주간 진도 카톡 (월 8:55)"},
     "study": {"label": "com.secondbrain.study", "args": ["study", "daily", "--fill", "2"], "calendar": {"Hour": 5, "Minute": 50}, "title": "공부방 하루치 준비 (매일 5:50)"},
     "serve": {"label": "com.secondbrain.serve", "args": ["serve", "--port", "7777"], "keepalive": True, "title": "대시보드 서버 (상주)"},
 }
@@ -8733,8 +8767,10 @@ def build_parser():
     add("today", "오늘 브리핑: 일정·되돌아볼 결정·자동화 상태·inbox·이번 주 신규(+카톡용 200자)", cmd_today)
     add("widgets", "위젯(~/.config/second-brain/widgets.json) 상태 조회", cmd_widgets)
 
-    s = add("study", "공부방: fill [장] · daily · status", cmd_study)
-    s.add_argument("action", choices=("fill", "daily", "status"))
+    s = add("study", "공부방: fill [장] · daily · review [장…|--all] · target YYYY-MM-DD · week [--kakao] · status", cmd_study)
+    s.add_argument("action", choices=("fill", "daily", "review", "target", "week", "status"))
+    s.add_argument("--all", action="store_true", help="review: 내용이 있는 모든 장")
+    s.add_argument("--kakao", action="store_true", help="week: 카톡으로 보낸다")
     s.add_argument("args", nargs="*", help="fill에 장 번호(예: 2-1)를 주면 그 장만 다시 만든다")
     s.add_argument("--limit", type=int, default=1, help="fill: 채울 장 수")
     s.add_argument("--fill", type=int, default=0, help="daily: 하루치 뒤 채울 장 수")

@@ -82,7 +82,7 @@ h1 .draft { font: 500 11px var(--font-mono); color: var(--news); border: 1px sol
 .stat.exam b { color: var(--exam); } .stat.field b { color: var(--field); } .stat.streak b { color: var(--news); }
 
 /* 단원 진도 */
-.units { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; margin: 0 0 22px; }
+.units { display: grid; grid-template-columns: repeat(11, 1fr); gap: 6px; margin: 0 0 22px; }
 .unit { border: 1px solid var(--rule); border-radius: var(--r); padding: 8px 9px; background: var(--surface); font-size: 12px; color: var(--muted); line-height: 1.35; min-height: 58px; position: relative; }
 .unit i { font: 500 11px var(--font-mono); font-style: normal; display: block; color: var(--muted); }
 .unit.now { border-color: var(--field); color: var(--ink); background: linear-gradient(180deg, var(--field-soft), transparent), var(--surface); box-shadow: 0 0 0 1px var(--field-soft), 0 0 24px rgba(183,156,255,.18); }
@@ -278,6 +278,7 @@ h1 .draft { font: 500 11px var(--font-mono); color: var(--news); border: 1px sol
       <div class="stat exam"><b id="st-today">0</b><span>오늘 푼 문제</span></div>
       <div class="stat field"><b id="st-unit">–</b><span>실무감 단원</span></div>
       <div class="stat streak"><b id="st-streak">0일</b><span>연속 학습</span></div>
+      <div class="stat"><b id="st-dday">–</b><span id="st-target">CISA 목표</span></div>
     </div>
   </header>
 
@@ -438,8 +439,10 @@ h1 .draft { font: 500 11px var(--font-mono); color: var(--news); border: 1px sol
     $("ready").className = "ready" + (r.ready ? " yes" : "");
     $("ready").textContent = r.ready ? "미니 모의고사 " + r.need + "회 연속 " + r.rate + "% 이상 — 이제 접수해도 됩니다." :
       "접수 판정: 미니 모의고사 " + r.need + "회 연속 " + r.rate + "% 이상이면 알려 드려요. 최근 " + (r.recent.length ? r.recent.join("% · ") + "%" : "기록 없음") + " · 문제 은행 " + d.bank + "개 · 준비된 장 " + d.chapters_ready + "/" + d.chapters_total;
+    var pc = d.pace;
+    $("ready").textContent += " · 목표 " + pc.target + " (D-" + pc.d_day + ") · 읽은 장 " + pc.chapters_done + "/계획 " + pc.chapters_expected + " " + pc.status + (pc.per_week ? " · 남은 진도 주 " + pc.per_week + "장" : "") + " · " + pc.phase + " (모의고사 " + pc.mock_from.slice(5).replace("-", "/") + "부터)";
     var e = d.exam;
-    $("facts").innerHTML = "<span><b>시험</b>" + e.questions + "문항 · " + e.minutes / 60 + "시간</span><span><b>합격</b>" + esc(e.pass) + "</span><span><b>언어</b>" + esc(e.language) + "</span><span><b>응시</b>" + esc(e.where) + "</span><span><b>목표</b>진도 따라 준비되는 대로</span>";
+    $("facts").innerHTML = "<span><b>시험</b>" + e.questions + "문항 · " + e.minutes / 60 + "시간</span><span><b>합격</b>" + esc(e.pass) + "</span><span><b>언어</b>" + esc(e.language) + "</span><span><b>응시</b>" + esc(e.where) + "</span><span><b>목표</b>" + esc(d.pace.target) + " 응시 기준선</span><span><b>검수</b>" + d.reviewed + "/" + d.chapters_ready + "장 완료</span>";
     $("doms").innerHTML = d.domains.map(function (dm) {
       var has = dm.chapters.some(function (c) { return c.id === cur; });
       return '<article class="dom' + (has ? " cur" : "") + '"><header><i>' + dm.id + "</i><h3>" + esc(dm.name) + "</h3><em>" + dm.weight + '%</em></header><div class="bar"><span style="width:' + dm.progress + '%"></span></div><ul>' +
@@ -540,7 +543,9 @@ h1 .draft { font: 500 11px var(--font-mono); color: var(--news); border: 1px sol
       var wd = ["일", "월", "화", "수", "목", "금", "토"][new Date(d.date + "T00:00").getDay()];
       var unit = d.units[d.field.unit - 1];
       $("today-line").textContent = d.date.replace(/-/g, ".") + " (" + wd + ") · 실무감 " + unit.n + "단원 " + unit.title + " · CISA 장 " + d.chapters_ready + "/" + d.chapters_total + " 준비";
-      $("st-today").textContent = d.today_answered; $("st-unit").textContent = unit.n + "/10"; $("st-streak").textContent = d.streak + "일";
+      $("st-today").textContent = d.today_answered; $("st-unit").textContent = unit.n + "/" + d.units.length; $("st-streak").textContent = d.streak + "일";
+      var pc = d.pace;
+      $("st-dday").textContent = "D-" + pc.d_day; $("st-target").textContent = "CISA " + pc.target.slice(5).replace("-", "/") + " · " + pc.status;
       renderUnits(d); renderToday(d); renderFull(d);
     }).catch(function (e) { $("today-line").textContent = "불러오지 못했어요: " + e.message; console.error("[공부방] 불러오기 실패", e); });
   }

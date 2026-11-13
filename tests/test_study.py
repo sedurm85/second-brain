@@ -41,6 +41,11 @@ if "[기사 목록]" in p:
     print(json.dumps({"news": [{"i": i, "title": "뉴스 " + str(i), "summary": ["a", "b", "c"], "tech": "기술", "ask": "질문", "unit": 1} for i in range(3)],
                       "piece": {"title": "조각", "lead": "명제", "points": [{"h": "h", "body": "b"}], "views": {"CISSP": "x", "CISM": "y", "CISA": "z"},
                                 "scene": {"title": "장면", "steps": ["1", "2", "3"], "why": "왜"}}}, ensure_ascii=False)); sys.exit(0)
+if "[검수 대상]" in p:
+    print(json.dumps({"question_fixes": [{"i": 0, "problem": "복수 정답", "stem": "고친 문제", "options": ["가", "나", "다", "라"], "answer": 2, "explanation": "고친 해설", "trap": "MOST"},
+                                         {"i": 99, "stem": "범위 밖", "options": ["a", "b", "c", "d"], "answer": 0}],
+                      "concept_fixes": [{"find": "## 핵심 한 줄", "replace": "## 핵심 한 줄 (검수)", "why": "표시"}, {"find": "없는 문장입니다", "replace": "x", "why": "무시"}],
+                      "verdict": "대체로 정확"}, ensure_ascii=False)); sys.exit(0)
 qs = [{"stem": "문제 " + str(i), "options": ["가", "나", "다", "라"], "answer": i % 4, "explanation": "해설", "trap": "BEST"} for i in range(12)]
 qs.append({"stem": "깨진 문제", "options": ["가"], "answer": 9})
 print(json.dumps({"concept_md": "## 핵심 한 줄\\n" + "개념 " * 500, "terms": [{"ko": "거버넌스", "en": "Governance", "desc": "방향"}], "questions": qs}, ensure_ascii=False))
@@ -124,6 +129,36 @@ print(json.dumps({"concept_md": "## 핵심 한 줄\\n" + "개념 " * 500, "terms
         study.make_daily(brain, self.vault, self.today, feed=FEED)
         self.assertEqual(study.load_progress(self.vault)["field"]["unit"], 2)
 
+    def test_review_pace_evening_weekly(self):
+        r = self._fill(1)  # 채우면 바로 검수까지
+        self.assertEqual(r["filled"][0]["review"]["questions_fixed"], [1])
+        ch = study.load_chapter(self.vault, "2-1")
+        self.assertEqual((ch["questions"][0]["stem"], ch["questions"][0]["answer"]), ("고친 문제", 2))
+        self.assertEqual(len(ch["questions"]), 12)  # 번호 유지, 삭제 없음
+        self.assertTrue(ch["concept_md"].startswith("## 핵심 한 줄 (검수)"))
+        self.assertIn("복수 정답", (self.vault / "study" / "review-log.md").read_text(encoding="utf-8"))
+        self.assertEqual(len(study.UNITS), 11)
+        self.assertEqual(study.UNITS[-1]["title"], "AI 보안")
+        p = study.load_progress(self.vault)
+        self.assertEqual(p["plan"]["target"], "2027-02-28")
+        p["plan"]["start"] = "2026-11-13"
+        pc = study.pace(p, date(2026, 11, 13))
+        self.assertEqual((pc["chapters_expected"], pc["status"], pc["mock_from"]), (0, "계획대로", "2027-02-14"))
+        pc = study.pace(p, date(2026, 12, 29))  # 진도 기간의 절반쯤
+        self.assertEqual(pc["chapters_expected"], 10)
+        self.assertEqual(pc["status"], "뒤처짐")
+        self.assertEqual(study.pace(p, date(2027, 2, 20))["phase"], "모의고사 기간")
+        self.assertEqual(study.evening_part(self.vault, self.today)[0], 1)  # 오늘 안 함 → 독려
+        study.record_answer(self.vault, "2-1#1", 2, today=self.today)
+        pr, txt = study.evening_part(self.vault, self.today)
+        self.assertEqual(pr, 3)
+        self.assertIn("1문제 100%", txt)
+        w = study.weekly_report(self.vault, self.today + timedelta(days=1))
+        self.assertIn("[공부방 주간] 지난주 1일 · 1문제 100%", w)
+        self.assertLessEqual(len(w), 200)
+        with self.assertRaises(study.StudyError):
+            study.set_target(self.vault, "내년")
+
     def test_http_routes(self):
         self._fill(1)
         srv = brain.make_server(self.vault, 0, quiet=True, today=self.today)
@@ -138,7 +173,7 @@ print(json.dumps({"concept_md": "## 핵심 한 줄\\n" + "개념 " * 500, "terms
                 self.assertEqual(json.loads(r.read())["terms"][0]["en"], "Governance")
             with urllib.request.urlopen(base + "/api/session", timeout=5) as r:
                 tok = json.loads(r.read())["token"]
-            req = urllib.request.Request(base + "/api/study/answer", data=json.dumps({"id": "2-1#1", "choice": 0}).encode(), method="POST",
+            req = urllib.request.Request(base + "/api/study/answer", data=json.dumps({"id": "2-1#1", "choice": 2}).encode(), method="POST",
                                          headers={"Content-Type": "application/json", "X-Brain-Token": tok})
             with urllib.request.urlopen(req, timeout=5) as r:
                 self.assertTrue(json.loads(r.read())["ok"])

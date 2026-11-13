@@ -39,8 +39,11 @@ UNITS = [  # 실무감 10단원: CISSP·CISM·CISA 겹침 순서
     {"n": 8, "title": "개발 보안·변경관리", "map": "CISSP D8 · CISM D3 · CISA D3", "hot": True},
     {"n": 9, "title": "운영 보안·로그·모니터링", "map": "CISSP D7 · CISM D3·D4 · CISA D4", "hot": True},
     {"n": 10, "title": "아키텍처·암호·네트워크", "map": "CISSP D3·D4 · CISA D5 일부", "hot": True},
+    {"n": 11, "title": "AI 보안", "map": "AAISM · CISM D1·D2 · CISSP D1·D8", "hot": True, "ai": True},
 ]
 PIECES_PER_UNIT = 5  # 단원마다 실무 한 조각 5개를 지나면 다음 단원
+DEFAULT_TARGET = "2027-02-28"  # 2026-11-13 사용자 확정: CISA 응시 기준선(강제 마감 아님)
+MOCK_WEEKS = 2  # 목표일 전 2주는 모의고사 기간 — 장 진도는 그 전에 끝낸다
 
 DOMAINS = [  # 2026 ISACA 응시자 가이드 비중
     {"id": "D1", "name": "정보시스템 감사 프로세스", "weight": 18, "chapters": [
@@ -118,6 +121,7 @@ def load_progress(vault):
     p.setdefault("days", [])
     p.setdefault("field", {"unit": 1, "covered": []})
     p.setdefault("mocks", [])
+    p.setdefault("plan", {"target": DEFAULT_TARGET, "start": date.today().isoformat()})
     return p
 
 
@@ -214,6 +218,36 @@ def readiness(p):
     rates = [m["score"] / m["total"] for m in minis]
     ready = len(rates) == READY_RUNS and all(r >= READY_RATE for r in rates)
     return {"ready": ready, "recent": [round(r * 100) for r in rates], "need": READY_RUNS, "rate": round(READY_RATE * 100)}
+
+
+def pace(p, today):
+    """목표일 기준 계획 대비 진도. 장 진도는 (목표일 − 2주)까지 고르게, 그 뒤는 모의고사 기간."""
+    plan = p["plan"]
+    target = date.fromisoformat(plan["target"])
+    start = date.fromisoformat(plan["start"])
+    study_end = target - timedelta(weeks=MOCK_WEEKS)
+    span = max(1, (study_end - start).days)
+    done = len([c for c in p["read"] if c in CHAPTERS])
+    frac = min(1.0, max(0.0, (today - start).days / span))
+    expected = min(len(ORDER), int(len(ORDER) * frac + 0.999)) if today > start else 0
+    weeks_left = max(0, (study_end - today).days) / 7
+    per_week = round((len(ORDER) - done) / weeks_left, 1) if weeks_left else None
+    phase = "모의고사 기간" if today >= study_end else "진도 기간"
+    gap = done - expected
+    return {"target": plan["target"], "d_day": (target - today).days, "chapters_done": done, "chapters_expected": expected, "gap": gap,
+            "per_week": per_week, "phase": phase, "mock_from": study_end.isoformat(),
+            "status": "앞섬" if gap > 0 else ("계획대로" if gap == 0 else "뒤처짐")}
+
+
+def set_target(vault, target):
+    try:
+        date.fromisoformat(target)
+    except (TypeError, ValueError) as e:
+        raise StudyError("목표일은 YYYY-MM-DD") from e
+    p = load_progress(vault)
+    p["plan"]["target"] = target
+    save_progress(vault, p)
+    return pace(p, date.today())
 
 
 def _stats(p, qs):
@@ -359,7 +393,7 @@ def _valid_chapter(data):
     return {"concept_md": str(data["concept_md"]).strip(), "terms": terms[:16], "questions": qs}
 
 
-def fill(api, vault, cid=None, limit=1):
+def fill(api, vault, cid=None, limit=1, do_review=True):
     """내용 없는 장을 공부 순서대로 limit개 채운다. cid를 주면 그 장만(덮어쓰기)."""
     targets = [cid] if cid else [c for c in ORDER if not chapter_path(vault, c).is_file()][:max(0, int(limit))]
     done = []
@@ -369,8 +403,69 @@ def fill(api, vault, cid=None, limit=1):
         data = _valid_chapter(api._run_claude_json(chapter_prompt(c), timeout=900, kind="study"))
         data.update({"id": c, "title": CHAPTERS[c]["title"], "domain": CHAPTERS[c]["domain"], "made": datetime.now().strftime("%Y-%m-%d %H:%M")})
         _write(chapter_path(vault, c), data)
-        done.append({"chapter": c, "questions": len(data["questions"])})
+        rec = {"chapter": c, "questions": len(data["questions"])}
+        if do_review:  # 새로 만든 장은 바로 검수까지 거친다
+            try:
+                rec["review"] = review(api, vault, c)
+            except Exception as e:  # noqa: BLE001 — 검수 실패는 다음 study review로 다시
+                rec["review_error"] = str(e)[:160]
+        done.append(rec)
     return {"filled": done, "remaining": sum(1 for c in ORDER if not chapter_path(vault, c).is_file())}
+
+
+def review_prompt(cid, ch):
+    c = CHAPTERS[cid]
+    qs = [dict(i=i, **{k: q[k] for k in ("stem", "options", "answer", "explanation", "trap")}) for i, q in enumerate(ch["questions"])]
+    return (
+        "너는 ISACA CISA 문제 검수자이자 보안 감사 전문가다. 아래 [검수 대상]은 AI가 만든 한국어 학습 자료다. 학습자는 이걸로 실제 시험을 준비하므로 틀린 내용이 하나도 없어야 한다.\n"
+        f"[장] {cid} {c['title']} (CISA {c['domain']})\n\n"
+        "문제마다 다음을 확인한다: ① ISACA 감사인 관점에서 정답이 하나로 확정되는가(복수 정답·논쟁 여지 금지) ② answer 인덱스가 해설이 말하는 정답과 같은가 "
+        "③ 오답 보기가 그럴듯하지만 분명히 틀렸는가 ④ 사실이 정확한가(COBIT 2019, ISO/IEC 27001:2022, NIST CSF 2.0, ISACA 감사 기준 용어) "
+        "⑤ trap 단어가 실제로 문제에 쓰였는가 ⑥ 한국어가 자연스럽고 핵심 용어에 영어가 병기됐는가 ⑦ 같은 장 안에서 사실상 같은 문제가 반복되지 않는가.\n"
+        "개념 본문은 사실 오류, 오해를 부르는 단정, 감사인 관점과 어긋나는 설명만 고친다(문체 손질 금지).\n\n"
+        "아래 JSON 하나만 출력한다(코드블록·설명 금지). 고칠 것이 없으면 빈 배열.\n"
+        '{"question_fixes": [{"i": 0, "problem": "무엇이 문제였나 한 문장", "stem": "...", "options": ["...", "...", "...", "..."], "answer": 0, "explanation": "...", "trap": ""}], '
+        '"concept_fixes": [{"find": "본문에 그대로 있는 문장 일부", "replace": "고친 문장", "why": "한 문장"}], "verdict": "전체 평가 한 문장"}\n'
+        "question_fixes는 고친 문제 전체(4지선다, 정답 하나)를 다시 적는다. 문제를 삭제하지 말고 고쳐 쓴다. 정답 위치는 원래 위치를 유지해도 된다.\n\n"
+        f"[검수 대상]\n{json.dumps({'concept_md': ch['concept_md'], 'questions': qs}, ensure_ascii=False)}"
+    )
+
+
+def review(api, vault, cid):
+    """장 하나를 검수해 고친다. 문제 번호(진도 기록의 id)는 유지하고, 고친 내역은 study/review-log.md에 남긴다."""
+    ch = load_chapter(vault, cid)
+    if not ch:
+        raise StudyError(f"{cid}는 아직 내용이 없어요")
+    data = api._run_claude_json(review_prompt(cid, ch), timeout=900, kind="study")
+    if not isinstance(data, dict):
+        raise StudyError("검수 응답이 이상해요")
+    fixed, notes = [], []
+    for f in data.get("question_fixes") or []:
+        try:
+            i = int(f.get("i"))
+            q = _valid_chapter({"concept_md": "x" * 800, "questions": [f] * 6})["questions"][0]
+        except (StudyError, TypeError, ValueError, AttributeError):
+            continue
+        if 0 <= i < len(ch["questions"]):
+            old = ch["questions"][i]
+            ch["questions"][i] = q
+            fixed.append(i + 1)
+            notes.append(f"- Q{i + 1} {str(f.get('problem') or '')[:160]} (정답 {'ABCD'[old['answer']]}→{'ABCD'[q['answer']]})")
+    cfix = 0
+    for f in data.get("concept_fixes") or []:
+        find, rep_ = str((f or {}).get("find") or ""), str((f or {}).get("replace") or "")
+        if len(find) >= 8 and rep_ and ch["concept_md"].count(find) == 1:
+            ch["concept_md"] = ch["concept_md"].replace(find, rep_)
+            cfix += 1
+            notes.append(f"- 본문: {str(f.get('why') or '')[:160]}")
+    ch["reviewed"] = {"at": datetime.now().strftime("%Y-%m-%d %H:%M"), "questions_fixed": fixed, "concept_fixed": cfix,
+                      "verdict": str(data.get("verdict") or "")[:200]}
+    _write(chapter_path(vault, cid), ch)
+    log = root(vault) / "review-log.md"
+    head = "" if log.is_file() else "# 공부방 검수 기록\n\n장별로 AI 검수가 고친 내역. 문제 번호는 그대로 유지된다.\n"
+    with log.open("a", encoding="utf-8") as fh:
+        fh.write(head + f"\n## {cid} {CHAPTERS[cid]['title']} · {ch['reviewed']['at']}\n{ch['reviewed']['verdict']}\n" + ("\n".join(notes) or "- 고칠 것 없음") + "\n")
+    return {"chapter": cid, "questions_fixed": fixed, "concept_fixed": cfix, "verdict": ch["reviewed"]["verdict"]}
 
 
 # ───────────────────────── 하루치 ─────────────────────────
@@ -409,10 +504,12 @@ def daily_prompt(feed, unit, covered):
         "news 규칙: [기사 목록]에서 CISO 관점으로 의미 있는 기사 3개를 고른다(국내 1개 이상, 같은 사건 중복 금지). i는 목록 번호. "
         "title은 한국어 한 줄. summary는 기사 요약에 있는 사실만 3줄(없는 숫자·사실을 만들지 않는다). "
         "tech는 기술적으로 무슨 일인지 또는 지금 확인할 통제를 2문장(기사에 없는 세부는 일반 원리로만). "
-        "ask는 '우리 회사라면?' 질문 한 문장. unit은 가장 가까운 실무감 단원 번호(1~10).\n"
+        "ask는 '우리 회사라면?' 질문 한 문장. unit은 가장 가까운 실무감 단원 번호(1~11, 11은 AI 보안).\n"
         f"piece 규칙: 실무감 {unit['n']}단원 「{unit['title']}」({unit['map']})의 한 조각. 이미 다룬 제목 {json.dumps(covered[-12:], ensure_ascii=False)}와 겹치지 않는 주제 하나. "
         "lead는 한 줄 명제, points는 2~3개 핵심(용어는 한국어(영어) 병기, 각 2~3문장), views는 같은 주제를 세 자격이 보는 정답 기준 각 1~2문장, "
-        "scene은 CISO 현장 장면 하나(가능하면 고른 뉴스와 연결, 실무 단계 3개, why는 이 단원과의 연결 한두 문장). 해요체, 가짜 수치 금지.\n\n"
+        "scene은 CISO 현장 장면 하나(가능하면 고른 뉴스와 연결, 실무 단계 3개, why는 이 단원과의 연결 한두 문장). 해요체, 가짜 수치 금지. "
+        "11단원(AI 보안)이면 AI 거버넌스, 모델·데이터 위험(프롬프트 주입, 데이터 유출, 모델 공급망), AI 사고 대응을 다루고 views에 CISA 대신 AAISM 관점도 괜찮다. "
+        "학습자의 목표는 AI 보안을 아는 CISO라서, 다른 단원에서도 자연스러우면 AI 관련 연결 한 줄을 넣는다.\n\n"
         f"[기사 목록]\n{json.dumps(feed, ensure_ascii=False)}"
     )
 
@@ -496,7 +593,8 @@ def overview(vault, today=None):
         "current_chapter": current_chapter(vault, p), "bank": len(qs), "chapters_ready": sum(1 for c in ORDER if chapter_path(vault, c).is_file()),
         "chapters_total": len(ORDER), "wrong_due": len(due_wrong(p, today)), "wrong_total": len(p["boxes"]),
         "streak": streak(p, today), "today_answered": sum(1 for a in p["attempts"] if a["at"].startswith(today.isoformat())),
-        "mocks": p["mocks"][-5:], "readiness": readiness(p),
+        "mocks": p["mocks"][-5:], "readiness": readiness(p), "pace": pace(p, today),
+        "reviewed": sum(1 for c in ORDER if (load_chapter(vault, c) or {}).get("reviewed")),
         "exam": {"name": "CISA", "questions": 150, "minutes": 240, "pass": "450 / 800", "language": "한국어 가능", "where": "PSI 시험장 또는 집에서 원격 감독"},
     }
 
@@ -545,6 +643,37 @@ def brief_line(vault, today=None):
         return ""
     unit = UNITS[(int(doc.get("unit") or 1) - 1) % len(UNITS)]
     return f"공부방: 뉴스 {len(doc.get('news', []))} · {unit['n']}단원 {unit['title']} · CISA {len(doc.get('questions', []))}문제"
+
+
+def evening_part(vault, today=None):
+    """저녁 마감 카톡에 붙일 (우선순위, 문장). 오늘 안 했으면 우선순위 1로 독려."""
+    today = today or date.today()
+    p = load_progress(vault)
+    n = sum(1 for a in p["attempts"] if a["at"].startswith(today.isoformat()))
+    if not n and today.isoformat() not in p["days"]:
+        return (1, "공부방 오늘 아직이에요. 자기 전 3문제만 풀어요 (10분 버튼)")
+    right = sum(1 for a in p["attempts"] if a["at"].startswith(today.isoformat()) and a["ok"])
+    return (3, f"공부방 오늘 {n}문제 {round(100 * right / n) if n else 0}% · 연속 {streak(p, today)}일")
+
+
+def weekly_report(vault, today=None):
+    """월요일 주간 진도 카톡(≤200자)."""
+    today = today or date.today()
+    p = load_progress(vault)
+    qs = all_questions(vault)
+    week = [(today - timedelta(days=i)).isoformat() for i in range(1, 8)]
+    att = [a for a in p["attempts"] if a["at"][:10] in week]
+    days = sum(1 for d in p["days"] if d in week)
+    pc = pace(p, today)
+    _, dom = _stats(p, qs)
+    weak = sorted([(v["rate"], k) for k, v in dom.items() if v["rate"] is not None])
+    msg = (f"[공부방 주간] 지난주 {days}일 · {len(att)}문제 " + (f"{round(100 * sum(a['ok'] for a in att) / len(att))}%" if att else "") +
+           f" / 장 {pc['chapters_done']}/{len(ORDER)}(계획 {pc['chapters_expected']}, {pc['status']}) / 목표 {pc['target']} D-{pc['d_day']}")
+    if weak:
+        msg += f" / 약점 {weak[0][1]} {weak[0][0]}%"
+    if pc["per_week"]:
+        msg += f" / 이번 주 {pc['per_week']}장"
+    return msg[:200]
 
 
 # ───────────────────────── HTTP ─────────────────────────
