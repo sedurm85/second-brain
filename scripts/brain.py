@@ -31,6 +31,7 @@ import reminders as reminders_mod  # noqa: E402 - 미리알림 어댑터(맥 미
 import weather as weather_mod  # noqa: E402 - 날씨 어댑터(읽기 전용, 실패해도 일정 표시는 막지 않음)
 import studio as studio_mod  # noqa: E402 - 글 공방 탭(키워드→원본→플랫폼 변환·게시 기록)
 import career as career_mod  # noqa: E402 - 커리어 탭(포지션 파이프라인·헤드헌터·내 자산, career/ 폴더)
+import study as study_mod  # noqa: E402 - 공부방 탭(하루치 보안 뉴스·실무감·CISA, study/ 폴더)
 
 VERSION = "0.1.0"
 
@@ -42,7 +43,7 @@ NOTE_TYPES = ("note", "idea", "source", "meeting", "event", "journal")
 ALL_TYPES = NOTE_TYPES + ("decision", "project", "person")
 DECISION_STATUSES = ("open", "decided", "superseded")
 SKIP_FILES = {"BRAIN.md", "inbox.md"}
-SKIP_DIRS = {".git", ".obsidian", ".trash", "node_modules", "_demo", "_templates", "_attachments", "career"}  # career/는 커리어 탭 전용(보드·검색·인덱스 제외)
+SKIP_DIRS = {".git", ".obsidian", ".trash", "node_modules", "_demo", "_templates", "_attachments", "career", "study"}  # career/·study/는 각 탭 전용(보드·검색·인덱스 제외)
 
 DEFAULT_CONFIG = {"vault": "~/brain", "git_autocommit": False, "index_head": 40, "claude_hourly_limit": 40}
 
@@ -3596,6 +3597,8 @@ def kakao_brief(t):
         parts.append((3, f"준비 제안 {t['suggestions']['count']}건(보드에서 채택)", None))
     if t.get("career_due"):  # 헤드헌터 답장·포지션 다음 할 일 기한(이틀 안)
         parts.append((2, career_mod.due_sentence(t["career_due"]), lambda x: career_mod.due_sentence(t["career_due"], 1)))
+    if t.get("study_line"):  # 공부방 하루치가 준비돼 있으면 한 줄
+        parts.append((3, t["study_line"], None))
     tk = (t.get("tasks") or {}).get("counts") or {}
     own_today = [x for x in (t.get("tasks") or {}).get("today", []) if x.get("kind") == "task"]
     if own_today:
@@ -3739,6 +3742,11 @@ def dash_today(vault, today=None, now=None, widgets=None, agenda=None):
     except Exception as e:  # noqa: BLE001 - 커리어 데이터 문제로 브리핑이 죽지 않게
         log(f"경고: 커리어 기한 읽기 실패({e})")
         t["career_due"] = []
+    try:
+        t["study_line"] = study_mod.brief_line(vault, today) if vault else ""
+    except Exception as e:  # noqa: BLE001 - 공부방 데이터 문제로 브리핑이 죽지 않게
+        log(f"경고: 공부방 읽기 실패({e})")
+        t["study_line"] = ""
     t["suggestions"] = {"count": len(pend), "by_key": {k: {"items": s["items"], "created": s.get("created")} for k, s in pend.items()}}
     t["kakao"] = kakao_brief(t)
     return t
@@ -3894,6 +3902,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     changed[k] = v
                 save_config(cfg)
                 return self._json(200, {"ok": True, "changed": changed})
+            if route.startswith("/api/study/"):
+                try:
+                    r = study_mod.handle_post(sys.modules[__name__], route, body, vault)
+                except study_mod.StudyError as e:
+                    return self._json(400, {"error": str(e)})
+                if r is not None:
+                    return self._json(200, r)
             if route.startswith("/api/career/"):
                 try:
                     r = career_mod.handle_post(sys.modules[__name__], route, body, vault)
@@ -3957,6 +3972,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._static("studio.html")
             if route in ("/career", "/career.html"):
                 return self._static("career.html")
+            if route in ("/study", "/study.html"):
+                return self._static("study.html")
+            if route == "/api/study" or route.startswith("/api/study/"):
+                try:
+                    r = study_mod.handle_get(sys.modules[__name__], route, qs, vault)
+                except study_mod.StudyError as e:
+                    return self._json(400, {"error": str(e)})
+                if r is not None:
+                    return self._json(200, r)
             if route == "/api/career" or route.startswith("/api/career/"):
                 try:
                     r = career_mod.handle_get(sys.modules[__name__], route, qs, vault)
@@ -4505,6 +4529,33 @@ def _career_kv(pairs, allowed):
             raise BrainError(f"바꿀 수 없는 항목: {k} (가능: {', '.join(allowed)}, fit, gap)")
         out[k] = v
     return out
+
+
+def cmd_study(args):
+    """공부방: fill(CISA 장 내용·문제 채우기) · daily(하루치 준비) · status(진도)."""
+    v = require_vault()
+    api = sys.modules[__name__]
+    a = list(args.args or [])
+    try:
+        if args.action == "fill":
+            r = study_mod.fill(api, v, a[0] if a else None, args.limit)
+            emit(args, r, "\n".join(f"{x['chapter']} 채움 · 문제 {x['questions']}개" for x in r["filled"]) + f"\n남은 장 {r['remaining']}개")
+        elif args.action == "daily":
+            doc = study_mod.make_daily(api, v, force=args.force)
+            human = f"{doc['date']} 하루치: 뉴스 {len(doc.get('news', []))} · {doc.get('unit')}단원 · 문제 {len(doc.get('questions', []))}"
+            if args.fill:  # 하루치를 만든 뒤 남은 장을 조금씩 채운다(새벽 자동 실행)
+                try:
+                    r = study_mod.fill(api, v, None, args.fill)
+                    human += f"\n장 채움 {len(r['filled'])}개 · 남은 장 {r['remaining']}개"
+                except (study_mod.StudyError, BrainError) as e:
+                    human += f"\n장 채움 실패: {e}"
+            emit(args, doc, human)
+        else:
+            o = study_mod.overview(v)
+            emit(args, o, f"장 {o['chapters_ready']}/{o['chapters_total']} 준비 · 문제 {o['bank']}개 · 연속 {o['streak']}일 · 오답 대기 {o['wrong_due']}")
+    except study_mod.StudyError as e:
+        raise BrainError(str(e)) from e
+    return 0
 
 
 def cmd_career(args):
@@ -6746,6 +6797,7 @@ AGENT_SPECS = {
     "prepare": {"label": "com.secondbrain.prepare", "args": ["prepare"], "calendar": {"Hour": 6, "Minute": 40}, "title": "일정 준비 제안 (매일 6:40)"},
     "retro": {"label": "com.secondbrain.retro", "args": ["retro", "--kakao"], "calendar": {"Weekday": 1, "Hour": 9, "Minute": 0}, "title": "주간 회고 (월 9시)"},
     "retro-monthly": {"label": "com.secondbrain.retro-monthly", "args": ["retro", "--monthly", "--kakao"], "calendar": {"Day": 1, "Hour": 9, "Minute": 10}, "title": "월간 회고 (매월 1일 9:10)"},
+    "study": {"label": "com.secondbrain.study", "args": ["study", "daily", "--fill", "2"], "calendar": {"Hour": 5, "Minute": 50}, "title": "공부방 하루치 준비 (매일 5:50)"},
     "serve": {"label": "com.secondbrain.serve", "args": ["serve", "--port", "7777"], "keepalive": True, "title": "대시보드 서버 (상주)"},
 }
 
@@ -8680,6 +8732,13 @@ def build_parser():
 
     add("today", "오늘 브리핑: 일정·되돌아볼 결정·자동화 상태·inbox·이번 주 신규(+카톡용 200자)", cmd_today)
     add("widgets", "위젯(~/.config/second-brain/widgets.json) 상태 조회", cmd_widgets)
+
+    s = add("study", "공부방: fill [장] · daily · status", cmd_study)
+    s.add_argument("action", choices=("fill", "daily", "status"))
+    s.add_argument("args", nargs="*", help="fill에 장 번호(예: 2-1)를 주면 그 장만 다시 만든다")
+    s.add_argument("--limit", type=int, default=1, help="fill: 채울 장 수")
+    s.add_argument("--fill", type=int, default=0, help="daily: 하루치 뒤 채울 장 수")
+    s.add_argument("--force", action="store_true", help="daily: 이미 있어도 다시 만든다")
 
     s = add("career", "커리어 탭 데이터: list · show <id> · add · set <id> k=v… · status <id> <상태> · log <id> <내용> · contact list|add|set|log · due · profile", cmd_career)
     s.add_argument("action", choices=("list", "show", "add", "set", "status", "log", "delete", "contact", "due", "profile"))

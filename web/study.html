@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>공부방 · 세컨드브레인</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<script>
+  (function () {  /* 보드와 같은 테마 선택을 따르고, 고른 적 없으면 라이트 */
+    var t = "light";
+    try { t = localStorage.getItem("brain-theme") || "light"; } catch (e) { console.error("[공부방] 테마 읽기 불가", e); }
+    document.documentElement.setAttribute("data-theme", t);
+  })();
+</script>
+<style>
+/* 시안: 대시보드(7777)와 같은 관제실 톤. 숫자는 실제 데이터만, 진도는 첫날 기준 0에서 시작. */
+:root {
+  --bg: #0a0e14; --surface: #111821; --surface-2: #172230; --surface-3: #1f2d3d;
+  --ink: #e8f1f8; --ink-2: #a9bccb; --muted: #6f8394;
+  --rule: rgba(160, 200, 230, .10); --rule-strong: rgba(160, 200, 230, .20);
+  --accent: #4fd1ff; --accent-soft: rgba(79, 209, 255, .14); --on-accent: #04121b;
+  --field: #b79cff; --field-soft: rgba(183, 156, 255, .14);
+  --exam: #3fe0a8; --exam-soft: rgba(63, 224, 168, .13);
+  --news: #ffb84d; --news-soft: rgba(255, 184, 77, .13);
+  --good: #3ddc84; --bad: #ff5d6c;
+  --glass: linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.02));
+  --glass-edge: inset 0 1px 0 rgba(255,255,255,.08);
+  --panel-shadow: 0 18px 50px rgba(2, 8, 20, .55);
+  --font-sans: "IBM Plex Sans KR", "Apple SD Gothic Neo", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r: 6px; --rp: 12px; --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #eef1f4; --surface: #fbfbf9; --surface-2: #e9edf1; --surface-3: #dce2e8;
+    --ink: #1c1c1a; --ink-2: #4f4f4a; --muted: #6b6b64; --rule: #dadad3; --rule-strong: #bcbcb4;
+    --accent: #0b7fc2; --accent-soft: rgba(11,127,194,.10); --on-accent: #fff;
+    --field: #6a4fd0; --field-soft: rgba(106,79,208,.10); --exam: #12825a; --exam-soft: rgba(18,130,90,.10);
+    --news: #a66a00; --news-soft: rgba(166,106,0,.10); --good: #1f8f4e; --bad: #c8323f;
+    --glass: linear-gradient(180deg, rgba(255,255,255,.9), rgba(255,255,255,.65));
+    --glass-edge: inset 0 1px 0 rgba(255,255,255,.9); --panel-shadow: 0 14px 40px rgba(28,28,26,.10);
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #eef1f4; --surface: #fbfbf9; --surface-2: #e9edf1; --surface-3: #dce2e8;
+  --ink: #1c1c1a; --ink-2: #4f4f4a; --muted: #6b6b64; --rule: #dadad3; --rule-strong: #bcbcb4;
+  --accent: #0b7fc2; --accent-soft: rgba(11,127,194,.10); --on-accent: #fff;
+  --field: #6a4fd0; --field-soft: rgba(106,79,208,.10); --exam: #12825a; --exam-soft: rgba(18,130,90,.10);
+  --news: #a66a00; --news-soft: rgba(166,106,0,.10); --good: #1f8f4e; --bad: #c8323f;
+  --glass: linear-gradient(180deg, rgba(255,255,255,.9), rgba(255,255,255,.65));
+  --glass-edge: inset 0 1px 0 rgba(255,255,255,.9); --panel-shadow: 0 14px 40px rgba(28,28,26,.10);
+  color-scheme: light;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background:
+    radial-gradient(1200px 600px at 85% -10%, rgba(79,209,255,.08), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(183,156,255,.07), transparent 60%),
+    var(--bg);
+  color: var(--ink); font: 15px/1.65 var(--font-sans); min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 1320px; margin: 0 auto; padding: 24px 28px 64px; }
+
+/* 상단 */
+.top { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 20px; }
+.crumb { font: 500 12px var(--font-mono); color: var(--muted); letter-spacing: .06em; }
+h1 { margin: 2px 0 0; font-size: 28px; font-weight: 700; letter-spacing: -.01em; }
+h1 .draft { font: 500 11px var(--font-mono); color: var(--news); border: 1px solid var(--news); border-radius: 99px; padding: 2px 8px; vertical-align: middle; margin-left: 8px; }
+.today { color: var(--ink-2); margin-top: 2px; }
+.stats { display: flex; gap: 10px; }
+.stat { background: var(--glass), var(--surface); box-shadow: var(--glass-edge); border: 1px solid var(--rule); border-radius: var(--rp); padding: 10px 14px; min-width: 112px; }
+.stat b { display: block; font: 600 22px var(--font-mono); }
+.stat span { font-size: 12px; color: var(--muted); }
+.stat.exam b { color: var(--exam); } .stat.field b { color: var(--field); } .stat.streak b { color: var(--news); }
+
+/* 단원 진도 */
+.units { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; margin: 0 0 22px; }
+.unit { border: 1px solid var(--rule); border-radius: var(--r); padding: 8px 9px; background: var(--surface); font-size: 12px; color: var(--muted); line-height: 1.35; min-height: 58px; position: relative; }
+.unit i { font: 500 11px var(--font-mono); font-style: normal; display: block; color: var(--muted); }
+.unit.now { border-color: var(--field); color: var(--ink); background: linear-gradient(180deg, var(--field-soft), transparent), var(--surface); box-shadow: 0 0 0 1px var(--field-soft), 0 0 24px rgba(183,156,255,.18); }
+.unit.now i { color: var(--field); }
+.unit.now::after { content: ""; position: absolute; top: 8px; right: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--field); box-shadow: 0 0 10px var(--field); animation: pulse 2.4s ease-in-out infinite; }
+.unit .hot { position: absolute; right: 7px; bottom: 6px; font: 500 10px var(--font-mono); color: var(--field); opacity: .8; }
+@keyframes pulse { 50% { opacity: .35; } }
+
+/* 3단 그리드 */
+.grid { display: grid; grid-template-columns: 1fr 1.25fr 1.05fr; gap: 18px; align-items: start; }
+.panel { background: var(--glass), var(--surface); box-shadow: var(--glass-edge), var(--panel-shadow); border: 1px solid var(--rule); border-radius: var(--rp); padding: 18px 18px 20px; }
+.ph { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.ph h2 { margin: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.ph h2::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--c); box-shadow: 0 0 10px var(--c); }
+.ph small { font: 500 11px var(--font-mono); color: var(--muted); }
+.news { --c: var(--news); } .field { --c: var(--field); } .exam { --c: var(--exam); }
+
+/* 뉴스 */
+.nc { border-top: 1px solid var(--rule); padding: 14px 0 4px; }
+.nc:first-of-type { border-top: 0; padding-top: 2px; }
+.nc .meta { font: 500 11px var(--font-mono); color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.tag { font: 500 11px var(--font-sans); padding: 1px 7px; border-radius: 99px; background: var(--news-soft); color: var(--news); }
+.tag.f { background: var(--field-soft); color: var(--field); }
+.nc h3 { margin: 4px 0 6px; font-size: 15px; line-height: 1.45; }
+.nc ul { margin: 0 0 8px; padding-left: 18px; color: var(--ink-2); font-size: 13.5px; }
+.nc li { margin: 2px 0; }
+.lab { font-size: 12px; font-weight: 600; color: var(--muted); margin: 8px 0 2px; }
+.tech { font-size: 13.5px; color: var(--ink-2); margin: 0; }
+.ask { margin: 8px 0 6px; padding: 9px 11px; border-left: 2px solid var(--news); background: var(--news-soft); border-radius: 0 var(--r) var(--r) 0; font-size: 13.5px; }
+.row { display: flex; gap: 12px; align-items: center; font-size: 12.5px; }
+.ghost { font: 500 12px var(--font-sans); border: 1px solid var(--rule-strong); background: transparent; color: var(--ink-2); border-radius: var(--r); padding: 4px 9px; cursor: pointer; transition: border-color .2s var(--ease), color .2s var(--ease); }
+.ghost:hover { border-color: var(--accent); color: var(--accent); }
+.ghost.done { border-color: var(--good); color: var(--good); }
+
+/* 실무감 */
+.lead { font-size: 18px; font-weight: 600; margin: 0 0 4px; line-height: 1.45; }
+.sub { color: var(--ink-2); margin: 0 0 14px; font-size: 14px; }
+.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0 14px; }
+.box { border: 1px solid var(--rule); border-radius: var(--r); padding: 11px 12px; background: var(--surface-2); }
+.box h4 { margin: 0 0 4px; font-size: 13px; }
+.box p { margin: 0; font-size: 13px; color: var(--ink-2); }
+.en { font: 500 11.5px var(--font-mono); color: var(--muted); }
+.ladder { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin: 4px 0 14px; border: 1px solid var(--rule); border-radius: var(--r); overflow: hidden; }
+.ladder div { padding: 9px 10px; font-size: 12.5px; border-left: 1px solid var(--rule); background: var(--surface-2); }
+.ladder div:first-child { border-left: 0; background: var(--field-soft); }
+.ladder b { display: block; font-size: 13px; }
+.ladder span { color: var(--muted); }
+.view { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 6px 0 14px; }
+.view .box h4 { font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .02em; }
+.view .box.cisa { border-color: var(--exam); background: linear-gradient(180deg, var(--exam-soft), transparent), var(--surface-2); }
+.view .box.cisa h4 { color: var(--exam); }
+.piece { border: 1px dashed var(--field); border-radius: var(--r); padding: 12px 14px; background: var(--field-soft); }
+.piece h4 { margin: 0 0 6px; font-size: 13.5px; color: var(--field); }
+.piece ol { margin: 0; padding-left: 18px; font-size: 13.5px; }
+.piece li { margin: 3px 0; }
+.piece .why { margin: 8px 0 0; font-size: 12.5px; color: var(--ink-2); }
+
+/* 문제 */
+.q { border-top: 1px solid var(--rule); padding: 13px 0 6px; }
+.q:first-of-type { border-top: 0; padding-top: 0; }
+.qh { font: 500 11px var(--font-mono); color: var(--muted); display: flex; justify-content: space-between; }
+.qh .trap { color: var(--exam); }
+.q p.stem { margin: 3px 0 8px; font-size: 14px; font-weight: 500; }
+.opts { display: grid; gap: 5px; }
+.opt { text-align: left; font: 13.5px/1.45 var(--font-sans); color: var(--ink); background: var(--surface-2); border: 1px solid var(--rule); border-radius: var(--r); padding: 7px 10px; cursor: pointer; transition: border-color .18s var(--ease), background .18s var(--ease), transform .12s var(--ease); }
+.opt:hover:not(:disabled) { border-color: var(--exam); }
+.opt:active:not(:disabled) { transform: scale(.99); }
+.opt:disabled { cursor: default; }
+.opt.right { border-color: var(--good); background: rgba(61,220,132,.12); }
+.opt.wrong { border-color: var(--bad); background: rgba(255,93,108,.10); }
+.opt b { font-family: var(--font-mono); font-weight: 500; color: var(--muted); margin-right: 6px; }
+.exp { display: none; margin: 8px 0 2px; font-size: 13px; color: var(--ink-2); padding: 9px 11px; border-radius: var(--r); background: var(--surface-3); }
+.exp.on { display: block; animation: rise .25s var(--ease); }
+.exp strong { color: var(--ink); }
+@keyframes rise { from { opacity: 0; transform: translateY(4px); } }
+.score { margin-top: 12px; padding: 11px 12px; border-radius: var(--r); border: 1px solid var(--rule); font-size: 13px; color: var(--ink-2); display: flex; justify-content: space-between; align-items: center; }
+.score b { font: 600 18px var(--font-mono); color: var(--exam); }
+
+/* 탭 */
+.tabs { display: flex; gap: 4px; margin: 0 0 18px; border-bottom: 1px solid var(--rule); }
+.tab { font: 600 14px var(--font-sans); color: var(--muted); background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 14px 10px; cursor: pointer; margin-bottom: -1px; }
+.tab.on { color: var(--ink); border-bottom-color: var(--exam); }
+.tab:hover { color: var(--ink); }
+
+/* 전체 과정 */
+.quick { margin-bottom: 16px; }
+.qk-h { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
+.qk-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.qk { text-align: left; cursor: pointer; font-family: var(--font-sans); color: var(--ink); background: linear-gradient(180deg, var(--exam-soft), transparent), var(--surface); border: 1px solid var(--exam); border-radius: var(--rp); padding: 14px 16px; box-shadow: var(--glass-edge); transition: transform .15s var(--ease), box-shadow .2s var(--ease); }
+.qk:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(18,130,90,.18); }
+.qk b { display: block; font: 600 22px var(--font-mono); color: var(--exam); }
+.qk span { display: block; font-size: 14px; font-weight: 600; margin-top: 2px; }
+.qk i { display: block; font-style: normal; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.qk.ghosty { background: var(--surface); border-color: var(--rule-strong); }
+.qk.ghosty b { color: var(--ink-2); font-size: 18px; font-family: var(--font-sans); }
+.exam-facts { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); padding: 10px 14px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface); margin-bottom: 16px; }
+.exam-facts b { color: var(--muted); font-weight: 600; margin-right: 4px; }
+.doms { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.dom { background: var(--glass), var(--surface); box-shadow: var(--glass-edge), var(--panel-shadow); border: 1px solid var(--rule); border-radius: var(--rp); padding: 16px 16px 12px; display: flex; flex-direction: column; }
+.dom.cur { border-color: var(--exam); }
+.dom header { display: flex; align-items: baseline; gap: 8px; }
+.dom header i { font: 600 12px var(--font-mono); font-style: normal; color: var(--exam); }
+.dom h3 { margin: 0; font-size: 15px; flex: 1; }
+.dom header em { font: 600 13px var(--font-mono); font-style: normal; color: var(--ink-2); }
+.bar { height: 4px; border-radius: 99px; background: var(--surface-3); margin: 10px 0 8px; overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--exam); }
+.dom ul { list-style: none; margin: 0 0 10px; padding: 0; font-size: 13.5px; flex: 1; }
+.dom li { padding: 6px 0; border-top: 1px solid var(--rule); display: flex; gap: 8px; align-items: baseline; }
+.dom li:first-child { border-top: 0; }
+.dom li b { font: 500 11.5px var(--font-mono); color: var(--muted); min-width: 26px; }
+.dom li s { text-decoration: none; margin-left: auto; font-size: 11px; color: var(--field); background: var(--field-soft); border-radius: 99px; padding: 0 7px; white-space: nowrap; }
+.dom li.now { color: var(--exam); font-weight: 600; }
+.dom ul.plain li b { min-width: auto; font-family: var(--font-sans); font-size: 13px; color: var(--ink); }
+.dom footer { font: 500 11.5px var(--font-mono); color: var(--muted); border-top: 1px solid var(--rule); padding-top: 8px; }
+.dom.side { background: var(--surface-2); box-shadow: none; }
+.note-s { font-size: 12.5px; color: var(--muted); margin: 14px 0 0; }
+@media (max-width: 1100px) { .doms { grid-template-columns: 1fr 1fr; } .qk-row { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 720px) { .doms, .qk-row { grid-template-columns: 1fr; } }
+
+.foot { margin-top: 22px; color: var(--muted); font-size: 12.5px; }
+.foot ol { padding-left: 18px; margin: 6px 0 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 1100px) { .grid { grid-template-columns: 1fr 1fr; } .grid .exam { grid-column: 1 / -1; } .units { grid-template-columns: repeat(5, 1fr); } }
+@media (max-width: 720px) { .wrap { padding: 16px; } .grid, .duo, .view, .ladder { grid-template-columns: 1fr; } .units { grid-template-columns: repeat(2, 1fr); } .ladder div { border-left: 0; border-top: 1px solid var(--rule); } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+
+<style>
+.back { font: 500 12px var(--font-mono); color: var(--muted); }
+.empty { padding: 18px; border: 1px dashed var(--rule-strong); border-radius: var(--rp); color: var(--ink-2); font-size: 14px; background: var(--surface); }
+.empty code { font: 500 12.5px var(--font-mono); background: var(--surface-2); padding: 1px 6px; border-radius: 4px; }
+.unit.done i::after { content: " ✓"; color: var(--good); }
+.unit small { display: block; font: 500 10px var(--font-mono); color: var(--muted); margin-top: 2px; }
+.dom li.ch { cursor: pointer; border-radius: 4px; }
+.dom li.ch:hover { background: var(--surface-2); }
+.dom li.off { color: var(--muted); cursor: default; }
+.dom li .acc { font: 500 11px var(--font-mono); color: var(--muted); }
+.dom li.read b { color: var(--good); }
+.qk:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
+.ready { margin: 0 0 16px; padding: 10px 14px; border-radius: var(--r); font-size: 13.5px; border: 1px solid var(--rule); background: var(--surface); }
+.ready.yes { border-color: var(--good); color: var(--good); font-weight: 600; }
+/* 오버레이 */
+.ov { position: fixed; inset: 0; background: rgba(10, 14, 20, .45); display: flex; justify-content: center; align-items: flex-start; padding: 32px 16px; overflow: auto; z-index: 50; }
+.ov[hidden] { display: none; }
+.sheet { width: min(860px, 100%); background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--rp); box-shadow: var(--panel-shadow); padding: 22px 26px 26px; animation: rise .25s var(--ease); }
+.sh-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+.sh-top h2 { margin: 0; font-size: 19px; }
+.sh-top .meta { font: 500 12px var(--font-mono); color: var(--muted); }
+.x { font-size: 20px; line-height: 1; border: 0; background: none; color: var(--muted); cursor: pointer; padding: 4px 8px; }
+.md { font-size: 15px; line-height: 1.75; }
+.md h2 { font-size: 17px; margin: 22px 0 8px; padding-top: 12px; border-top: 1px solid var(--rule); }
+.md h2:first-child { border-top: 0; padding-top: 0; margin-top: 4px; }
+.md h3 { font-size: 15px; margin: 16px 0 6px; color: var(--exam); }
+.md p { margin: 6px 0; }
+.md ul, .md ol { margin: 6px 0; padding-left: 22px; }
+.md blockquote { margin: 10px 0; padding: 8px 12px; border-left: 3px solid var(--field); background: var(--field-soft); border-radius: 0 var(--r) var(--r) 0; }
+.md table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13.5px; }
+.md th, .md td { border: 1px solid var(--rule-strong); padding: 6px 8px; text-align: left; vertical-align: top; }
+.md th { background: var(--surface-2); }
+.md code { font: 500 13px var(--font-mono); background: var(--surface-2); padding: 0 4px; border-radius: 3px; }
+.terms { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin-top: 8px; }
+.term { font-size: 13.5px; padding: 6px 0; border-top: 1px solid var(--rule); }
+.term b { margin-right: 6px; } .term i { font: 500 12px var(--font-mono); font-style: normal; color: var(--muted); }
+.term p { margin: 2px 0 0; color: var(--ink-2); font-size: 13px; }
+.sh-act { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+.btn { font: 600 14px var(--font-sans); border-radius: var(--r); padding: 9px 16px; cursor: pointer; border: 1px solid var(--exam); background: var(--exam); color: #fff; }
+.btn.line { background: transparent; color: var(--exam); }
+.btn:disabled { opacity: .5; cursor: default; }
+.qrun-top { display: flex; justify-content: space-between; align-items: center; font: 500 12.5px var(--font-mono); color: var(--muted); margin-bottom: 8px; }
+.timer { color: var(--news); font-weight: 600; }
+.pbar { height: 4px; border-radius: 99px; background: var(--surface-3); overflow: hidden; margin-bottom: 14px; }
+.pbar span { display: block; height: 100%; background: var(--exam); transition: width .25s var(--ease); }
+.qrun .stem { font-size: 16px; font-weight: 500; margin: 4px 0 12px; line-height: 1.6; }
+.qrun .opt { font-size: 14.5px; padding: 10px 12px; }
+.result h3 { margin: 4px 0 8px; font-size: 26px; font-family: var(--font-mono); color: var(--exam); }
+.rev { border-top: 1px solid var(--rule); padding: 10px 0; font-size: 13.5px; }
+.rev .bad { color: var(--bad); font-weight: 600; }
+.gl-search { width: 100%; font: 14px var(--font-sans); padding: 9px 12px; border-radius: var(--r); border: 1px solid var(--rule-strong); background: var(--surface); color: var(--ink); margin-bottom: 12px; }
+.gl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 18px; }
+@media (max-width: 1100px) { .gl { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 720px) { .gl, .terms { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="crumb"><a class="back" href="/">← 보드</a> · SECOND BRAIN / STUDY</div>
+      <h1>공부방</h1>
+      <div class="today" id="today-line">불러오는 중…</div>
+    </div>
+    <div class="stats">
+      <div class="stat exam"><b id="st-today">0</b><span>오늘 푼 문제</span></div>
+      <div class="stat field"><b id="st-unit">–</b><span>실무감 단원</span></div>
+      <div class="stat streak"><b id="st-streak">0일</b><span>연속 학습</span></div>
+    </div>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button class="tab on" type="button" role="tab" data-v="today">오늘</button>
+    <button class="tab" type="button" role="tab" data-v="full">CISA 전체 과정</button>
+    <button class="tab" type="button" role="tab" data-v="gloss">용어집</button>
+  </div>
+
+  <div id="v-today">
+    <nav class="units" id="units" aria-label="실무감 10단원"></nav>
+    <main class="grid" id="today-grid"></main>
+  </div>
+
+  <div id="v-full" hidden>
+    <section class="quick" aria-label="짬 시간 바로 시작">
+      <div class="qk-h">지금 시간이 얼마나 있어요?</div>
+      <div class="qk-row" id="quick"></div>
+    </section>
+    <div class="ready" id="ready"></div>
+    <div class="exam-facts" id="facts"></div>
+    <div class="doms" id="doms"></div>
+    <p class="note-s">각 장 옆의 보라색 표시는 실무감 10단원 연결이에요. 장을 누르면 개념을 읽고 그 장 문제를 풀 수 있어요. 문제 비중은 공식 도메인 비중(2026 ISACA 응시자 가이드)을 따라요. 문제는 공식 출제 범위에 맞춘 연습용이고, 실전 감각은 ISACA 공식 문제은행(QAE)으로 맞춰요.</p>
+  </div>
+
+  <div id="v-gloss" hidden>
+    <input class="gl-search" id="gl-q" type="search" placeholder="용어 찾기 (한국어·영어)">
+    <div class="gl" id="gl"></div>
+  </div>
+</div>
+
+<div class="ov" id="ov" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+
+<script>
+(function () {
+  var S = { data: null, token: null, gloss: null };
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+
+  function api(path, body) {
+    var opt = body ? { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Token": S.token || "" }, body: JSON.stringify(body) } : {};
+    return fetch(path, opt).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); });
+  }
+  function token() { return fetch("/api/session").then(function (r) { return r.json(); }).then(function (j) { S.token = j.token; }).catch(function (e) { console.error("[공부방] 세션 토큰 실패", e); }); }
+
+  function inline(s) { return esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>"); }
+  function md(src) {
+    var lines = String(src || "").split("\n"), out = [], i = 0;
+    while (i < lines.length) {
+      var l = lines[i];
+      if (/^\s*$/.test(l)) { i++; continue; }
+      var m;
+      if ((m = /^(#{2,3})\s+(.*)/.exec(l))) { out.push("<h" + m[1].length + ">" + inline(m[2]) + "</h" + m[1].length + ">"); i++; continue; }
+      if (/^\s*\|/.test(l)) {
+        var rows = [];
+        while (i < lines.length && /^\s*\|/.test(lines[i])) { rows.push(lines[i]); i++; }
+        var cells = function (r) { return r.trim().replace(/^\||\|$/g, "").split("|").map(function (c) { return c.trim(); }); };
+        var body = rows.filter(function (r) { return !/^\s*\|[\s:|-]+\|\s*$/.test(r); });
+        var h = "<table><thead><tr>" + cells(body[0]).map(function (c) { return "<th>" + inline(c) + "</th>"; }).join("") + "</tr></thead><tbody>";
+        body.slice(1).forEach(function (r) { h += "<tr>" + cells(r).map(function (c) { return "<td>" + inline(c) + "</td>"; }).join("") + "</tr>"; });
+        out.push(h + "</tbody></table>"); continue;
+      }
+      if (/^>\s?/.test(l)) {
+        var q = [];
+        while (i < lines.length && /^>\s?/.test(lines[i])) { q.push(lines[i].replace(/^>\s?/, "")); i++; }
+        out.push("<blockquote>" + q.map(inline).join("<br>") + "</blockquote>"); continue;
+      }
+      if (/^\s*([-*]|\d+\.)\s+/.test(l)) {
+        var ol = /^\s*\d+\./.test(l), items = [];
+        while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i])) { items.push(lines[i].replace(/^\s*([-*]|\d+\.)\s+/, "")); i++; }
+        out.push((ol ? "<ol>" : "<ul>") + items.map(function (x) { return "<li>" + inline(x) + "</li>"; }).join("") + (ol ? "</ol>" : "</ul>")); continue;
+      }
+      var para = [];
+      while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^(#{2,3}\s|\s*\||>|\s*([-*]|\d+\.)\s)/.test(lines[i])) { para.push(lines[i]); i++; }
+      out.push("<p>" + para.map(inline).join("<br>") + "</p>");
+    }
+    return out.join("");
+  }
+
+  /* ── 오늘 ── */
+  function renderUnits(d) {
+    $("units").innerHTML = d.units.map(function (u) {
+      return '<div class="unit' + (u.now ? " now" : "") + (u.done >= d.field.per_unit ? " done" : "") + '"><i>' + String(u.n).padStart(2, "0") + "</i>" + esc(u.title) +
+        (u.done ? "<small>" + Math.min(u.done, d.field.per_unit) + "/" + d.field.per_unit + "</small>" : "") + (u.hot ? '<span class="hot">실무</span>' : "") + "</div>";
+    }).join("");
+  }
+  function questionBlock(q, i, answered, mode) {
+    var done = answered && Object.prototype.hasOwnProperty.call(answered, q.id);
+    var h = '<div class="q" data-id="' + esc(q.id) + '"><div class="qh"><span>Q' + (i + 1) + " · " + esc(q.chapter) + "</span>" + (q.trap ? '<span class="trap">함정 단어 ' + esc(q.trap) + "</span>" : "") + '</div><p class="stem">' + inline(q.stem) + '</p><div class="opts">';
+    q.options.forEach(function (o, j) {
+      var cls = done && j === q.answer ? " right" : "";
+      h += '<button class="opt' + cls + '" type="button" data-j="' + j + '"' + (done ? " disabled" : "") + "><b>" + "ABCD"[j] + "</b>" + inline(o) + "</button>";
+    });
+    return h + '</div><div class="exp' + (done ? " on" : "") + '"><strong>정답 ' + "ABCD"[q.answer] + ".</strong> " + inline(q.explanation) + "</div></div>";
+  }
+  function bindQuestions(root, qs, mode, onAnswer) {
+    root.querySelectorAll(".q").forEach(function (el) {
+      var q = qs.filter(function (x) { return x.id === el.dataset.id; })[0];
+      el.querySelectorAll(".opt").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var j = +b.dataset.j;
+          el.querySelectorAll(".opt").forEach(function (x, k) { x.disabled = true; if (k === q.answer) x.classList.add("right"); });
+          if (j !== q.answer) b.classList.add("wrong");
+          el.querySelector(".exp").classList.add("on");
+          api("/api/study/answer", { id: q.id, choice: j, mode: mode }).then(function () { if (onAnswer) onAnswer(j === q.answer); }).catch(function (e) { console.error("[공부방] 채점 기록 실패", e); });
+        });
+      });
+    });
+  }
+  function renderToday(d) {
+    var g = $("today-grid"), day = d.daily;
+    if (!day) {
+      g.innerHTML = '<div class="empty" style="grid-column:1/-1">오늘 하루치가 아직 없어요. 매일 새벽 5:50에 자동으로 준비돼요. 지금 만들려면 터미널에서 <code>brain.py study daily</code>를 실행하세요. 그동안은 「CISA 전체 과정」 탭에서 짬 공부를 할 수 있어요.</div>';
+      return;
+    }
+    var news = (day.news || []).map(function (n, i) {
+      return '<article class="nc"><div class="meta">' + esc((n.date || "").slice(5).replace("-", ".")) + " · " + esc(n.source) + (n.unit ? ' <span class="tag f">' + n.unit + "단원 연결</span>" : "") + "</div><h3>" + esc(n.title) + "</h3><ul>" +
+        (n.summary || []).map(function (s) { return "<li>" + inline(s) + "</li>"; }).join("") + '</ul><div class="lab">기술적으로</div><p class="tech">' + inline(n.tech) + '</p><div class="ask">우리 회사라면? ' + inline(n.ask) + '</div><div class="row"><a href="' + esc(n.url) + '" target="_blank" rel="noopener">원문 (' + esc(n.source) + ')</a><button class="ghost" type="button" data-note="' + i + '">볼트로 보내기</button></div></article>';
+    }).join("") || '<p class="tech">오늘은 고를 만한 뉴스가 없었어요.</p>';
+    var p = day.piece, unit = d.units[(day.unit || 1) - 1] || {};
+    var piece = p ? '<p class="lead">' + inline(p.title) + '</p><p class="sub">' + inline(p.lead) + "</p>" +
+      (p.points || []).map(function (x) { return '<div class="box" style="margin-bottom:8px"><h4>' + inline(x.h) + "</h4><p>" + inline(x.body) + "</p></div>"; }).join("") +
+      (p.views ? '<div class="lab">같은 주제, 자격마다 다른 정답 기준</div><div class="view">' + ["CISSP", "CISM", "CISA"].map(function (k) { return '<div class="box' + (k === "CISA" ? " cisa" : "") + '"><h4>' + k + (k === "CISA" ? " · 시험" : "") + "</h4><p>" + inline(p.views[k]) + "</p></div>"; }).join("") + "</div>" : "") +
+      (p.scene ? '<div class="piece"><h4>실무 한 조각 — ' + inline(p.scene.title) + "</h4><ol>" + (p.scene.steps || []).map(function (s) { return "<li>" + inline(s) + "</li>"; }).join("") + '</ol><p class="why">' + inline(p.scene.why) + "</p></div>" : "")
+      : '<p class="tech">오늘 실무 조각은 비었어요.</p>';
+    var qs = day.questions || [];
+    var right = qs.filter(function (q) { return day.answered && day.answered[q.id] === true; }).length;
+    g.innerHTML = '<section class="panel news"><div class="ph"><h2>오늘의 보안 뉴스</h2><small>' + (day.news || []).length + "건 · CISO 관점</small></div>" + news + "</section>" +
+      '<section class="panel field"><div class="ph"><h2>실무감 · ' + (day.unit || "") + "단원 " + esc(unit.title || "") + "</h2><small>" + esc(unit.map || "") + "</small></div>" + piece + "</section>" +
+      '<section class="panel exam"><div class="ph"><h2>CISA 문제</h2><small>' + qs.length + "문항" + (day.chapter ? " · " + esc(day.chapter) : "") + '</small></div><div id="dq">' +
+      (qs.length ? qs.map(function (q, i) { return questionBlock(q, i, day.answered, "daily"); }).join("") : '<p class="tech">문제 은행이 아직 비어 있어요. 새벽마다 두 장씩 채워져요.</p>') +
+      '</div><div class="score"><span>틀린 문제는 오답노트에 쌓여 1·3·7일 뒤 다시 나와요</span><b id="sc">' + right + "/" + qs.length + "</b></div></section>";
+    bindQuestions($("dq"), qs, "daily", function (ok) { if (ok) { right++; $("sc").textContent = right + "/" + qs.length; } $("st-today").textContent = (+$("st-today").textContent || 0) + 1; });
+    g.querySelectorAll("[data-note]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        b.disabled = true;
+        api("/api/study/note", { index: +b.dataset.note }).then(function () { b.textContent = "볼트에 저장됨"; b.classList.add("done"); })
+          .catch(function (e) { b.disabled = false; b.textContent = "저장 실패"; console.error("[공부방] 노트 저장 실패", e); });
+      });
+    });
+  }
+
+  /* ── 전체 과정 ── */
+  function renderFull(d) {
+    var cur = d.current_chapter, curTitle = "";
+    d.domains.forEach(function (dm) { dm.chapters.forEach(function (c) { if (c.id === cur) curTitle = c.title; }); });
+    var weakest = d.domains.filter(function (x) { return x.stats && x.stats.rate != null; }).sort(function (a, b) { return a.stats.rate - b.stats.rate; })[0];
+    var q = [
+      { m: "quick", b: "10분", s: "약한 도메인 문제 5개", i: weakest ? weakest.id + " " + weakest.name + " (정답률 " + weakest.stats.rate + "%)" : "아직 기록이 없어 비중 큰 도메인부터" },
+      { m: "chapter", b: "30분", s: "개념 1장 + 문제 10개", i: cur ? "이어서: " + cur + " " + curTitle : "준비된 장이 생기면 열려요", off: !cur },
+      { m: "mini", b: "1시간", s: "미니 모의고사 30문항", i: "48분 제한 · 5도메인 비중대로", off: d.bank < 30 },
+      { m: "wrong", b: "오답노트", s: "틀린 문제 다시 풀기", i: "오늘 다시 볼 것 " + d.wrong_due + "문제 · 전체 " + d.wrong_total, off: !d.wrong_total, ghost: true }
+    ];
+    if (d.bank >= 150) q.push({ m: "full", b: "4시간", s: "실전 모의고사 150문항", i: "준비 막바지용" });
+    $("quick").innerHTML = q.map(function (x) { return '<button class="qk' + (x.ghost ? " ghosty" : "") + '" type="button" data-m="' + x.m + '"' + (x.off || !d.bank ? " disabled" : "") + "><b>" + x.b + "</b><span>" + x.s + "</span><i>" + esc(x.i) + "</i></button>"; }).join("");
+    $("quick").querySelectorAll("[data-m]").forEach(function (b) { b.addEventListener("click", function () { b.dataset.m === "chapter" && cur ? openChapter(cur) : startQuiz(b.dataset.m); }); });
+    var r = d.readiness;
+    $("ready").className = "ready" + (r.ready ? " yes" : "");
+    $("ready").textContent = r.ready ? "미니 모의고사 " + r.need + "회 연속 " + r.rate + "% 이상 — 이제 접수해도 됩니다." :
+      "접수 판정: 미니 모의고사 " + r.need + "회 연속 " + r.rate + "% 이상이면 알려 드려요. 최근 " + (r.recent.length ? r.recent.join("% · ") + "%" : "기록 없음") + " · 문제 은행 " + d.bank + "개 · 준비된 장 " + d.chapters_ready + "/" + d.chapters_total;
+    var e = d.exam;
+    $("facts").innerHTML = "<span><b>시험</b>" + e.questions + "문항 · " + e.minutes / 60 + "시간</span><span><b>합격</b>" + esc(e.pass) + "</span><span><b>언어</b>" + esc(e.language) + "</span><span><b>응시</b>" + esc(e.where) + "</span><span><b>목표</b>진도 따라 준비되는 대로</span>";
+    $("doms").innerHTML = d.domains.map(function (dm) {
+      var has = dm.chapters.some(function (c) { return c.id === cur; });
+      return '<article class="dom' + (has ? " cur" : "") + '"><header><i>' + dm.id + "</i><h3>" + esc(dm.name) + "</h3><em>" + dm.weight + '%</em></header><div class="bar"><span style="width:' + dm.progress + '%"></span></div><ul>' +
+        dm.chapters.map(function (c) {
+          var acc = c.stats ? c.stats.rate + "% · " + c.stats.tried + "문" : "";
+          return '<li class="' + (c.ready ? "ch" : "off") + (c.id === cur ? " now" : "") + (c.read ? " read" : "") + '"' + (c.ready ? ' data-ch="' + c.id + '" tabindex="0"' : "") + "><b>" + c.id + "</b><span>" + esc(c.title) + (c.ready ? "" : " · 준비 중") + (acc ? ' <span class="acc">' + acc + "</span>" : "") + "</span><s>" + c.unit + "단원</s></li>";
+        }).join("") + "</ul><footer>읽은 장 " + dm.read + "/" + dm.chapters.length + " · 정답률 " + (dm.stats ? dm.stats.rate + "% (" + dm.stats.tried + "문)" : "—") + "</footer></article>";
+    }).join("") + '<article class="dom side"><header><i>+</i><h3>모의고사와 기록</h3></header><ul class="plain">' +
+      "<li><b>미니 모의고사</b> 30문항 · 48분 · 도메인 비중대로</li><li><b>실전 모의고사</b> 150문항 · 4시간 · 문제 150개부터</li><li><b>오답노트</b> 틀리면 1일 · 3일 · 7일 뒤 다시</li><li><b>용어집</b> 한국어 ↔ 영어</li></ul><footer>" +
+      (d.mocks.length ? "최근 모의고사 " + d.mocks.map(function (m) { return m.date.slice(5) + " " + m.score + "/" + m.total; }).join(" · ") : "기록 없음") + "</footer></article>";
+    $("doms").querySelectorAll("[data-ch]").forEach(function (li) {
+      li.addEventListener("click", function () { openChapter(li.dataset.ch); });
+      li.addEventListener("keydown", function (ev) { if (ev.key === "Enter") openChapter(li.dataset.ch); });
+    });
+  }
+
+  /* ── 오버레이 ── */
+  var timerId = null;
+  function openOv(html) { $("sheet").innerHTML = html; $("ov").hidden = false; document.body.style.overflow = "hidden"; var x = $("sheet").querySelector(".x"); if (x) x.addEventListener("click", closeOv); }
+  function closeOv() { if (timerId) { clearInterval(timerId); timerId = null; } $("ov").hidden = true; document.body.style.overflow = ""; load(); }
+  $("ov").addEventListener("click", function (e) { if (e.target === $("ov")) closeOv(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !$("ov").hidden) closeOv(); });
+
+  function openChapter(id) {
+    api("/api/study/chapter?id=" + encodeURIComponent(id)).then(function (c) {
+      openOv('<div class="sh-top"><div><div class="meta">' + c.domain + " · " + c.id + " · 실무감 " + c.unit.n + "단원 " + esc(c.unit.title) + "</div><h2>" + esc(c.title) + '</h2></div><button class="x" type="button" aria-label="닫기">×</button></div>' +
+        '<div class="md">' + md(c.concept_md) + "</div>" + (c.terms.length ? '<div class="lab" style="margin-top:18px">핵심 용어</div><div class="terms">' + c.terms.map(function (t) { return '<div class="term"><b>' + esc(t.ko) + "</b><i>" + esc(t.en || "") + "</i><p>" + esc(t.desc || "") + "</p></div>"; }).join("") + "</div>" : "") +
+        '<div class="sh-act"><button class="btn" type="button" id="go-q">이 장 문제 풀기 (' + Math.min(10, c.questions) + '문항)</button><button class="btn line" type="button" id="go-read"' + (c.read ? " disabled" : "") + ">" + (c.read ? "읽음 " + c.read : "다 읽었어요") + "</button></div>");
+      $("go-q").addEventListener("click", function () { api("/api/study/read", { chapter: c.id }).catch(function (e) { console.error("[공부방] 읽음 기록 실패", e); }); startQuiz("chapter", c.id); });
+      $("go-read").addEventListener("click", function () { var b = $("go-read"); b.disabled = true; api("/api/study/read", { chapter: c.id }).then(function () { b.textContent = "읽음 표시됨"; }).catch(function (e) { b.disabled = false; console.error("[공부방] 읽음 기록 실패", e); }); });
+    }).catch(function (e) { alertBox(e.message); });
+  }
+  function alertBox(msg) { openOv('<div class="sh-top"><h2>잠깐만요</h2><button class="x" type="button" aria-label="닫기">×</button></div><p>' + esc(msg) + "</p>"); }
+
+  function startQuiz(mode, chapter) {
+    api("/api/study/quiz?mode=" + mode + (chapter ? "&chapter=" + encodeURIComponent(chapter) : "")).then(function (z) { runQuiz(z); }).catch(function (e) { alertBox(e.message); });
+  }
+  function runQuiz(z) {
+    var mock = z.mode === "mini" || z.mode === "full", i = 0, right = 0, picks = [], left = (z.minutes || 0) * 60;
+    function tick() { left--; var t = $("tm"); if (t) t.textContent = Math.floor(left / 60) + ":" + String(left % 60).padStart(2, "0"); if (left <= 0) finish(); }
+    function show() {
+      var q = z.questions[i];
+      openOv('<div class="qrun"><div class="qrun-top"><span>' + esc(z.title) + " · " + (i + 1) + "/" + z.questions.length + "</span>" + (mock ? '<span class="timer" id="tm"></span>' : "") + '<button class="x" type="button" aria-label="그만하기">×</button></div><div class="pbar"><span style="width:' + Math.round(100 * i / z.questions.length) + '%"></span></div>' +
+        '<div class="qh"><span>' + esc(q.domain) + " · " + esc(q.chapter) + "</span>" + (q.trap ? '<span class="trap">함정 단어 ' + esc(q.trap) + "</span>" : "") + '</div><p class="stem">' + inline(q.stem) + '</p><div class="opts">' +
+        q.options.map(function (o, j) { return '<button class="opt" type="button" data-j="' + j + '"><b>' + "ABCD"[j] + "</b>" + inline(o) + "</button>"; }).join("") +
+        '</div><div class="exp" id="ex"><strong>정답 ' + "ABCD"[q.answer] + ".</strong> " + inline(q.explanation) + '</div><div class="sh-act"><button class="btn" type="button" id="nx" hidden>' + (i + 1 < z.questions.length ? "다음" : "결과 보기") + "</button></div></div>");
+      if (mock) { $("tm").textContent = Math.floor(left / 60) + ":" + String(left % 60).padStart(2, "0"); if (timerId == null) timerId = setInterval(tick, 1000); }
+      $("sheet").querySelectorAll(".opt").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var j = +b.dataset.j, ok = j === q.answer;
+          picks.push({ q: q, j: j, ok: ok }); if (ok) right++;
+          api("/api/study/answer", { id: q.id, choice: j, mode: z.mode }).catch(function (e) { console.error("[공부방] 채점 기록 실패", e); });
+          if (mock) { next(); return; }
+          $("sheet").querySelectorAll(".opt").forEach(function (x, k) { x.disabled = true; if (k === q.answer) x.classList.add("right"); });
+          if (!ok) b.classList.add("wrong");
+          $("ex").classList.add("on"); $("nx").hidden = false; $("nx").focus();
+        });
+      });
+      $("nx").addEventListener("click", next);
+    }
+    function next() { i++; if (i < z.questions.length) show(); else finish(); }
+    function finish() {
+      if (timerId) { clearInterval(timerId); timerId = null; }
+      var total = z.questions.length, wrong = picks.filter(function (p) { return !p.ok; });
+      if (mock) api("/api/study/mock", { mode: z.mode, score: right, total: total }).catch(function (e) { console.error("[공부방] 모의고사 기록 실패", e); });
+      openOv('<div class="sh-top"><div><div class="meta">' + esc(z.title) + '</div><div class="result"><h3>' + right + " / " + total + " · " + Math.round(100 * right / total) + '%</h3></div></div><button class="x" type="button" aria-label="닫기">×</button></div>' +
+        (picks.length < total ? '<p class="tech">시간이 끝나 ' + picks.length + "문제까지 채점했어요.</p>" : "") +
+        (wrong.length ? '<div class="lab">틀린 문제 — 오답노트에 들어갔어요</div>' + wrong.map(function (p) { return '<div class="rev"><p>' + inline(p.q.stem) + '</p><p><span class="bad">내 답 ' + "ABCD"[p.j] + "</span> · 정답 " + "ABCD"[p.q.answer] + " " + inline(p.q.options[p.q.answer]) + '</p><p class="tech">' + inline(p.q.explanation) + "</p></div>"; }).join("") : "<p>전부 맞혔어요.</p>") +
+        '<div class="sh-act"><button class="btn" type="button" id="done">닫기</button></div>');
+      $("done").addEventListener("click", closeOv);
+    }
+    show();
+  }
+
+  /* ── 용어집 ── */
+  function renderGloss() {
+    var draw = function () {
+      var k = ($("gl-q").value || "").toLowerCase();
+      var list = S.gloss.terms.filter(function (t) { return !k || (t.ko + " " + (t.en || "") + " " + (t.desc || "")).toLowerCase().indexOf(k) >= 0; });
+      $("gl").innerHTML = list.map(function (t) { return '<div class="term"><b>' + esc(t.ko) + "</b><i>" + esc(t.en || "") + " · " + esc(t.chapter) + "</i><p>" + esc(t.desc || "") + "</p></div>"; }).join("") || '<p class="tech">아직 용어가 없어요. 장이 채워지면 쌓여요.</p>';
+    };
+    if (S.gloss) return draw();
+    api("/api/study/glossary").then(function (g) { S.gloss = g; draw(); }).catch(function (e) { console.error("[공부방] 용어집 실패", e); });
+    $("gl-q").addEventListener("input", draw);
+  }
+
+  document.querySelectorAll(".tab").forEach(function (t) {
+    t.addEventListener("click", function () {
+      document.querySelectorAll(".tab").forEach(function (x) { x.classList.toggle("on", x === t); });
+      ["today", "full", "gloss"].forEach(function (v) { $("v-" + v).hidden = t.dataset.v !== v; });
+      if (t.dataset.v === "gloss") renderGloss();
+    });
+  });
+
+  function load() {
+    return api("/api/study").then(function (d) {
+      S.data = d;
+      var wd = ["일", "월", "화", "수", "목", "금", "토"][new Date(d.date + "T00:00").getDay()];
+      var unit = d.units[d.field.unit - 1];
+      $("today-line").textContent = d.date.replace(/-/g, ".") + " (" + wd + ") · 실무감 " + unit.n + "단원 " + unit.title + " · CISA 장 " + d.chapters_ready + "/" + d.chapters_total + " 준비";
+      $("st-today").textContent = d.today_answered; $("st-unit").textContent = unit.n + "/10"; $("st-streak").textContent = d.streak + "일";
+      renderUnits(d); renderToday(d); renderFull(d);
+    }).catch(function (e) { $("today-line").textContent = "불러오지 못했어요: " + e.message; console.error("[공부방] 불러오기 실패", e); });
+  }
+  token().then(load);
+})();
+</script>
+</body>
+</html>
