@@ -366,7 +366,8 @@ def chapter_prompt(cid):
         "- 한국어 해요체, 2,500~4,000자. 마크다운은 ##, ###, -, 1., **굵게**, 표(| |), > 인용만 쓴다.\n"
         "- 구성: ## 핵심 한 줄 → ## 개념 정리(소제목 3~5개, 용어는 한국어(영어) 병기) → ## CISA 감사인 관점 vs CISM 관리자 관점 vs CISSP 실무 관점(표) → "
         "## 시험 함정(자주 틀리는 구분 3~5개) → ## 실무 한 장면(CISO 현장에서 이 개념이 쓰이는 구체 장면 1개, 실제 기업명·가짜 수치 금지).\n"
-        "- 공식 출제 범위(ISACA CISA)와 널리 알려진 표준(COBIT, ISO/IEC 27001, NIST 등)에 근거하고, 확신 없는 수치·연도는 쓰지 않는다. 특정 교재 문장을 옮기지 않는다.\n"
+        "- 공식 출제 범위(ISACA CISA)와 널리 알려진 표준(COBIT 2019, ISO/IEC 27001:2022, NIST 등)에 근거하고, 확신 없는 수치·연도는 쓰지 않는다. 특정 교재 문장을 옮기지 않는다.\n"
+        "- 자주 틀리는 원칙: 위험 수용은 CISO·보안관리자·감사인이 아니라 위험 소유자(경영진·사업 책임자)가 한다. CISO는 권고, 감사인은 확인·보고만 한다(독립성). 단정 표현(항상·절대·가장 크다)은 근거가 확실할 때만.\n"
         "terms: 이 장 핵심 용어 8~12개(desc는 한 문장).\n"
         f"questions: 정확히 {QUESTIONS_PER_CHAPTER}개. CISA 실전 유형(감사인 관점, 4지선다, 정답 하나). 한국어 문제에 핵심 용어 영어 병기. "
         "MOST·FIRST·BEST·PRIMARY·GREATEST 같은 함정 단어를 쓰는 문제를 절반 이상 넣고 trap에 그 단어(없으면 빈 문자열)를 적는다. "
@@ -667,7 +668,7 @@ def weekly_report(vault, today=None):
     pc = pace(p, today)
     _, dom = _stats(p, qs)
     weak = sorted([(v["rate"], k) for k, v in dom.items() if v["rate"] is not None])
-    msg = (f"[공부방 주간] 지난주 {days}일 · {len(att)}문제 " + (f"{round(100 * sum(a['ok'] for a in att) / len(att))}%" if att else "") +
+    msg = (f"[공부방 주간] 지난주 {days}일 · {len(att)}문제" + (f" {round(100 * sum(a['ok'] for a in att) / len(att))}%" if att else "") +
            f" / 장 {pc['chapters_done']}/{len(ORDER)}(계획 {pc['chapters_expected']}, {pc['status']}) / 목표 {pc['target']} D-{pc['d_day']}")
     if weak:
         msg += f" / 약점 {weak[0][1]} {weak[0][0]}%"
