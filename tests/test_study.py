@@ -41,6 +41,9 @@ if "[기사 목록]" in p:
     print(json.dumps({"news": [{"i": i, "title": "뉴스 " + str(i), "summary": ["a", "b", "c"], "tech": "기술", "ask": "질문", "unit": 1} for i in range(3)],
                       "piece": {"title": "조각", "lead": "명제", "points": [{"h": "h", "body": "b"}], "views": {"CISSP": "x", "CISM": "y", "CISA": "z"},
                                 "scene": {"title": "장면", "steps": ["1", "2", "3"], "why": "왜"}}}, ensure_ascii=False)); sys.exit(0)
+if "커뮤니티가 고른 정답" in p:
+    batch = json.loads(p.rsplit("[문제]", 1)[1])
+    print(json.dumps([{"n": q["n"], "why": "해설 " + str(q["n"]), "doubt": "의심" if q["n"] == 2 else ""} for q in batch], ensure_ascii=False)); sys.exit(0)
 if "[검수 대상]" in p:
     print(json.dumps({"question_fixes": [{"i": 0, "problem": "복수 정답", "stem": "고친 문제", "options": ["가", "나", "다", "라"], "answer": 2, "explanation": "고친 해설", "trap": "MOST"},
                                          {"i": 99, "stem": "범위 밖", "options": ["a", "b", "c", "d"], "answer": 0}],
@@ -158,6 +161,36 @@ print(json.dumps({"concept_md": "## 핵심 한 줄\\n" + "개념 " * 500, "terms
         self.assertLessEqual(len(w), 200)
         with self.assertRaises(study.StudyError):
             study.set_target(self.vault, "내년")
+
+    def test_question_sets(self):
+        html = self.home / "set.html"
+        html.write_text("""<h1>테스트 시험 — 커뮤니티 정답</h1>
+<h2>Question 1 (Topic 1)</h2><div class='q'>지문 하나</div><div class='q'>무엇을 고르나?</div>
+<div class='choice'><b>A.</b> 가</div><div class='choice star'><b>B.</b> 나  ⭐</div><div class='choice'><b>C.</b> 다</div>
+<p class='ans'>커뮤니티 정답: B</p><p class='dist'>투표 분포: B 9 (90%) · A 1</p><p class='src'><a href='https://example.com/1'>원문</a></p><hr>
+<h2>Question 2 (Topic 1)</h2><div class='q'>두 개 고르기</div>
+<div class='choice star'><b>A.</b> 하나 ⭐</div><div class='choice'><b>B.</b> 둘</div><div class='choice star'><b>C.</b> 셋 ⭐</div><div class='choice'><b>D.</b> 넷</div><div class='choice'><b>E.</b> 다섯</div>
+<p class='ans'>커뮤니티 정답: AC</p><p class='dist'>투표 분포: AC 5</p><hr>""", encoding="utf-8")
+        r = study.import_set(self.vault, html, "test-set")
+        self.assertEqual((r["questions"], r["multi"], r["title"]), (2, 1, "테스트 시험 — 커뮤니티 정답"))
+        s = study.load_set(self.vault, "test-set")
+        self.assertEqual(s["questions"][0]["stem"], "지문 하나\n\n무엇을 고르나?")
+        self.assertEqual(s["questions"][1]["answer"], ["A", "C"])
+        self.assertEqual(len(s["questions"][1]["options"]), 5)
+        self.assertFalse(study.record_set_answer(self.vault, "test-set", 2, ["A"], today=self.today)["ok"])
+        self.assertTrue(study.record_set_answer(self.vault, "test-set", 2, ["c", "a"], today=self.today)["ok"])
+        self.assertEqual(study.load_progress(self.vault)["boxes"]["test-set#2"]["box"], 1)
+        e = study.explain_set(brain, self.vault, "test-set")
+        self.assertEqual((e["explained"], e["remaining"]), (2, 0))
+        study.import_set(self.vault, html, "test-set")  # 다시 가져와도 해설 유지
+        q2 = study.set_payload(self.vault, "test-set", self.today)["questions"][1]
+        self.assertEqual((q2["why"], q2["doubt"], q2["last"], q2["in_box"]), ("해설 2", "의심", True, True))
+        ls = study.overview(self.vault, self.today)["sets"][0]
+        self.assertEqual((ls["total"], ls["tried"], ls["right"], ls["explained"], ls["wrong"]), (2, 1, 1, 2, 1))
+        with self.assertRaises(study.StudyError):
+            study.set_path(self.vault, "../x")
+        with self.assertRaises(study.StudyError):
+            study.record_set_answer(self.vault, "test-set", 9, ["A"])
 
     def test_http_routes(self):
         self._fill(1)

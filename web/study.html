@@ -261,6 +261,18 @@ h1 .draft { font: 500 11px var(--font-mono); color: var(--news); border: 1px sol
 .rev { border-top: 1px solid var(--rule); padding: 10px 0; font-size: 13.5px; }
 .rev .bad { color: var(--bad); font-weight: 600; }
 .gl-search { width: 100%; font: 14px var(--font-sans); padding: 9px 12px; border-radius: var(--r); border: 1px solid var(--rule-strong); background: var(--surface); color: var(--ink); margin-bottom: 12px; }
+.set-card .big { font: 600 26px var(--font-mono); color: var(--exam); margin: 6px 0 2px; }
+.set-card .row2 { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.set-card .row2 .btn { font-size: 13px; padding: 7px 12px; }
+.sstem { white-space: pre-wrap; font-size: 15.5px; line-height: 1.65; margin: 4px 0 12px; }
+.opt.sel { border-color: var(--accent); background: var(--accent-soft); }
+.opt.miss { border-color: var(--good); border-style: dashed; }
+.pick-n { font: 500 12px var(--font-mono); color: var(--accent); }
+.doubt { margin: 8px 0; padding: 8px 11px; border-radius: var(--r); background: var(--news-soft); color: var(--news); font-size: 13px; }
+.dist { font: 500 12px var(--font-mono); color: var(--muted); margin-top: 8px; }
+details.bq { border-top: 1px solid var(--rule); padding: 10px 0; }
+details.bq summary { cursor: pointer; font-size: 14px; }
+details.bq .tag2 { font: 500 11px var(--font-mono); margin-right: 6px; }
 .gl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 18px; }
 @media (max-width: 1100px) { .gl { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 720px) { .gl, .terms { grid-template-columns: 1fr; } }
@@ -285,6 +297,7 @@ h1 .draft { font: 500 11px var(--font-mono); color: var(--news); border: 1px sol
   <div class="tabs" role="tablist">
     <button class="tab on" type="button" role="tab" data-v="today">오늘</button>
     <button class="tab" type="button" role="tab" data-v="full">CISA 전체 과정</button>
+    <button class="tab" type="button" role="tab" data-v="sets">부과목</button>
     <button class="tab" type="button" role="tab" data-v="gloss">용어집</button>
   </div>
 
@@ -302,6 +315,11 @@ h1 .draft { font: 500 11px var(--font-mono); color: var(--news); border: 1px sol
     <div class="exam-facts" id="facts"></div>
     <div class="doms" id="doms"></div>
     <p class="note-s">각 장 옆의 보라색 표시는 실무감 10단원 연결이에요. 장을 누르면 개념을 읽고 그 장 문제를 풀 수 있어요. 문제 비중은 공식 도메인 비중(2026 ISACA 응시자 가이드)을 따라요. 문제는 공식 출제 범위에 맞춘 연습용이고, 실전 감각은 ISACA 공식 문제은행(QAE)으로 맞춰요.</p>
+  </div>
+
+  <div id="v-sets" hidden>
+    <div class="doms" id="sets"></div>
+    <p class="note-s">부과목은 가져온 문제집이에요. 정답은 커뮤니티 최다 득표라 틀릴 수 있어서, 해설에 「정답 의심」 표시가 붙은 문제는 공식 문서로 한 번 더 확인하세요. 진도·오답 반복은 CISA와 같이 기록돼요. 새 문제집은 <code>brain.py study import &lt;html&gt; &lt;세트id&gt;</code>, 해설은 <code>study explain &lt;세트id&gt;</code>.</p>
   </div>
 
   <div id="v-gloss" hidden>
@@ -517,6 +535,76 @@ h1 .draft { font: 500 11px var(--font-mono); color: var(--news); border: 1px sol
     show();
   }
 
+  /* ── 부과목 ── */
+  function renderSets(d) {
+    var list = d.sets || [];
+    $("sets").innerHTML = list.length ? list.map(function (s) {
+      return '<article class="dom set-card"><header><i>SET</i><h3>' + esc(s.title) + '</h3></header><div class="big">' + s.tried + " / " + s.total + '</div><footer style="border:0;padding:0">푼 문제 · 정답률 ' + (s.rate == null ? "—" : s.rate + "%") + " · 해설 " + s.explained + "/" + s.total + " · 오답 " + s.wrong + (s.wrong_due ? " (오늘 " + s.wrong_due + ")" : "") + "</footer>" +
+        '<div class="row2"><button class="btn" type="button" data-s="' + s.id + '" data-m="next">이어 풀기</button><button class="btn line" type="button" data-s="' + s.id + '" data-m="rand">랜덤 10</button><button class="btn line" type="button" data-s="' + s.id + '" data-m="wrong"' + (s.wrong ? "" : " disabled") + '>틀린 것만</button><button class="btn line" type="button" data-s="' + s.id + '" data-m="browse">전체 훑어보기</button></div></article>';
+    }).join("") : '<div class="empty">아직 가져온 문제집이 없어요. 터미널에서 <code>brain.py study import &lt;html 파일&gt; &lt;세트id&gt;</code></div>';
+    $("sets").querySelectorAll("[data-s]").forEach(function (b) { b.addEventListener("click", function () { openSet(b.dataset.s, b.dataset.m); }); });
+  }
+  function openSet(sid, mode) {
+    api("/api/study/set?id=" + encodeURIComponent(sid)).then(function (s) {
+      var qs = s.questions, pick;
+      if (mode === "browse") return browseSet(s);
+      if (mode === "next") { var i0 = qs.findIndex(function (q) { return q.last == null; }); pick = qs.slice(i0 < 0 ? 0 : i0); }
+      else if (mode === "wrong") pick = qs.filter(function (q) { return q.in_box; }).sort(function (a, b) { return (b.due ? 1 : 0) - (a.due ? 1 : 0); });
+      else pick = qs.slice().sort(function () { return Math.random() - 0.5; }).slice(0, 10);
+      if (!pick.length) return alertBox("풀 문제가 없어요");
+      runSet(s, pick, { next: "이어 풀기", rand: "랜덤 10", wrong: "틀린 것만" }[mode]);
+    }).catch(function (e) { alertBox(e.message); });
+  }
+  function reveal(q, picks) {
+    return (q.doubt ? '<div class="doubt">정답 의심 — ' + inline(q.doubt) + "</div>" : "") +
+      (q.why ? '<div class="exp on"><strong>정답 ' + q.answer.join(", ") + ".</strong> " + inline(q.why) + "</div>" : '<div class="exp on"><strong>정답 ' + q.answer.join(", ") + ".</strong> 아직 해설이 없어요.</div>") +
+      '<div class="dist">' + esc(q.dist) + (q.url ? ' · <a href="' + esc(q.url) + '" target="_blank" rel="noopener">원문 토론</a>' : "") + "</div>";
+  }
+  function runSet(s, list, label) {
+    var i = 0, right = 0, wrongs = [];
+    function show() {
+      var q = list[i], need = q.answer.length, sel = [];
+      openOv('<div class="qrun"><div class="qrun-top"><span>' + esc(s.title) + " · " + esc(label) + " · " + (i + 1) + "/" + list.length + '</span><button class="x" type="button" aria-label="그만하기">×</button></div><div class="pbar"><span style="width:' + Math.round(100 * i / list.length) + '%"></span></div>' +
+        '<div class="qh"><span>Q' + q.n + (q.last === false ? " · 지난번 틀림" : q.last ? " · 지난번 맞힘" : "") + "</span>" + (need > 1 ? '<span class="pick-n">' + need + "개 고르세요</span>" : "") + '</div><div class="sstem">' + esc(q.stem) + '</div><div class="opts">' +
+        q.options.map(function (o) { return '<button class="opt" type="button" data-k="' + o.k + '"><b>' + o.k + "</b>" + esc(o.text) + "</button>"; }).join("") +
+        '</div><div id="rv"></div><div class="sh-act"><button class="btn" type="button" id="sub" disabled>제출</button><button class="btn" type="button" id="nx" hidden>' + (i + 1 < list.length ? "다음" : "결과 보기") + "</button></div></div>");
+      var opts = $("sheet").querySelectorAll(".opt");
+      opts.forEach(function (b) {
+        b.addEventListener("click", function () {
+          var k = b.dataset.k, at = sel.indexOf(k);
+          if (need === 1) { sel = [k]; opts.forEach(function (x) { x.classList.toggle("sel", x === b); }); }
+          else if (at >= 0) { sel.splice(at, 1); b.classList.remove("sel"); }
+          else if (sel.length < need) { sel.push(k); b.classList.add("sel"); }
+          $("sub").disabled = sel.length !== need;
+        });
+      });
+      $("sub").addEventListener("click", function () {
+        var ok = sel.slice().sort().join() === q.answer.slice().sort().join();
+        if (ok) right++; else wrongs.push(q);
+        opts.forEach(function (x) {
+          x.disabled = true; var k = x.dataset.k, isA = q.answer.indexOf(k) >= 0, isP = sel.indexOf(k) >= 0;
+          x.classList.remove("sel"); if (isA && isP) x.classList.add("right"); else if (isP) x.classList.add("wrong"); else if (isA) x.classList.add("miss");
+        });
+        $("rv").innerHTML = reveal(q, sel); $("sub").hidden = true; $("nx").hidden = false; $("nx").focus();
+        api("/api/study/set-answer", { set: s.id, n: q.n, picks: sel }).catch(function (e) { console.error("[공부방] 부과목 기록 실패", e); });
+      });
+      $("nx").addEventListener("click", function () { i++; if (i < list.length) show(); else done(); });
+    }
+    function done() {
+      openOv('<div class="sh-top"><div><div class="meta">' + esc(s.title) + " · " + esc(label) + '</div><div class="result"><h3>' + right + " / " + list.length + " · " + Math.round(100 * right / list.length) + '%</h3></div></div><button class="x" type="button" aria-label="닫기">×</button></div>' +
+        (wrongs.length ? '<div class="lab">틀린 문제 ' + wrongs.length + "개 — 오답노트에 들어갔어요: Q" + wrongs.map(function (q) { return q.n; }).join(", Q") + "</div>" : "<p>전부 맞혔어요.</p>") + '<div class="sh-act"><button class="btn" type="button" id="done">닫기</button></div>');
+      $("done").addEventListener("click", closeOv);
+    }
+    show();
+  }
+  function browseSet(s) {
+    openOv('<div class="sh-top"><div><div class="meta">전체 훑어보기 · ' + s.questions.length + '문제 · 눌러서 정답·해설</div><h2>' + esc(s.title) + '</h2></div><button class="x" type="button" aria-label="닫기">×</button></div>' +
+      s.questions.map(function (q) {
+        return '<details class="bq"><summary><span class="tag2">Q' + q.n + "</span>" + (q.last === true ? "✓ " : q.last === false ? "✗ " : "") + esc(q.stem.split("\n")[0].slice(0, 90)) + "…</summary>" +
+          '<div class="sstem">' + esc(q.stem) + "</div>" + q.options.map(function (o) { return '<div class="opt' + (q.answer.indexOf(o.k) >= 0 ? " right" : "") + '" style="margin:4px 0"><b>' + o.k + "</b>" + esc(o.text) + "</div>"; }).join("") + reveal(q, []) + "</details>";
+      }).join(""));
+  }
+
   /* ── 용어집 ── */
   function renderGloss() {
     var draw = function () {
@@ -532,7 +620,7 @@ h1 .draft { font: 500 11px var(--font-mono); color: var(--news); border: 1px sol
   document.querySelectorAll(".tab").forEach(function (t) {
     t.addEventListener("click", function () {
       document.querySelectorAll(".tab").forEach(function (x) { x.classList.toggle("on", x === t); });
-      ["today", "full", "gloss"].forEach(function (v) { $("v-" + v).hidden = t.dataset.v !== v; });
+      ["today", "full", "sets", "gloss"].forEach(function (v) { $("v-" + v).hidden = t.dataset.v !== v; });
       if (t.dataset.v === "gloss") renderGloss();
     });
   });
@@ -546,7 +634,7 @@ h1 .draft { font: 500 11px var(--font-mono); color: var(--news); border: 1px sol
       $("st-today").textContent = d.today_answered; $("st-unit").textContent = unit.n + "/" + d.units.length; $("st-streak").textContent = d.streak + "일";
       var pc = d.pace;
       $("st-dday").textContent = "D-" + pc.d_day; $("st-target").textContent = "CISA " + pc.target.slice(5).replace("-", "/") + " · " + pc.status;
-      renderUnits(d); renderToday(d); renderFull(d);
+      renderUnits(d); renderToday(d); renderFull(d); renderSets(d);
     }).catch(function (e) { $("today-line").textContent = "불러오지 못했어요: " + e.message; console.error("[공부방] 불러오기 실패", e); });
   }
   token().then(load);

@@ -175,6 +175,13 @@ def record_answer(vault, qid, choice, mode="practice", today=None):
         raise StudyError("choice는 0~3") from e
     ok = choice == int(q["answer"])
     p = load_progress(vault)
+    _record(p, qid, ok, mode, today)
+    save_progress(vault, p)
+    return {"ok": ok, "answer": int(q["answer"]), "explanation": q.get("explanation", "")}
+
+
+def _record(p, qid, ok, mode, today):
+    """풀이 한 건을 기록하고 오답 상자(1·3·7일)를 옮긴다. CISA 문제와 부과목 세트가 같이 쓴다."""
     p["attempts"].append({"q": qid, "ok": ok, "at": datetime.now().strftime("%Y-%m-%d %H:%M"), "mode": str(mode)[:12]})
     box = p["boxes"].get(qid)
     if not ok:
@@ -186,8 +193,6 @@ def record_answer(vault, qid, choice, mode="practice", today=None):
         else:
             p["boxes"][qid] = {"box": nb, "due": (today + timedelta(days=BOX_DAYS[nb])).isoformat()}
     _mark_day(p, today)
-    save_progress(vault, p)
-    return {"ok": ok, "answer": int(q["answer"]), "explanation": q.get("explanation", "")}
 
 
 def mark_read(vault, cid, today=None):
@@ -563,6 +568,166 @@ def make_daily(api, vault, day=None, force=False, feed=None):
     return doc
 
 
+# ───────────────────────── 부과목 세트 (가져온 문제집) ─────────────────────────
+# 커뮤니티 정답 문제집 HTML(h2 문제 · div.q 지문 · div.choice[.star] 보기 · p.ans · p.dist · p.src)을 세트로 바꾼다.
+# 문제 id는 "<세트>#<번호>"라 진도·오답 상자를 CISA와 같은 progress.json에 쌓는다.
+
+SET_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,40}$")
+
+
+def set_path(vault, sid):
+    if not SET_ID_RE.match(str(sid or "")):
+        raise StudyError("세트 id는 영소문자·숫자·하이픈")
+    return root(vault) / "sets" / f"{sid}.json"
+
+
+def _text(h):
+    import html as _h
+    return _h.unescape(re.sub(r"<[^>]+>", "", h)).strip()
+
+
+def parse_set_html(text):
+    qs = []
+    for blk in re.split(r"<h2[^>]*>", text)[1:]:
+        head = _text(blk.split("</h2>", 1)[0])
+        m = re.search(r"(\d+)", head)
+        body = blk.split("</h2>", 1)[1] if "</h2>" in blk else blk
+        stem = "\n\n".join(_text(x) for x in re.findall(r"<div class=['\"]q['\"]>(.*?)</div>", body, re.S))
+        opts, ans = [], []
+        for cls, inner in re.findall(r"<div class=['\"](choice(?: star)?)['\"]>(.*?)</div>", body, re.S):
+            t = _text(inner).replace("⭐", "").strip()
+            mk = re.match(r"^([A-Z])\.\s*(.*)$", t, re.S)
+            k, t = (mk.group(1), mk.group(2).strip()) if mk else (chr(65 + len(opts)), t)
+            opts.append({"k": k, "text": t})
+            if "star" in cls:
+                ans.append(k)
+        mans = re.search(r"class=['\"]ans['\"]>(.*?)</p>", body, re.S)
+        if mans and not ans:
+            ans = re.findall(r"\b([A-F])\b", _text(mans.group(1)).split(":")[-1])
+        dist = re.search(r"class=['\"]dist['\"]>(.*?)</p>", body, re.S)
+        url = re.search(r"class=['\"]src['\"]>.*?href=['\"]([^'\"]+)", body, re.S)
+        ai = re.search(r"class=['\"]ai['\"]>(.*?)</(?:p|div)>", body, re.S)
+        if stem and len(opts) >= 2 and ans:
+            q = {"n": int(m.group(1)) if m else len(qs) + 1, "stem": stem, "options": opts, "answer": sorted(set(ans)),
+                 "dist": _text(dist.group(1)) if dist else "", "url": url.group(1) if url else ""}
+            if ai:
+                q["why"] = _text(ai.group(1))
+            qs.append(q)
+    return qs
+
+
+def import_set(vault, path, sid, title=None):
+    src = Path(path).expanduser()
+    if not src.is_file():
+        raise StudyError(f"파일이 없어요: {src}")
+    raw = src.read_bytes()
+    text = raw.decode("utf-8", "replace")
+    qs = parse_set_html(text)
+    if not qs:
+        raise StudyError("문제를 하나도 못 찾았어요(h2 · div.q · div.choice 형식인지 확인)")
+    h1 = re.search(r"<h1[^>]*>(.*?)</h1>", text, re.S)
+    old = _read(set_path(vault, sid), None) or {}
+    whys = {q["n"]: q for q in old.get("questions", [])}
+    for q in qs:  # 다시 가져와도 붙여 둔 해설은 유지
+        prev = whys.get(q["n"])
+        if prev and prev.get("why") and not q.get("why"):
+            q["why"], q["doubt"] = prev["why"], prev.get("doubt", "")
+    doc = {"id": sid, "title": title or (_text(h1.group(1)) if h1 else sid), "source": str(src), "imported": datetime.now().strftime("%Y-%m-%d %H:%M"), "questions": qs}
+    _write(set_path(vault, sid), doc)
+    return {"id": sid, "title": doc["title"], "questions": len(qs), "multi": sum(1 for q in qs if len(q["answer"]) > 1)}
+
+
+def load_set(vault, sid):
+    d = _read(set_path(vault, sid), None)
+    if not d:
+        raise StudyError(f"없는 세트예요: {sid}")
+    return d
+
+
+def list_sets(vault, p=None, today=None):
+    today = today or date.today()
+    p = p or load_progress(vault)
+    last = {}
+    for a in p["attempts"]:
+        last[a["q"]] = a["ok"]
+    out = []
+    d = root(vault) / "sets"
+    for f in sorted(d.glob("*.json")) if d.is_dir() else []:
+        s = _read(f, {})
+        ids = [f"{s['id']}#{q['n']}" for q in s.get("questions", [])]
+        tried = [i for i in ids if i in last]
+        right = sum(1 for i in tried if last[i])
+        out.append({"id": s["id"], "title": s.get("title"), "total": len(ids), "tried": len(tried), "right": right,
+                    "rate": round(100 * right / len(tried)) if tried else None, "explained": sum(1 for q in s["questions"] if q.get("why")),
+                    "wrong": sum(1 for i in ids if i in p["boxes"]), "wrong_due": sum(1 for i in ids if i in p["boxes"] and p["boxes"][i]["due"] <= today.isoformat())})
+    return out
+
+
+def set_payload(vault, sid, today=None):
+    today = today or date.today()
+    s = load_set(vault, sid)
+    p = load_progress(vault)
+    last = {}
+    for a in p["attempts"]:
+        last[a["q"]] = a["ok"]
+    for q in s["questions"]:
+        qid = f"{sid}#{q['n']}"
+        q["id"] = qid
+        q["last"] = last.get(qid)
+        b = p["boxes"].get(qid)
+        q["due"] = bool(b and b["due"] <= today.isoformat())
+        q["in_box"] = bool(b)
+    return s
+
+
+def record_set_answer(vault, sid, n, picks, mode="set", today=None):
+    today = today or date.today()
+    s = load_set(vault, sid)
+    q = next((x for x in s["questions"] if str(x["n"]) == str(n)), None)
+    if not q:
+        raise StudyError(f"없는 문제예요: {sid} {n}")
+    picks = sorted({str(x).upper() for x in (picks or [])})
+    if not picks:
+        raise StudyError("고른 보기가 없어요")
+    ok = picks == q["answer"]
+    p = load_progress(vault)
+    _record(p, f"{sid}#{q['n']}", ok, mode, today)
+    save_progress(vault, p)
+    return {"ok": ok, "answer": q["answer"], "why": q.get("why", ""), "doubt": q.get("doubt", "")}
+
+
+def explain_prompt(title, batch):
+    return (
+        f"너는 {title} 시험을 가르치는 AWS 강사다. 학습자는 16년차 CISO이고 AI 보안을 공부한다. 아래 문제마다 커뮤니티가 고른 정답(answer)이 있다. "
+        "문제마다 한국어 해요체 해설을 쓴다: 정답이 요구사항(가장 적은 운영 노력·비용·지연 등 조건)을 어떻게 만족하는지, 그럴듯한 오답이 왜 틀렸는지, 기억할 AWS 개념 한 줄. 4~6문장, AWS 서비스명은 영문 그대로. "
+        "커뮤니티 정답이 AWS 공식 문서·모범 사례와 어긋나 보이면 doubt에 이유와 더 맞아 보이는 보기를 한 문장으로 적고, 아니면 빈 문자열. 확신 없는 서비스 기능은 지어내지 않는다.\n"
+        '아래 JSON 배열 하나만 출력한다(코드블록·설명 금지): [{"n": 1, "why": "...", "doubt": ""}]\n\n'
+        f"[문제]\n{json.dumps([{k: q[k] for k in ('n', 'stem', 'options', 'answer', 'dist')} for q in batch], ensure_ascii=False)}"
+    )
+
+
+def explain_set(api, vault, sid, limit=None, batch=8):
+    """해설 없는 문제에 해설을 붙인다. batch 문제씩 한 번 호출, limit 문제까지."""
+    s = load_set(vault, sid)
+    todo = [q for q in s["questions"] if not q.get("why")]
+    if limit:
+        todo = todo[:int(limit)]
+    done = 0
+    for i in range(0, len(todo), batch):
+        part = todo[i:i + batch]
+        res = api._run_claude_json(explain_prompt(s["title"], part), timeout=900, kind="study")
+        by_n = {int(x.get("n")): x for x in res if isinstance(x, dict) and str(x.get("n", "")).isdigit()} if isinstance(res, list) else {}
+        cur = load_set(vault, sid)  # 중간 저장: 오래 걸려도 진행분은 남긴다
+        for q in cur["questions"]:
+            x = by_n.get(q["n"])
+            if x and str(x.get("why") or "").strip() and q["n"] in {y["n"] for y in part}:
+                q["why"] = str(x["why"]).strip()
+                q["doubt"] = str(x.get("doubt") or "").strip()
+                done += 1
+        _write(set_path(vault, sid), cur)
+    return {"id": sid, "explained": done, "remaining": sum(1 for q in load_set(vault, sid)["questions"] if not q.get("why"))}
+
+
 # ───────────────────────── 화면용 묶음 ─────────────────────────
 
 def overview(vault, today=None):
@@ -596,6 +761,7 @@ def overview(vault, today=None):
         "streak": streak(p, today), "today_answered": sum(1 for a in p["attempts"] if a["at"].startswith(today.isoformat())),
         "mocks": p["mocks"][-5:], "readiness": readiness(p), "pace": pace(p, today),
         "reviewed": sum(1 for c in ORDER if (load_chapter(vault, c) or {}).get("reviewed")),
+        "sets": list_sets(vault, p, today),
         "exam": {"name": "CISA", "questions": 150, "minutes": 240, "pass": "450 / 800", "language": "한국어 가능", "where": "PSI 시험장 또는 집에서 원격 감독"},
     }
 
@@ -689,6 +855,8 @@ def handle_get(api, route, qs, vault):
         return make_quiz(vault, one("mode") or "quick", one("chapter") or None)
     if route == "/api/study/glossary":
         return glossary(vault)
+    if route == "/api/study/set":
+        return set_payload(vault, one("id"))
     return None
 
 
@@ -699,6 +867,8 @@ def handle_post(api, route, body, vault):
         return mark_read(vault, body.get("chapter"))
     if route == "/api/study/mock":
         return record_mock(vault, body.get("mode"), body.get("score", 0), body.get("total", 0))
+    if route == "/api/study/set-answer":
+        return record_set_answer(vault, body.get("set"), body.get("n"), body.get("picks"))
     if route == "/api/study/note":
         return save_news_note(api, vault, date.today(), body.get("index"))
     return None

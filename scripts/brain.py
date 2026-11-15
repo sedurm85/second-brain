@@ -4564,6 +4564,16 @@ def cmd_study(args):
                     lines.append(f"{c} 검수 실패: {e}")
                 print(lines[-1], flush=True)
             emit(args, out, "검수 완료 " + str(len(out)) + "장 · 기록: study/review-log.md")
+        elif args.action == "import":
+            if len(a) < 2:
+                raise BrainError("study import <html 파일> <세트id> [--title 제목]")
+            r = study_mod.import_set(v, a[0], a[1], args.title)
+            emit(args, r, f"{r['id']} 가져옴 · {r['questions']}문제(복수 정답 {r['multi']}) · {r['title']}")
+        elif args.action == "explain":
+            if not a:
+                raise BrainError("study explain <세트id> [--limit N]")
+            r = study_mod.explain_set(api, v, a[0], args.limit if args.limit != 1 else None)
+            emit(args, r, f"{r['id']} 해설 {r['explained']}개 추가 · 남은 {r['remaining']}개")
         elif args.action == "target":
             if not a:
                 raise BrainError("study target YYYY-MM-DD")
@@ -8767,8 +8777,9 @@ def build_parser():
     add("today", "오늘 브리핑: 일정·되돌아볼 결정·자동화 상태·inbox·이번 주 신규(+카톡용 200자)", cmd_today)
     add("widgets", "위젯(~/.config/second-brain/widgets.json) 상태 조회", cmd_widgets)
 
-    s = add("study", "공부방: fill [장] · daily · review [장…|--all] · target YYYY-MM-DD · week [--kakao] · status", cmd_study)
-    s.add_argument("action", choices=("fill", "daily", "review", "target", "week", "status"))
+    s = add("study", "공부방: fill [장] · daily · review [장…|--all] · import <html> <세트id> · explain <세트id> · target YYYY-MM-DD · week [--kakao] · status", cmd_study)
+    s.add_argument("action", choices=("fill", "daily", "review", "import", "explain", "target", "week", "status"))
+    s.add_argument("--title", help="import: 세트 이름")
     s.add_argument("--all", action="store_true", help="review: 내용이 있는 모든 장")
     s.add_argument("--kakao", action="store_true", help="week: 카톡으로 보낸다")
     s.add_argument("args", nargs="*", help="fill에 장 번호(예: 2-1)를 주면 그 장만 다시 만든다")
