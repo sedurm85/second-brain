@@ -139,6 +139,17 @@ h1 .draft { font: 500 11px var(--font-mono); color: var(--news); border: 1px sol
 .piece ol { margin: 0; padding-left: 18px; font-size: 13.5px; }
 .piece li { margin: 3px 0; }
 .piece .why { margin: 8px 0 0; font-size: 12.5px; color: var(--ink-2); }
+.piece-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule); }
+.piece-foot .pf-hint, .piece-foot .pf-done { font-size: 12px; color: var(--ink-2); }
+.piece-foot .pf-done { color: var(--good); font-weight: 600; }
+.piece-foot #pc-prev { margin-left: auto; }
+.piece-list { list-style: none; margin: 0; padding: 0; }
+.piece-list li { display: flex; align-items: baseline; gap: 8px; padding: 10px 6px; border-bottom: 1px solid var(--rule); cursor: pointer; font-size: 13.5px; }
+.piece-list li:hover { background: var(--field-soft); }
+.piece-list li b { flex: 0 0 auto; color: var(--field); font-variant-numeric: tabular-nums; }
+.piece-list li span { flex: 1 1 auto; }
+.piece-list li s { flex: 0 0 auto; text-decoration: none; font-size: 11.5px; color: var(--ink-2); }
+.piece-list li.empty { color: var(--ink-2); cursor: default; justify-content: center; }
 
 /* 문제 */
 .q { border-top: 1px solid var(--rule); padding: 13px 0 6px; }
@@ -422,10 +433,15 @@ details.bq .tag2 { font: 500 11px var(--font-mono); margin-right: 6px; }
       (p.views ? '<div class="lab">같은 주제, 자격마다 다른 정답 기준</div><div class="view">' + ["CISSP", "CISM", "CISA"].map(function (k) { return '<div class="box' + (k === "CISA" ? " cisa" : "") + '"><h4>' + k + (k === "CISA" ? " · 시험" : "") + "</h4><p>" + inline(p.views[k]) + "</p></div>"; }).join("") + "</div>" : "") +
       (p.scene ? '<div class="piece"><h4>실무 한 조각 — ' + inline(p.scene.title) + "</h4><ol>" + (p.scene.steps || []).map(function (s) { return "<li>" + inline(s) + "</li>"; }).join("") + '</ol><p class="why">' + inline(p.scene.why) + "</p></div>" : "")
       : '<p class="tech">오늘 실무 조각은 비었어요.</p>';
+    var pf = p ? '<div class="piece-foot" id="piece-foot">' +
+      (day.piece_seen
+        ? '<span class="pf-done">오늘 조각 읽음 ✓</span><button class="btn" type="button" id="pc-next">다음 조각 보기 →</button>'
+        : '<button class="btn" type="button" id="pc-read">읽음 (진도 +1)</button><span class="pf-hint">읽음을 눌러야 다음 조각으로 넘어가요</span>') +
+      '<button class="btn line" type="button" id="pc-prev">이전 조각 다시 보기</button></div>' : "";
     var qs = day.questions || [];
     var right = qs.filter(function (q) { return day.answered && day.answered[q.id] === true; }).length;
     g.innerHTML = '<section class="panel news"><div class="ph"><h2>오늘의 보안 뉴스</h2><small>' + (day.news || []).length + "건 · CISO 관점</small></div>" + news + "</section>" +
-      '<section class="panel field"><div class="ph"><h2>실무감 · ' + (day.unit || "") + "단원 " + esc(unit.title || "") + "</h2><small>" + esc(unit.map || "") + "</small></div>" + piece + "</section>" +
+      '<section class="panel field"><div class="ph"><h2>실무감 · ' + (day.unit || "") + "단원 " + esc(unit.title || "") + "</h2><small>" + esc(unit.map || "") + "</small></div>" + piece + pf + "</section>" +
       '<section class="panel exam"><div class="ph"><h2>CISA 문제</h2><small>' + qs.length + "문항" + (day.chapter ? " · " + esc(day.chapter) : "") + '</small></div><div id="dq">' +
       (qs.length ? qs.map(function (q, i) { return questionBlock(q, i, day.answered, "daily"); }).join("") : '<p class="tech">문제 은행이 아직 비어 있어요. 새벽마다 두 장씩 채워져요.</p>') +
       '</div><div class="score"><span>틀린 문제는 오답노트에 쌓여 1·3·7일 뒤 다시 나와요</span><b id="sc">' + right + "/" + qs.length + "</b></div></section>";
@@ -437,6 +453,47 @@ details.bq .tag2 { font: 500 11px var(--font-mono); margin-right: 6px; }
           .catch(function (e) { b.disabled = false; b.textContent = "저장 실패"; console.error("[공부방] 노트 저장 실패", e); });
       });
     });
+    bindPieceFoot();
+  }
+
+  function bindPieceFoot() {
+    var rd = $("pc-read"), nx = $("pc-next"), pv = $("pc-prev");
+    if (rd) rd.addEventListener("click", function () {
+      rd.disabled = true; rd.textContent = "기록 중…";
+      api("/api/study/piece-read", {}).then(function () { load(); })
+        .catch(function (e) { rd.disabled = false; rd.textContent = "읽음 (진도 +1)"; console.error("[공부방] 읽음 실패", e); });
+    });
+    if (nx) nx.addEventListener("click", function () {
+      nx.disabled = true; nx.textContent = "다음 조각 만드는 중…";
+      api("/api/study/piece-next", {}).then(function () { load(); })
+        .catch(function (e) { nx.disabled = false; nx.textContent = "다음 조각 보기 →"; console.error("[공부방] 다음 조각 실패", e); });
+    });
+    if (pv) pv.addEventListener("click", openPieces);
+  }
+
+  function openPieces() {
+    api("/api/study/pieces").then(function (d) {
+      var list = (d.pieces || []).map(function (c) {
+        return '<li data-pi="' + c.i + '" tabindex="0"><b>' + esc((c.date || "").slice(5).replace("-", ".")) + "</b><span>" + esc(c.title || "") + "</span><s>" + (c.unit || "") + "단원" + (c.seen ? " · 읽음" : " · 안 읽음") + "</s></li>";
+      }).join("") || '<li class="empty">아직 지나온 조각이 없어요.</li>';
+      openOv('<div class="sh-top"><div><div class="meta">실무감</div><h2>이전 조각 다시 보기</h2></div><button class="x" type="button" aria-label="닫기">×</button></div><ul class="piece-list" id="piece-list">' + list + "</ul>");
+      $("piece-list").querySelectorAll("[data-pi]").forEach(function (li) {
+        var go = function () { openPieceAt(+li.dataset.pi); };
+        li.addEventListener("click", go);
+        li.addEventListener("keydown", function (e) { if (e.key === "Enter") go(); });
+      });
+    }).catch(function (e) { console.error("[공부방] 이전 조각 목록 실패", e); });
+  }
+
+  function openPieceAt(i) {
+    api("/api/study/piece?i=" + i).then(function (r) {
+      var p = r.piece || {};
+      var body = '<p class="lead">' + inline(p.title) + '</p><p class="sub">' + inline(p.lead || "") + "</p>" +
+        (p.points || []).map(function (x) { return '<div class="box" style="margin-bottom:8px"><h4>' + inline(x.h) + "</h4><p>" + inline(x.body) + "</p></div>"; }).join("") +
+        (p.views ? '<div class="lab">같은 주제, 자격마다 다른 정답 기준</div><div class="view">' + ["CISSP", "CISM", "CISA"].map(function (k) { return '<div class="box' + (k === "CISA" ? " cisa" : "") + '"><h4>' + k + "</h4><p>" + inline(p.views[k] || "") + "</p></div>"; }).join("") + "</div>" : "") +
+        (p.scene ? '<div class="piece"><h4>실무 한 조각 — ' + inline(p.scene.title) + "</h4><ol>" + (p.scene.steps || []).map(function (s) { return "<li>" + inline(s) + "</li>"; }).join("") + '</ol><p class="why">' + inline(p.scene.why) + "</p></div>" : "");
+      openOv('<div class="sh-top"><div><div class="meta">' + esc(r.date || "") + " · " + (r.unit || "") + "단원" + (r.seen ? " · 읽음" : "") + '</div><h2>' + esc(p.title || "지난 조각") + '</h2></div><button class="x" type="button" aria-label="닫기">×</button></div><div class="sh-body">' + body + "</div>");
+    }).catch(function (e) { console.error("[공부방] 이전 조각 열람 실패", e); });
   }
 
   /* ── 전체 과정 ── */

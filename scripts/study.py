@@ -122,6 +122,10 @@ def load_progress(vault):
     p.setdefault("field", {"unit": 1, "covered": []})
     p.setdefault("mocks", [])
     p.setdefault("plan", {"target": DEFAULT_TARGET, "start": date.today().isoformat()})
+    # 조각 '읽음' 게이트 도입(2026-11-17): seen 없는 과거 조각은 본 것으로, 오늘 조각만 안 본 것으로 둔다.
+    _today = date.today().isoformat()
+    for c in p["field"].get("covered", []):
+        c.setdefault("seen", c.get("date", "") < _today)
     return p
 
 
@@ -501,28 +505,35 @@ def fetch_feeds(timeout=15):
     return items
 
 
-def daily_prompt(feed, unit, covered):
+def news_prompt(feed):
     return (
         "너는 16년차 CISO의 아침 공부를 준비하는 보안 코치다. 학습자는 현장 감각을 되살리려 하고, CISA를 한국어로 준비 중이다.\n"
         "아래 JSON 하나만 출력한다(코드블록·설명 금지).\n"
-        '{"news": [{"i": 0, "title": "...", "summary": ["...", "...", "..."], "tech": "...", "ask": "...", "unit": 1}], '
-        '"piece": {"title": "...", "lead": "...", "points": [{"h": "...", "body": "..."}], "views": {"CISSP": "...", "CISM": "...", "CISA": "..."}, "scene": {"title": "...", "steps": ["...", "...", "..."], "why": "..."}}}\n\n'
+        '{"news": [{"i": 0, "title": "...", "summary": ["...", "...", "..."], "tech": "...", "ask": "...", "unit": 1}]}\n\n'
         "news 규칙: [기사 목록]에서 CISO 관점으로 의미 있는 기사 3개를 고른다(국내 1개 이상, 같은 사건 중복 금지). i는 목록 번호. "
         "title은 한국어 한 줄. summary는 기사 요약에 있는 사실만 3줄(없는 숫자·사실을 만들지 않는다). "
         "tech는 기술적으로 무슨 일인지 또는 지금 확인할 통제를 2문장(기사에 없는 세부는 일반 원리로만). "
-        "ask는 '우리 회사라면?' 질문 한 문장. unit은 가장 가까운 실무감 단원 번호(1~11, 11은 AI 보안).\n"
-        f"piece 규칙: 실무감 {unit['n']}단원 「{unit['title']}」({unit['map']})의 한 조각. 이미 다룬 제목 {json.dumps(covered[-12:], ensure_ascii=False)}와 겹치지 않는 주제 하나. "
-        "lead는 한 줄 명제, points는 2~3개 핵심(용어는 한국어(영어) 병기, 각 2~3문장), views는 같은 주제를 세 자격이 보는 정답 기준 각 1~2문장, "
-        "scene은 CISO 현장 장면 하나(가능하면 고른 뉴스와 연결, 실무 단계 3개, why는 이 단원과의 연결 한두 문장). 해요체, 가짜 수치 금지. "
-        "11단원(AI 보안)이면 AI 거버넌스, 모델·데이터 위험(프롬프트 주입, 데이터 유출, 모델 공급망), AI 사고 대응을 다루고 views에 CISA 대신 AAISM 관점도 괜찮다. "
-        "학습자의 목표는 AI 보안을 아는 CISO라서, 다른 단원에서도 자연스러우면 AI 관련 연결 한 줄을 넣는다.\n\n"
+        "ask는 '우리 회사라면?' 질문 한 문장. unit은 가장 가까운 실무감 단원 번호(1~11, 11은 AI 보안).\n\n"
         f"[기사 목록]\n{json.dumps(feed, ensure_ascii=False)}"
     )
 
 
-def _valid_daily(data, feed):
+def piece_prompt(unit, covered):
+    return (
+        "너는 16년차 CISO의 공부를 돕는 보안 코치다. 학습자는 현장 감각을 되살리려 하고, CISA를 한국어로 준비 중이다. 실무감 재료는 CISSP·CISM이다.\n"
+        "아래 JSON 하나만 출력한다(코드블록·설명 금지).\n"
+        '{"piece": {"title": "...", "lead": "...", "points": [{"h": "...", "body": "..."}], "views": {"CISSP": "...", "CISM": "...", "CISA": "..."}, "scene": {"title": "...", "steps": ["...", "...", "..."], "why": "..."}}}\n\n'
+        f"piece 규칙: 실무감 {unit['n']}단원 「{unit['title']}」({unit['map']})의 한 조각. 이미 다룬 제목 {json.dumps(covered[-12:], ensure_ascii=False)}와 겹치지 않는 주제 하나. "
+        "lead는 한 줄 명제, points는 2~3개 핵심(용어는 한국어(영어) 병기, 각 2~3문장), views는 같은 주제를 세 자격이 보는 정답 기준 각 1~2문장, "
+        "scene은 CISO 현장 장면 하나(실무 단계 3개, why는 이 단원과의 연결 한두 문장). 해요체, 가짜 수치 금지. "
+        "11단원(AI 보안)이면 AI 거버넌스, 모델·데이터 위험(프롬프트 주입, 데이터 유출, 모델 공급망), AI 사고 대응을 다루고 views에 CISA 대신 AAISM 관점도 괜찮다. "
+        "학습자의 목표는 AI 보안을 아는 CISO라서, 다른 단원에서도 자연스러우면 AI 관련 연결 한 줄을 넣는다."
+    )
+
+
+def _valid_news(data, feed):
     if not isinstance(data, dict):
-        raise StudyError("하루치 응답이 이상해요")
+        raise StudyError("뉴스 응답이 이상해요")
     news = []
     for n in data.get("news") or []:
         try:
@@ -532,10 +543,19 @@ def _valid_daily(data, feed):
         news.append({"title": str(n.get("title") or src["title"])[:120], "source": src["source"], "url": src["url"], "date": src["date"],
                      "summary": [str(s) for s in (n.get("summary") or [])][:3], "tech": str(n.get("tech") or ""), "ask": str(n.get("ask") or ""),
                      "unit": int(n.get("unit") or 0) if str(n.get("unit") or "").isdigit() else 0})
-    piece = data.get("piece") if isinstance(data.get("piece"), dict) else None
-    if not news and not piece:
-        raise StudyError("뉴스도 실무 조각도 비었어요")
-    return news[:3], piece
+    return news[:3]
+
+
+def _valid_piece(data):
+    piece = data.get("piece") if isinstance(data, dict) else None
+    if not isinstance(piece, dict) or not str(piece.get("title") or "").strip():
+        raise StudyError("실무 조각이 비었어요")
+    return piece
+
+
+def _pending_piece(field):
+    """아직 '읽음' 처리 안 한 조각 하나(없으면 None). 게이트상 동시에 최대 하나다."""
+    return next((c for c in reversed(field.get("covered", [])) if not c.get("seen")), None)
 
 
 def make_daily(api, vault, day=None, force=False, feed=None):
@@ -545,12 +565,19 @@ def make_daily(api, vault, day=None, force=False, feed=None):
         return _read(path, {})
     p = load_progress(vault)
     field = p["field"]
-    unit = UNITS[(int(field.get("unit") or 1) - 1) % len(UNITS)]
-    covered = [c["title"] for c in field["covered"]]
+    # 뉴스·문제는 매일 새로. 조각은 안 읽은 게 있으면 그대로 두고(진도 멈춤), 다 읽었을 때만 새로 뽑는다.
+    pending = _pending_piece(field)
+    if pending:
+        unit = UNITS[(int(pending.get("unit") or 1) - 1) % len(UNITS)]
+        piece = pending.get("piece") or (_read(root(vault) / "daily" / f"{pending['date']}.json", {}) or {}).get("piece")
+    else:
+        unit = UNITS[(int(field.get("unit") or 1) - 1) % len(UNITS)]
+        covered = [c["title"] for c in field["covered"]]
+        piece = _valid_piece(api._run_claude_json(piece_prompt(unit, covered), timeout=600, kind="study"))
     feed = feed if feed is not None else fetch_feeds()
     recent = [f for f in feed if "error" not in f and f.get("date", "") >= (day - timedelta(days=2)).isoformat()] or [f for f in feed if "error" not in f]
     recent = recent[:40]
-    news, piece = _valid_daily(api._run_claude_json(daily_prompt(recent, unit, covered), timeout=600, kind="study"), recent)
+    news = _valid_news(api._run_claude_json(news_prompt(recent), timeout=600, kind="study"), recent)
     # 문제 5개: 오늘 다시 볼 오답 먼저, 나머지는 지금 공부하는 장(없으면 아무 장)
     qs = all_questions(vault)
     ids = [q for q in due_wrong(p, day) if q in qs][:3]
@@ -560,12 +587,68 @@ def make_daily(api, vault, day=None, force=False, feed=None):
     doc = {"date": day.isoformat(), "unit": unit["n"], "news": news, "piece": piece, "questions": ids, "chapter": cur,
            "made": datetime.now().strftime("%Y-%m-%d %H:%M")}
     _write(path, doc)
-    if piece and piece.get("title"):
-        field["covered"].append({"date": day.isoformat(), "unit": unit["n"], "title": str(piece["title"])[:80]})
-        if sum(1 for c in field["covered"] if c["unit"] == unit["n"]) % PIECES_PER_UNIT == 0:
-            field["unit"] = unit["n"] % len(UNITS) + 1
+    if not pending and piece and piece.get("title"):  # 새로 뽑은 조각만 기록(진도는 '읽음'에서 전진)
+        field["covered"].append({"date": day.isoformat(), "unit": unit["n"], "title": str(piece["title"])[:80], "piece": piece, "seen": False})
         save_progress(vault, p)
     return doc
+
+
+def mark_piece_read(vault, today=None):
+    """지금 조각을 '읽음'으로 표시하고 진도를 한 칸 전진한다."""
+    today = today or date.today()
+    p = load_progress(vault)
+    field = p["field"]
+    cur = _pending_piece(field)
+    if not cur:
+        return {"ok": True, "already": True, "unit": int(field.get("unit") or 1)}
+    cur["seen"] = True
+    cur["seen_at"] = today.isoformat()
+    seen = sum(1 for c in field["covered"] if c.get("seen"))
+    field["unit"] = (seen // PIECES_PER_UNIT) % len(UNITS) + 1
+    _mark_day(p, today)
+    save_progress(vault, p)
+    return {"ok": True, "seen": seen, "unit": field["unit"]}
+
+
+def next_piece(api, vault, today=None):
+    """'다음 보기' — 지금 조각을 다 읽었을 때만 다음 조각을 바로 뽑아 오늘 하루치에 넣는다(진도로 당겨짐)."""
+    today = today or date.today()
+    p = load_progress(vault)
+    field = p["field"]
+    if _pending_piece(field):
+        raise StudyError("먼저 지금 조각을 '읽음'으로 표시해 주세요")
+    unit = UNITS[(int(field.get("unit") or 1) - 1) % len(UNITS)]
+    covered = [c["title"] for c in field["covered"]]
+    piece = _valid_piece(api._run_claude_json(piece_prompt(unit, covered), timeout=600, kind="study"))
+    field["covered"].append({"date": today.isoformat(), "unit": unit["n"], "title": str(piece["title"])[:80], "piece": piece, "seen": False})
+    save_progress(vault, p)
+    doc = _read(daily_path(vault, today), None)
+    if doc:  # 오늘 하루치 화면의 조각을 새 것으로 교체
+        doc["piece"], doc["unit"] = piece, unit["n"]
+        _write(daily_path(vault, today), doc)
+    return {"ok": True, "piece": piece, "unit": unit["n"]}
+
+
+def piece_history(vault):
+    """'이전 보기'용 — 지나온 조각 목록(최신 먼저)."""
+    p = load_progress(vault)
+    out = []
+    for i, c in enumerate(p["field"].get("covered", [])):
+        out.append({"i": i, "date": c.get("date"), "unit": c.get("unit"), "title": c.get("title"), "seen": bool(c.get("seen"))})
+    return {"pieces": list(reversed(out))}
+
+
+def piece_at(vault, i):
+    """이전 조각 하나의 전체 내용. covered에 본문이 없으면 그 날짜 하루치에서 읽는다."""
+    cov = load_progress(vault)["field"].get("covered", [])
+    try:
+        c = cov[int(i)]
+    except (IndexError, ValueError, TypeError) as e:
+        raise StudyError("그 조각을 못 찾았어요") from e
+    piece = c.get("piece") or (_read(root(vault) / "daily" / f"{c.get('date')}.json", {}) or {}).get("piece")
+    if not piece:
+        raise StudyError("그 조각 본문이 남아 있지 않아요")
+    return {"date": c.get("date"), "unit": c.get("unit"), "seen": bool(c.get("seen")), "piece": piece}
 
 
 # ───────────────────────── 부과목 세트 (가져온 문제집) ─────────────────────────
@@ -740,6 +823,9 @@ def overview(vault, today=None):
         daily = dict(daily, questions=[_public(qs[i]) for i in daily.get("questions", []) if i in qs])
         answered = {a["q"]: a["ok"] for a in p["attempts"] if a["at"].startswith(today.isoformat())}
         daily["answered"] = {i: answered[i] for i in [q["id"] for q in daily["questions"]] if i in answered}
+        pending = _pending_piece(p["field"])  # 지금 조각을 '읽음' 했는지 — 안 했으면 하단에 읽음 버튼
+        daily["piece_seen"] = not pending
+        daily["piece_count"] = len(p["field"].get("covered", []))
     domains = []
     for d in DOMAINS:
         chs = []
@@ -857,6 +943,10 @@ def handle_get(api, route, qs, vault):
         return glossary(vault)
     if route == "/api/study/set":
         return set_payload(vault, one("id"))
+    if route == "/api/study/pieces":
+        return piece_history(vault)
+    if route == "/api/study/piece":
+        return piece_at(vault, one("i"))
     return None
 
 
@@ -865,6 +955,10 @@ def handle_post(api, route, body, vault):
         return record_answer(vault, body.get("id"), body.get("choice"), body.get("mode") or "practice")
     if route == "/api/study/read":
         return mark_read(vault, body.get("chapter"))
+    if route == "/api/study/piece-read":
+        return mark_piece_read(vault)
+    if route == "/api/study/piece-next":
+        return next_piece(api, vault)
     if route == "/api/study/mock":
         return record_mock(vault, body.get("mode"), body.get("score", 0), body.get("total", 0))
     if route == "/api/study/set-answer":
