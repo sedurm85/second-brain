@@ -37,10 +37,11 @@ class StudyTest(unittest.TestCase):
         fake = self.home / "fake_claude.py"
         fake.write_text('''import sys, json
 p = sys.stdin.read()
-if "[기사 목록]" in p:
-    print(json.dumps({"news": [{"i": i, "title": "뉴스 " + str(i), "summary": ["a", "b", "c"], "tech": "기술", "ask": "질문", "unit": 1} for i in range(3)],
-                      "piece": {"title": "조각", "lead": "명제", "points": [{"h": "h", "body": "b"}], "views": {"CISSP": "x", "CISM": "y", "CISA": "z"},
+if "piece 규칙" in p:
+    print(json.dumps({"piece": {"title": "조각", "lead": "명제", "points": [{"h": "h", "body": "b"}], "views": {"CISSP": "x", "CISM": "y", "CISA": "z"},
                                 "scene": {"title": "장면", "steps": ["1", "2", "3"], "why": "왜"}}}, ensure_ascii=False)); sys.exit(0)
+if "[기사 목록]" in p:
+    print(json.dumps({"news": [{"i": i, "title": "뉴스 " + str(i), "summary": ["a", "b", "c"], "tech": "기술", "ask": "질문", "unit": 1} for i in range(3)]}, ensure_ascii=False)); sys.exit(0)
 if "커뮤니티가 고른 정답" in p:
     batch = json.loads(p.rsplit("[문제]", 1)[1])
     print(json.dumps([{"n": q["n"], "why": "해설 " + str(q["n"]), "doubt": "의심" if q["n"] == 2 else ""} for q in batch], ensure_ascii=False)); sys.exit(0)
@@ -130,7 +131,27 @@ print(json.dumps({"concept_md": "## 핵심 한 줄\\n" + "개념 " * 500, "terms
         p["field"]["covered"] = [{"date": "2026-01-0" + str(i), "unit": 1, "title": f"t{i}"} for i in range(1, 5)]
         study.save_progress(self.vault, p)
         study.make_daily(brain, self.vault, self.today, feed=FEED)
+        self.assertEqual(study.load_progress(self.vault)["field"]["unit"], 1)  # 읽음 게이트: 새 조각만 추가, 아직 진도 전진 전
+        study.mark_piece_read(self.vault, self.today)  # 5번째 조각을 읽으면 5//5 → 다음 단원
         self.assertEqual(study.load_progress(self.vault)["field"]["unit"], 2)
+
+    def test_daily_questions_advance_and_cooldown(self):
+        self._fill(2)  # 2-1, 2-2 채움(각 12문제)
+        qs = study.all_questions(self.vault)
+        p = study.load_progress(self.vault)
+        ids, cur = study._daily_question_ids(self.vault, p, qs, self.today)  # 처음엔 현재 장만
+        self.assertEqual(cur, "2-1")
+        self.assertTrue(all(i.startswith("2-1#") for i in ids))
+        for q in [x for x in qs.values() if x["chapter"] == "2-1"]:  # 2-1 전부 정답
+            study.record_answer(self.vault, q["id"], q["answer"], today=self.today)
+        p = study.load_progress(self.vault)
+        ids2, cur2 = study._daily_question_ids(self.vault, p, qs, self.today)
+        self.assertEqual(cur2, "2-2")  # 자동 진도로 다음 장이 열림
+        self.assertIn("2-1", study.load_progress(self.vault)["read"])  # 마스터한 장은 읽음 처리
+        self.assertTrue(all(i.startswith("2-2#") for i in ids2))  # 새 장의 새 문제가 나옴
+        y = self.today - study.timedelta(days=1)  # 쿨다운: 어제 나온 문제는 모은다
+        study._write(study.daily_path(self.vault, y), {"questions": ["2-2#1", "2-2#2"]})
+        self.assertEqual(study._recent_shown(self.vault, self.today), {"2-2#1", "2-2#2"})
 
     def test_review_pace_evening_weekly(self):
         r = self._fill(1)  # 채우면 바로 검수까지

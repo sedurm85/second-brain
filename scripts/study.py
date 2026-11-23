@@ -42,6 +42,7 @@ UNITS = [  # 실무감 10단원: CISSP·CISM·CISA 겹침 순서
     {"n": 11, "title": "AI 보안", "map": "AAISM · CISM D1·D2 · CISSP D1·D8", "hot": True, "ai": True},
 ]
 PIECES_PER_UNIT = 5  # 단원마다 실무 한 조각 5개를 지나면 다음 단원
+COOLDOWN_DAYS = 3    # 매일 문제: 최근 이 며칠 동안 나온 문제는 되도록 다시 안 낸다(소프트)
 DEFAULT_TARGET = "2027-02-28"  # 2026-11-13 사용자 확정: CISA 응시 기준선(강제 마감 아님)
 MOCK_WEEKS = 2  # 목표일 전 2주는 모의고사 기간 — 장 진도는 그 전에 끝낸다
 
@@ -292,23 +293,84 @@ def current_chapter(vault, p):
     return None
 
 
+def _last_results(p):
+    """문제별 '마지막 결과'(맞음/틀림) 맵."""
+    last = {}
+    for a in p["attempts"]:
+        last[a["q"]] = a["ok"]
+    return last
+
+
+def _chapter_mastered(cid, qs, last):
+    """그 장의 문제를 모두 한 번 이상 '마지막에 맞힌' 상태면 마스터로 본다."""
+    qids = [q["id"] for q in qs.values() if q["chapter"] == cid]
+    return bool(qids) and all(last.get(qid) is True for qid in qids)
+
+
+def _auto_advance(vault, p, qs, today):
+    """매일 문제의 '자동 진도' — 지금 장을 다 맞히면 읽음 처리하고 다음 장을 연다."""
+    last = _last_results(p)
+    changed = False
+    while True:
+        cid = current_chapter(vault, p)
+        if not cid or not _chapter_mastered(cid, qs, last):
+            break
+        p["read"].setdefault(cid, today.isoformat())
+        changed = True
+    if changed:
+        save_progress(vault, p)
+    return changed
+
+
+def _covered_chapters(vault, p, cur):
+    """공부한 범위 — 지금 장 + ORDER상 그 앞(이미 지난) 장들 중 문제가 채워진 것."""
+    upto = ORDER if cur is None else ORDER[: ORDER.index(cur) + 1]
+    return {cid for cid in upto if chapter_path(vault, cid).is_file()}
+
+
+def _recent_shown(vault, day, days=COOLDOWN_DAYS):
+    """최근 며칠간 매일 문제로 나온 문제 id 모음(쿨다운용)."""
+    out = set()
+    for k in range(1, days + 1):
+        doc = _read(daily_path(vault, day - timedelta(days=k)), None)
+        if doc:
+            out.update(doc.get("questions", []))
+    return out
+
+
+def _daily_question_ids(vault, p, qs, day):
+    """오늘 낼 CISA 5문제: 복습할 오답 먼저, 나머지는 공부한 범위에서 최근 본 건 피해 뽑는다. (cur도 함께 반환)"""
+    _auto_advance(vault, p, qs, day)
+    cur = current_chapter(vault, p)
+    covered = _covered_chapters(vault, p, cur)
+    ids = [q for q in due_wrong(p, day) if q in qs][:3]
+    pool = [q for q in qs.values() if q["id"] not in ids and q["chapter"] in covered] \
+        or [q for q in qs.values() if q["id"] not in ids]
+    avoid = _recent_shown(vault, day) - set(ids)
+    ids += [q["id"] for q in _pick(pool, 5 - len(ids), p, random.Random(day.toordinal()), avoid=avoid)]
+    return ids, cur
+
+
 # ───────────────────────── 출제 ─────────────────────────
 
 def _public(q):
     return {k: q[k] for k in ("id", "chapter", "domain", "stem", "options", "answer", "explanation", "trap") if k in q}
 
 
-def _pick(pool, n, p, rnd):
-    """안 풀어 본 문제 → 틀린 문제 → 맞힌 문제 순으로 섞어 고른다."""
+def _pick(pool, n, p, rnd, avoid=()):
+    """안 풀어 본 문제 → 틀린 문제 → 맞힌 문제 순으로 섞어 고른다.
+    avoid(최근 며칠 나온 문제)는 각 묶음 안에서 뒤로 미뤄, 풀이 넉넉하면 안 나오고 모자라면 그제야 다시 쓴다."""
     last = {}
     for a in p["attempts"]:
         last[a["q"]] = a["ok"]
+    avoid = set(avoid)
     fresh = [q for q in pool if q["id"] not in last]
     wrong = [q for q in pool if last.get(q["id"]) is False]
     right = [q for q in pool if last.get(q["id"]) is True]
     out = []
     for group in (fresh, wrong, right):
         rnd.shuffle(group)
+        group.sort(key=lambda q: q["id"] in avoid)  # 최근 본 건 뒤로(쿨다운)
         out += group[: n - len(out)]
         if len(out) >= n:
             break
@@ -578,12 +640,9 @@ def make_daily(api, vault, day=None, force=False, feed=None):
     recent = [f for f in feed if "error" not in f and f.get("date", "") >= (day - timedelta(days=2)).isoformat()] or [f for f in feed if "error" not in f]
     recent = recent[:40]
     news = _valid_news(api._run_claude_json(news_prompt(recent), timeout=600, kind="study"), recent)
-    # 문제 5개: 오늘 다시 볼 오답 먼저, 나머지는 지금 공부하는 장(없으면 아무 장)
+    # 문제 5개: 오답 복습 먼저, 나머지는 공부한 범위에서 최근 본 건 피해(자동 진도 포함)
     qs = all_questions(vault)
-    ids = [q for q in due_wrong(p, day) if q in qs][:3]
-    cur = current_chapter(vault, p)
-    pool = [q for q in qs.values() if q["id"] not in ids and (not cur or q["chapter"] == cur)] or [q for q in qs.values() if q["id"] not in ids]
-    ids += [q["id"] for q in _pick(pool, 5 - len(ids), p, random.Random(day.toordinal()))]
+    ids, cur = _daily_question_ids(vault, p, qs, day)
     doc = {"date": day.isoformat(), "unit": unit["n"], "news": news, "piece": piece, "questions": ids, "chapter": cur,
            "made": datetime.now().strftime("%Y-%m-%d %H:%M")}
     _write(path, doc)
