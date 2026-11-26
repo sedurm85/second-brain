@@ -52,6 +52,12 @@ def doc(title, body, subtitle=None):
 
 
 class StudioUnitTest(unittest.TestCase):
+    def test_adapt_prompt_carries_author_brief_for_linkedin_only(self):
+        pc = {"original": "writer/2026-01-01-x.md", "brief": "새벽 배포를 끝낸 이야기"}
+        self.assertIn("새벽 배포를 끝낸 이야기", studio.adapt_prompt(pc, ["linkedin", "brunch"]))
+        self.assertNotIn("새벽 배포를 끝낸 이야기", studio.adapt_prompt(pc, ["brunch"]))
+        self.assertNotIn("작성자 원글", studio.adapt_prompt({"original": "writer/2026-01-01-x.md"}, ["linkedin"]))
+
     """검수 규칙(순수 함수)."""
 
     def test_cafe_hard_limit_and_markdown(self):
